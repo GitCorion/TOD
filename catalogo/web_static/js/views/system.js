@@ -32,7 +32,7 @@ function schedulerPanel(tasks) {
       ${items.map((task) => `<div class="kv">
         <span>${esc(task.label)} ${task.enabled ? status('Activa', 'ok') : status('Pausada', 'muted')}</span>
         <span class="tiny faint">${task.next_run ? `Próxima ${fmtDate(task.next_run)}` : 'Sin programar'}</span>
-      </div>`).join('') || empty('Sin tareas', 'El scheduler no tiene tareas configuradas.')}
+      </div>`).join('') || empty('Sin tareas', 'No hay tareas programadas configuradas.')}
     </div>
   </div>`;
 }
@@ -49,7 +49,9 @@ export async function renderSystem({ signal }) {
   const apps = services.filter((service) => !['qbittorrent.service', 'prowlarr.service', 'jackett.service', 'jellyfin.service'].includes(service.unit));
   const external = services.filter((service) => ['qbittorrent.service', 'prowlarr.service', 'jackett.service', 'jellyfin.service'].includes(service.unit));
 
-  const integrations = Object.entries(system.capabilities || {}).map(([name, ok]) => `
+  const integrations = Object.entries(system.capabilities || {})
+    .filter(([name]) => !['qbittorrent', 'play_service'].includes(name))
+    .map(([name, ok]) => `
     <div class="kv"><span>${esc(capabilityLabel(name))}</span><span>${ok ? status('Disponible', 'ok') : status('No configurado', 'muted')}</span></div>
   `).join('');
 

@@ -13,7 +13,7 @@ function syncThemeButton() {
   const use = $('#themeIcon use');
   const button = $('#themeToggle');
   const meta = document.querySelector('meta[name="theme-color"]');
-  if (meta) meta.setAttribute('content', theme === 'dark' ? '#1a1916' : '#e9e8e2');
+  if (meta) meta.setAttribute('content', theme === 'dark' ? '#14120f' : '#f2f0ea');
   if (use) use.setAttribute('href', theme === 'dark' ? '#i-sun' : '#i-moon');
   if (button) {
     button.setAttribute(
@@ -29,7 +29,7 @@ function toggleTheme() {
   document.documentElement.dataset.theme = next;
   try { localStorage.setItem('catalogo-theme', next); } catch (_) { /* sin almacenamiento */ }
   const meta = document.querySelector('meta[name="theme-color"]');
-  if (meta) meta.setAttribute('content', next === 'dark' ? '#1a1916' : '#e9e8e2');
+  if (meta) meta.setAttribute('content', next === 'dark' ? '#14120f' : '#f2f0ea');
   syncThemeButton();
 }
 

@@ -40,7 +40,9 @@ export async function renderTitle({ params, query, signal }) {
   state.titleDetail = data;
   const tab = query.get('tab') || 'resumen';
   const tag = episodeTag(item);
-  setHeader(item.title || 'Ficha', item.kind === 'movie' ? 'Película' : 'Episodio');
+  const pageLabel = item.kind === 'movie' ? 'Película' : 'Episodio';
+  setHeader(pageLabel, 'Catálogo');
+  document.title = `${item.title || pageLabel}, TOD`;
 
   const seriesLink = item.kind === 'series' && item.tmdb
     ? `<a href="#/series/${item.tmdb}">${esc(item.title || 'Serie')}</a>${icon('chevron')}`
@@ -179,6 +181,7 @@ export async function renderTitle({ params, query, signal }) {
             ${od.downloaded ? status('Descargada', 'ok') : ''}
             ${od.download === 'descargando' ? status('Descargando', 'info') : ''}
           </div>
+          ${item.overview ? `<p class="overview">${esc(item.overview)}</p>` : ''}
           ${data.collection ? `<a class="collection-link" href="#/collection/${data.collection.id}">
             <span class="tiny">Colección</span>
             <strong>${esc(data.collection.name)}</strong>

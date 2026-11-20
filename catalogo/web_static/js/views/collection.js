@@ -23,7 +23,8 @@ export async function renderCollection({ params, signal }) {
   const inLibrary = parts.filter((part) => part.library_added).length;
   const noSource = parts.filter((part) => part.in_catalog && !part.library_added && part.publication === 'sin_fuente').length;
   const withoutLink = parts.filter((part) => part.library_added && !part.published).length;
-  setHeader(data.name || 'Colección', 'Saga');
+  setHeader('Saga', 'Catálogo');
+  document.title = `${data.name || 'Saga'}, TOD`;
 
   const cards = parts.map((part) => {
     const href = part.asset_id ? `#/title/${part.asset_id}` : '';

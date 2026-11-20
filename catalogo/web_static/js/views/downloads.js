@@ -125,7 +125,7 @@ export async function renderDownloads({ query, signal }) {
           <small>${esc(tag)}, ${group.items.length} torrent${group.items.length === 1 ? '' : 's'}, ${fmtBytes(group.size)}, ratio ${(totalRatio / Math.max(1, group.items.length)).toFixed(2)}</small>
         </div>
         <div class="progress">${bar(group.progress, group.progress >= 1 ? 'green' : '')}</div>
-        <div class="side">${groupStatus(group)}${group.kind === 'movie' && group.media_id ? `<a class="btn btn-sm btn-ghost" href="#/title/${group.media_id}">Abrir</a>` : ''}</div>
+        <div class="side">${groupStatus(group)}${group.media_id ? `<a class="btn btn-sm btn-ghost" href="#/title/${group.media_id}">Abrir</a>` : ''}</div>
       </summary>
       <div class="dl-torrents">${group.items.map(torrentRow).join('')}</div>
     </details>`;

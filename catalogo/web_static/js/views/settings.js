@@ -151,10 +151,10 @@ export async function renderSettings({ signal } = {}) {
 
   $('#view').innerHTML = `
     <div class="panel pad section">
-      <div class="row row-wrap">
-        <div>
-          <strong>Servicio único</strong>
-          <p class="muted tiny" style="margin:4px 0 0">Web, API, reproducción y scheduler comparten proceso, base de datos y configuración. Los cambios se aplican sin reiniciar salvo los marcados como reinicio.</p>
+      <div class="row between" style="align-items:flex-start">
+        <div style="flex:1;min-width:280px">
+          <strong>Un proceso, una configuración</strong>
+          <p class="muted tiny" style="margin:4px 0 0">Web, API, reproducción y tareas programadas comparten proceso, base de datos y configuración. Las integraciones se conectan desde aquí. Los cambios se aplican sin reiniciar salvo los marcados como «requiere reinicio».</p>
         </div>
         <div class="row">
           <span id="settingsDirty" class="status warn ${state.settingsDirty ? '' : 'hidden'}">Cambios sin guardar</span>

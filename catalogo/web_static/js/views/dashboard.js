@@ -99,12 +99,14 @@ export async function renderDashboard({ signal }) {
 
     <div class="section">
       <div class="section-head"><h2>En el archivo</h2><a class="right tiny" href="#/catalog">Ver catálogo</a></div>
-      <div class="poster-strip">
+      ${(preview.items || []).length
+        ? `<div class="poster-strip">
         ${(preview.items || []).map((item) => `<a class="strip-item" href="${item.kind === 'series' ? `#/series/${item.tmdb}` : `#/title/${item.id}`}">
           <span class="strip-poster">${poster(item.poster_path, item.title)}</span>
           <strong>${esc(item.title || '—')}</strong>
         </a>`).join('')}
-      </div>
+      </div>`
+        : empty('Sin títulos en el archivo', 'Añade una película o serie para empezar.', `<a class="btn btn-sm" href="#/add">Añadir contenido</a>`)}
     </div>
 
     <div class="grid grid-2 section">

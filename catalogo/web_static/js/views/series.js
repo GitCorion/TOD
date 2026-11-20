@@ -53,7 +53,8 @@ export async function renderSeries({ params, query, signal }) {
     && totals.published >= totals.library;
   const seasonLibrary = (seasonData?.library || 0) >= (seasonData?.catalog_episodes || 0)
     && (seasonData?.catalog_episodes || 0) > 0;
-  setHeader(series.title || 'Serie', 'Serie');
+  setHeader('Serie', 'Catálogo');
+  document.title = `${series.title || 'Serie'}, TOD`;
 
   const rows = (seasonData?.episodes || []).map((ep) => {
     const tag = `T${String(ep.season).padStart(2, '0')}E${String(ep.episode).padStart(2, '0')}`;
