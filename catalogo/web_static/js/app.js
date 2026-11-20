@@ -924,12 +924,6 @@ document.addEventListener('click', async (event) => {
       navigate('add', [], { kind: element.dataset.kind, q: current.get('q') || '', year: current.get('year') || '' });
       return;
     }
-    if (action === 'add-search') {
-      const q = $('[data-input="add-q"]')?.value || '';
-      const year = $('[data-input="add-year"]')?.value || '';
-      navigate('add', [], { kind: state.tmdb.kind, q, year });
-      return;
-    }
     if (action === 'add-page') {
       const current = parseRoute().query;
       navigate('add', [], {
@@ -1606,14 +1600,6 @@ document.addEventListener('change', (event) => {
 
 const debouncedCatalog = debounce((value) => updateQuery({ q: value }), 300);
 const debouncedMonitor = debounce((value) => updateQuery({ q: value }), 300);
-const debouncedAdd = debounce((value) => {
-  const routeInfo = parseRoute();
-  navigate('add', [], { kind: state.tmdb.kind, q: value, year: routeInfo.query.get('year') || '' });
-}, 400);
-const debouncedAddYear = debounce((value) => {
-  const routeInfo = parseRoute();
-  navigate('add', [], { kind: state.tmdb.kind, q: routeInfo.query.get('q') || '', year: value });
-}, 500);
 const debouncedDownloads = debounce((value) => updateQuery({ q: value }), 300);
 
 document.addEventListener('input', (event) => {
@@ -1623,8 +1609,6 @@ document.addEventListener('input', (event) => {
   if (key === 'catalog-q') debouncedCatalog(input.value);
   else if (key === 'monitor-q') debouncedMonitor(input.value);
   else if (key === 'downloads-q') debouncedDownloads(input.value);
-  else if (key === 'add-q') debouncedAdd(input.value);
-  else if (key === 'add-year') debouncedAddYear(input.value);
 });
 
 document.addEventListener('submit', async (event) => {
@@ -1635,6 +1619,13 @@ document.addEventListener('submit', async (event) => {
   if (form.dataset.form === 'quick-search') {
     const values = formValues(form);
     navigate('add', [], { q: values.q || '', kind: 'movie' });
+  } else if (form.dataset.form === 'add-search') {
+    const values = formValues(form);
+    navigate('add', [], {
+      kind: state.tmdb.kind,
+      q: values.q || '',
+      year: values.year || '',
+    });
   } else if (form.dataset.form === 'tmdb-direct') {
     const values = formValues(form);
     if (!values.tmdb) return;

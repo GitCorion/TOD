@@ -54,17 +54,17 @@ export async function renderAdd({ query, signal }) {
       <button class="${kind === 'series' ? 'active' : ''}" data-action="add-kind" data-kind="series" role="tab" aria-selected="${kind === 'series'}">Series</button>
     </div>
 
-    <div class="toolbar">
+    <form class="toolbar" data-form="add-search">
       <label class="field grow">
         <span>Buscar en TMDB</span>
-        <input data-input="add-q" value="${esc(text)}" placeholder="Título original o internacional" autocomplete="off" aria-label="Buscar en TMDB">
+        <input name="q" data-input="add-q" value="${esc(text)}" placeholder="Título original o internacional" autocomplete="off" aria-label="Buscar en TMDB">
       </label>
       <label class="field" style="width:110px">
         <span>Año</span>
-        <input data-input="add-year" value="${esc(year)}" type="number" min="1900" max="2100" placeholder="Opcional" aria-label="Año">
+        <input name="year" data-input="add-year" value="${esc(year)}" type="number" min="1900" max="2100" placeholder="Opcional" aria-label="Año">
       </label>
-      <button class="btn btn-primary" data-action="add-search">${icon('search')} Buscar</button>
-    </div>
+      <button class="btn btn-primary" type="submit">${icon('search')} Buscar</button>
+    </form>
 
     <div class="row between section" style="margin-bottom:10px">
       <div class="tiny faint">${text ? `${fmtInt(data.results?.length || 0)} resultados para «${esc(text)}»` : 'Tendencias en TMDB'}</div>
