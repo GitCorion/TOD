@@ -344,7 +344,7 @@ def catalog(
         ))
         # Para una serie, el estado de la ficha manda sobre el de un episodio.
         for item in grouped:
-            if item["kind"] == "series":
+            if item["kind"] == "series" and item.get("tmdb"):
                 item["in_library"] = bool(
                     series_library(int(item["tmdb"])).get("in_library")
                 )

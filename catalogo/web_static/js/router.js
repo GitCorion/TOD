@@ -28,7 +28,7 @@ const ROUTES = {
   seeds: { title: 'Siembra', kicker: 'Operación', render: renderSeeds },
   settings: { title: 'Configuración', kicker: 'TOD', render: renderSettings },
   system: { title: 'Estado', kicker: 'Sistema', render: renderSystem },
-  technical: { title: 'Catálogo técnico', kicker: 'Sistema', render: renderTechnical },
+  technical: { title: 'Avanzado', kicker: 'Sistema', render: renderTechnical },
   advanced: { title: 'Avanzado', kicker: 'Sistema', render: renderAdvanced },
 };
 

@@ -24,6 +24,19 @@ function servicePanel(title, items) {
   </div>`;
 }
 
+function schedulerPanel(tasks) {
+  const items = tasks || [];
+  return `<div class="panel">
+    <div class="panel-head"><h2>Tareas programadas</h2><span class="right tiny faint">${items.filter((task) => task.enabled).length}/${items.length} activas</span></div>
+    <div class="panel-body" style="padding-top:4px;padding-bottom:8px">
+      ${items.map((task) => `<div class="kv">
+        <span>${esc(task.label)} ${task.enabled ? status('Activa', 'ok') : status('Pausada', 'muted')}</span>
+        <span class="tiny faint">${task.next_run ? `Próxima ${fmtDate(task.next_run)}` : 'Sin programar'}</span>
+      </div>`).join('') || empty('Sin tareas', 'El scheduler no tiene tareas configuradas.')}
+    </div>
+  </div>`;
+}
+
 export async function renderSystem({ signal }) {
   const [system, events] = await Promise.all([
     api('/api/system', { signal }),
@@ -33,8 +46,7 @@ export async function renderSystem({ signal }) {
   setHeader('Estado', 'Sistema');
 
   const services = system.services || [];
-  const apps = services.filter((service) => !service.unit.endsWith('.timer') && !['qbittorrent.service', 'prowlarr.service', 'jackett.service', 'jellyfin.service'].includes(service.unit));
-  const timers = services.filter((service) => service.unit.endsWith('.timer'));
+  const apps = services.filter((service) => !['qbittorrent.service', 'prowlarr.service', 'jackett.service', 'jellyfin.service'].includes(service.unit));
   const external = services.filter((service) => ['qbittorrent.service', 'prowlarr.service', 'jackett.service', 'jellyfin.service'].includes(service.unit));
 
   const integrations = Object.entries(system.capabilities || {}).map(([name, ok]) => `
@@ -82,7 +94,7 @@ export async function renderSystem({ signal }) {
     </div>
 
     <div class="grid grid-2 section">
-      ${servicePanel('Tareas programadas', timers)}
+      ${schedulerPanel(system.scheduler)}
       <div class="panel">
         <div class="panel-head"><h2>Integraciones y base</h2></div>
         <div class="panel-body" style="padding-top:6px;padding-bottom:8px">

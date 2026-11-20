@@ -144,7 +144,7 @@ export async function renderCatalog({ query, signal }) {
     <div class="toolbar">
       <label class="field grow">
         <span>Buscar</span>
-        <input data-input="catalog-q" value="${esc(filters.q)}" placeholder="Título o clave estable" autocomplete="off" aria-label="Buscar en el catálogo">
+        <input data-input="catalog-q" value="${esc(filters.q)}" placeholder="Título, serie o año" autocomplete="off" aria-label="Buscar en el catálogo">
       </label>
       <label class="field">
         <span>Orden</span>

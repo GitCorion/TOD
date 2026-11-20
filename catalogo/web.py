@@ -53,15 +53,6 @@ _INDEXER_TTL = 120.0
 
 SERVICES = (
     "tod.service",
-    "catalogo-web.service",
-    "catalogo-proxy.service",
-    "catalogo-worker.timer",
-    "catalogo-rss.timer",
-    "catalogo-backfill.timer",
-    "catalogo-bridge.timer",
-    "catalogo-restore.timer",
-    "catalogo-leases.timer",
-    "catalogo-qbit-limits.timer",
     "qbittorrent.service",
     "prowlarr.service",
     "jackett.service",
@@ -2044,7 +2035,6 @@ class Handler(PlaybackHandler):
                 "radarr": bool(app.config.radarr_api_key),
                 "sonarr": bool(app.config.sonarr_api_key),
                 "tmdb": bool(app.config.tmdb_api_key),
-                "realdebrid": bool(app.config.rd_api_key),
                 "play_service": app.play_service is not None,
             },
             "play_error": app.play_error,

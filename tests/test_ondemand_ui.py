@@ -81,6 +81,21 @@ def test_catalog_groups_series_and_keeps_counts(tmp_path):
     assert data["facets"]["kind"] == {"movie": 3, "series": 1}
 
 
+def test_catalog_handles_series_without_tmdb(tmp_path):
+    db = _seed(tmp_path)
+    with sqlite3.connect(db) as conn:
+        conn.execute(
+            "INSERT INTO media_items(key, media_id, kind, title, season, episode) "
+            "VALUES('series:legacy:1:1', 'series:legacy:1:1', 'series', "
+            "'Serie antigua', 1, 1)"
+        )
+        conn.commit()
+    data = ondemand.catalog(
+        db, _config(tmp_path, db), group="series", per_page=20, publication=""
+    )
+    assert data["total"] >= 1
+
+
 def test_catalog_episode_mode_keeps_episodes(tmp_path):
     db = _seed(tmp_path)
     data = ondemand.catalog(
