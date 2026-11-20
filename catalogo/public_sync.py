@@ -123,6 +123,7 @@ def _upsert_release(conn, asset_id: int, tracker: str, result: dict,
         size,
         info_hash,
         link,
+        result.get("infoUrl") or result.get("info_url") or None,
         int(result.get("seeders") or 0),
         int(result.get("peers") or 0),
         "alive",
@@ -137,7 +138,7 @@ def _upsert_release(conn, asset_id: int, tracker: str, result: dict,
             UPDATE releases SET
                 tracker = ?, title = ?, normalized_title = ?, year = ?,
                 quality = ?, audio = ?, size_bytes = ?, info_hash = ?,
-                download_url = ?, seeders = ?, peers = ?, health = ?,
+                download_url = ?, info_url = ?, seeders = ?, peers = ?, health = ?,
                 health_checked_at = ?, source = ?, privacy = ?,
                 torrent_blob = COALESCE(?, torrent_blob),
                 updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
@@ -150,9 +151,10 @@ def _upsert_release(conn, asset_id: int, tracker: str, result: dict,
         """
         INSERT INTO releases(asset_id, tracker, guid, title, normalized_title,
                              year, quality, audio, size_bytes, is_pack,
-                             info_hash, download_url, seeders, peers, health,
-                             health_checked_at, source, privacy, torrent_blob)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                             info_hash, download_url, info_url, seeders, peers,
+                             health, health_checked_at, source, privacy,
+                             torrent_blob)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(guid) DO UPDATE SET
             tracker = excluded.tracker,
             title = excluded.title,

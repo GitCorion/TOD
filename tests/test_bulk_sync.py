@@ -70,6 +70,7 @@ def result(**overrides):
         "guid": "abc",
         "infoHash": "abc123",
         "downloadUrl": "http://prowlarr/1",
+        "infoUrl": "https://tracker/torrent/1",
     }
     base.update(overrides)
     return base
@@ -116,6 +117,7 @@ def test_sync_inserts_release_with_tracker_audio(tmp_path):
     conn.row_factory = sqlite3.Row
     release = conn.execute("SELECT * FROM releases").fetchone()
     assert release["tracker"] == "TrackerEspanol (API)"
+    assert release["info_url"] == "https://tracker/torrent/1"
     assert release["audio"] == "castellano"
     assert release["audio_confidence"] == "tracker"
     assert release["health"] == "alive"

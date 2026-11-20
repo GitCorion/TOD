@@ -265,6 +265,7 @@ def _upsert_release(
         1 if is_pack else 0,
         info_hash,
         result.get("downloadUrl"),
+        result.get("infoUrl") or result.get("info_url"),
         int(result.get("seeders") or 0),
         int(result.get("peers") or 0),
         now,
@@ -303,7 +304,7 @@ def _upsert_release(
             """
             UPDATE releases SET tracker=?, title=?, normalized_title=?, year=?,
                 quality=?, audio=?, audio_confidence=?, size_bytes=?, is_pack=?,
-                info_hash=?, download_url=?, seeders=?, peers=?,
+                info_hash=?, download_url=?, info_url=?, seeders=?, peers=?,
                 health='alive', health_checked_at=?,
                 source='prowlarr', privacy='private',
                 updated_at=strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
@@ -318,9 +319,9 @@ def _upsert_release(
         INSERT INTO releases(
             asset_id, tracker, guid, title, normalized_title, year, quality,
             audio, audio_confidence, size_bytes, is_pack, info_hash,
-            download_url, seeders, peers, health, health_checked_at,
+            download_url, info_url, seeders, peers, health, health_checked_at,
             source, privacy
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'alive',
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'alive',
                   ?, 'prowlarr', 'private')
         """,
         (asset_id,) + values[:1] + (guid,) + values[1:],
@@ -337,6 +338,7 @@ def _jackett_item(item: dict, tracker: str) -> dict:
         "peers": int(item.get("peers") or 0),
         "infoHash": (item.get("infohash") or "").lower() or None,
         "downloadUrl": sanitize_link(item.get("link") or ""),
+        "infoUrl": item.get("infoUrl") or item.get("comments") or "",
         "guid": item.get("guid") or item.get("title") or "",
         "indexer": tracker,
         "tmdbId": int(item.get("tmdbId") or 0),

@@ -613,6 +613,14 @@ class Handler(PlaybackHandler):
         if (
             len(parts) == 3
             and parts[0] == "releases"
+            and parts[2] == "tracker"
+            and not mutate
+        ):
+            return self._release_tracker(parts[1], head=head)
+
+        if (
+            len(parts) == 3
+            and parts[0] == "releases"
             and parts[2] == "torrent"
             and not mutate
         ):
@@ -2133,6 +2141,73 @@ class Handler(PlaybackHandler):
         self.send_header("X-Content-Type-Options", "nosniff")
         self.send_header("X-Frame-Options", "DENY")
         self.send_header("Referrer-Policy", "no-referrer")
+
+    def _release_tracker(self, raw_id: str, *, head: bool) -> None:
+        try:
+            release_id = int(raw_id)
+        except (TypeError, ValueError):
+            raise WebError(400, "release inválido")
+        with closing(connect(self.app.db_path)) as conn:
+            row = conn.execute(
+                "SELECT r.id, r.title, r.tracker, r.info_url, r.info_hash, "
+                "r.size_bytes, r.source, m.kind "
+                "FROM releases r JOIN media_items m ON m.id = r.asset_id "
+                "WHERE r.id = ?",
+                (release_id,),
+            ).fetchone()
+        if row is None:
+            raise WebError(404, "release no encontrado")
+
+        info_url = str(row["info_url"] or "").strip()
+        if not info_url and row["source"] == "prowlarr":
+            info_url = self._find_info_url(row)
+            if info_url:
+                with closing(connect(self.app.db_path)) as conn:
+                    conn.execute(
+                        "UPDATE releases SET info_url = ? WHERE id = ?",
+                        (info_url, release_id),
+                    )
+                    conn.commit()
+        if not info_url:
+            raise WebError(
+                404,
+                "no hay ficha del tracker para este release",
+            )
+
+        self.send_response(302)
+        self.send_header("Location", info_url)
+        self.send_header("Content-Length", "0")
+        self.send_header("Cache-Control", "no-store")
+        self.send_header("X-Content-Type-Options", "nosniff")
+        self.end_headers()
+
+    def _find_info_url(self, row) -> str:
+        from .importer import norm_title
+        from .prowlarr import ProwlarrClient
+
+        try:
+            media_type = "series" if row["kind"] == "series" else "movie"
+            results = ProwlarrClient.from_config(self.app.config).search(
+                str(row["title"] or ""), media_type=media_type, limit=20
+            )
+        except Exception:
+            return ""
+        target_hash = str(row["info_hash"] or "").lower()
+        target_title = norm_title(str(row["title"] or ""))
+        target_size = int(row["size_bytes"] or 0)
+        for item in results:
+            info_url = str(item.get("infoUrl") or "").strip()
+            if not info_url:
+                continue
+            if target_hash and str(item.get("infoHash") or "").lower() == target_hash:
+                return info_url
+            if norm_title(str(item.get("title") or "")) == target_title:
+                if not target_size:
+                    return info_url
+                size = int(item.get("size") or 0)
+                if size and abs(size - target_size) <= max(1, target_size * 0.02):
+                    return info_url
+        return ""
 
     def _release_torrent(self, raw_id: str, *, head: bool) -> None:
         try:

@@ -97,6 +97,7 @@ def parse_results(raw: bytes, indexer: str) -> list[dict[str, Any]]:
                 "magnet": attrs.get("magneturl") or "",
                 "link": link,
                 "guid": item.findtext("guid") or "",
+                "infoUrl": item.findtext("comments") or "",
                 "publish_date": item.findtext("pubDate") or "",
                 "tmdbId": tmdb,
                 "category": attrs.get("category")

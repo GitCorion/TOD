@@ -7,6 +7,9 @@ import { $, badge, bar, empty, icon, poster, setHeader, status } from '../ui.js'
 
 function releaseRow(release) {
   const health = healthStatus(release.health);
+  const trackerHref = release.info_url || release.source === 'prowlarr'
+    ? `/api/releases/${release.id}/tracker`
+    : '';
   const progress = release.torrent_progress !== null && release.torrent_progress !== undefined
     ? `<div class="progress-cell">${bar(release.torrent_progress)}<span>${pct(release.torrent_progress)}%</span></div>`
     : '<span class="faint">—</span>';
@@ -19,7 +22,7 @@ function releaseRow(release) {
     <td data-label="Privacidad">${badge(release.privacy === 'public' ? 'público' : 'privado', 'mono')} ${release.debrid_cached ? badge('debrid', 'mono') : ''}</td>
     <td data-label="Progreso">${progress}</td>
     <td class="actions" data-label="">
-      <a class="btn btn-sm btn-ghost" href="/api/releases/${release.id}/torrent" download aria-label="Descargar .torrent de ${esc(release.title || 'esta versión')}">${icon('download', 'sm')} Torrent</a>
+      ${trackerHref ? `<a class="btn btn-sm btn-ghost" href="${trackerHref}" target="_blank" rel="noopener noreferrer" aria-label="Abrir ficha de ${esc(release.title || 'esta versión')} en el tracker">${icon('external', 'sm')} Ficha</a>` : ''}
       <button class="btn btn-sm btn-ghost" data-action="release-target" data-release="${release.id}">Fijar</button>
       <button class="btn btn-sm btn-ghost" data-action="release-health" data-release="${release.id}">Verificar</button>
       <button class="btn btn-sm" data-action="release-prepare" data-release="${release.id}">Preparar</button>
