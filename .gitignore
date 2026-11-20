@@ -26,8 +26,8 @@ dist/
 *.swp
 IMG_*.JPG
 
-# Skills locales de trabajo
-skills/
+# Skills locales de trabajo (no se publican)
+/.opencode/skills/
 
 # Prototipos anteriores: se conservan, no se versionan
 /assets.db
