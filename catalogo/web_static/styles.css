@@ -1048,3 +1048,6 @@ html[data-theme="light"] {
   .activity-bar { gap: 8px; }
   .activity-bar .btn { margin-left: auto; }
 }
+
+.episode-title-cell { color: inherit; text-decoration: none; }
+.episode-title-cell:hover strong { color: var(--carmine); }

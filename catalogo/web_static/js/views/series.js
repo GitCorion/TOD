@@ -62,20 +62,28 @@ export async function renderSeries({ params, query, signal }) {
       ? `${!ep.library_added ? `<button class="btn btn-sm btn-ghost" data-action="library-title" data-id="${ep.id}" data-key="${esc(ep.key)}" data-title="${esc(name)}" data-releases="${ep.releases || 0}">Añadir a la biblioteca</button>` : ''}
          ${ep.library_added && !ep.published && !ep.monitored ? `<button class="btn btn-sm btn-ghost" data-action="monitor-title" data-id="${ep.id}">Monitorizar</button>` : ''}
          ${ep.library_added && !ep.published && ep.monitored ? `<button class="btn btn-sm btn-ghost" data-action="unmonitor-title" data-id="${ep.id}">Quitar seguimiento</button>` : ''}
-         ${!ep.downloaded && !ep.published ? `<button class="btn btn-sm" data-action="download-now" data-key="${esc(ep.key)}">Forzar descarga</button>` : ''}`
+         ${!ep.downloaded && !ep.published ? `<button class="btn btn-sm" data-action="download-now" data-key="${esc(ep.key)}">Forzar descarga</button>` : ''}
+         <a class="btn btn-sm btn-ghost" href="#/title/${ep.id}">Abrir</a>`
       : '<span class="tiny faint">Sin importar</span>';
+    const sources = ep.releases
+      ? `${fmtInt(ep.releases)} <span class="faint">/ ${fmtInt(ep.alive)} vivos</span>`
+      : ep.published
+        ? status('Biblioteca', 'ok')
+        : ep.library_added
+          ? status('Sin enlace', 'warn')
+          : '<span class="faint">—</span>';
     return `<tr class="${ep.in_catalog ? '' : 'row-missing'}">
       <td data-label="Episodio">
-        <div class="episode-title-cell">
+        <a class="episode-title-cell" href="#/title/${ep.id}">
           ${still(ep.still_path, name)}
           <div class="cell-title">
             <strong>${esc(name)}</strong>
             <small>${tag}, ${esc(fmtShortDate(ep.air_date))}</small>
           </div>
-        </div>
+        </a>
       </td>
       <td data-label="Estado">${episodeStatus(ep)}</td>
-      <td data-label="Fuentes">${ep.releases ? `${fmtInt(ep.releases)} <span class="faint">/ ${fmtInt(ep.alive)} vivos</span>` : '<span class="faint">—</span>'}</td>
+      <td data-label="Fuentes">${sources}</td>
       <td data-label="Progreso">${ep.download === 'descargando' || ep.progress ? `<div class="progress-cell">${bar(ep.progress)}<span>${pct(ep.progress)}%</span></div>` : '<span class="faint">—</span>'}</td>
       <td class="actions" data-label="">${actions}</td>
     </tr>`;

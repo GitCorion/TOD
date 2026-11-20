@@ -74,7 +74,7 @@ export async function renderTitle({ params, query, signal }) {
         <div class="panel-head"><h2>Resumen técnico</h2><span class="right tiny faint">solo lectura</span></div>
         <div class="panel-body" style="padding-top:6px;padding-bottom:8px">
           <div class="kv"><span>Versiones</span><span>${data.releases.length} (${data.releases.filter((release) => release.health === 'alive').length} vivas)</span></div>
-          <div class="kv"><span>Ficheros</span><span>${data.files.length} (${data.files.filter((file) => file.storage_location === 'LOCAL_DISK').length} locales)</span></div>
+          <div class="kv"><span>Ficheros</span><span>${data.files.length + (data.library?.length || 0)} (${data.files.filter((file) => file.storage_location === 'LOCAL_DISK').length} locales, ${data.library?.length || 0} de biblioteca)</span></div>
           <div class="kv"><span>Puntero</span><span>${data.target ? `${esc(data.target.source_kind)} ${data.target.release_id ? `release ${data.target.release_id}` : ''}` : 'auto'}</span></div>
           <div class="kv"><span>Biblioteca</span><span>${data.library.length ? esc(data.library[0].source) : 'no'}</span></div>
           <div class="kv"><span>Clave</span><span class="mono">${esc(item.key)}</span></div>
@@ -109,6 +109,7 @@ export async function renderTitle({ params, query, signal }) {
     </div>
   `;
 
+  const libraryFiles = data.library || [];
   const files = `
     <div class="grid grid-2">
       <div class="panel flush">
@@ -121,7 +122,16 @@ export async function renderTitle({ params, query, signal }) {
             <td data-label="Tamaño">${fmtBytes(file.size_bytes)}</td>
             <td data-label="Ubicación">${badge(file.storage_location === 'LOCAL_DISK' ? 'local' : file.storage_location === '1FICHIER' ? 'archivo' : '—', 'mono')} ${badge(file.state, file.state === 'missing' ? 'mono' : 'mono')}</td>
           </tr>`).join('')}</tbody>
-        </table></div>` : empty('Sin ficheros', 'No hay copias locales ni de archivo indexadas.')}
+        </table></div>` : ''}
+        ${libraryFiles.length ? `<div class="table-wrap" style="margin-top:${data.files.length ? '10px' : '0'}"><table class="table--stack">
+          <thead><tr><th>Ruta de biblioteca</th><th>Tamaño</th><th>Origen</th></tr></thead>
+          <tbody>${libraryFiles.map((file) => `<tr>
+            <td data-label="Ruta"><span class="mono tiny">${esc(file.path || '—')}</span></td>
+            <td data-label="Tamaño">${fmtBytes(file.size_bytes)}</td>
+            <td data-label="Origen">${badge(file.source || 'biblioteca', 'mono')}</td>
+          </tr>`).join('')}</tbody>
+        </table></div>` : ''}
+        ${!data.files.length && !libraryFiles.length ? empty('Sin ficheros', 'No hay copias locales ni de archivo indexadas.') : ''}
       </div>
       <div class="panel flush">
         <div class="panel-head"><h2>Compromisos de siembra</h2></div>
@@ -191,7 +201,7 @@ export async function renderTitle({ params, query, signal }) {
     <div class="tabs" role="tablist">
       <button class="${tab === 'resumen' ? 'active' : ''}" data-action="detail-tab" data-tab="resumen" role="tab" aria-selected="${tab === 'resumen'}">Resumen</button>
       <button class="${tab === 'fuentes' ? 'active' : ''}" data-action="detail-tab" data-tab="fuentes" role="tab" aria-selected="${tab === 'fuentes'}">Fuentes <b>${data.releases.length}</b></button>
-      <button class="${tab === 'ficheros' ? 'active' : ''}" data-action="detail-tab" data-tab="ficheros" role="tab" aria-selected="${tab === 'ficheros'}">Ficheros <b>${data.files.length}</b></button>
+      <button class="${tab === 'ficheros' ? 'active' : ''}" data-action="detail-tab" data-tab="ficheros" role="tab" aria-selected="${tab === 'ficheros'}">Ficheros <b>${data.files.length + libraryFiles.length}</b></button>
       <button class="${tab === 'historial' ? 'active' : ''}" data-action="detail-tab" data-tab="historial" role="tab" aria-selected="${tab === 'historial'}">Historial <b>${data.events.length}</b></button>
     </div>
 
