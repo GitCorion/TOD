@@ -57,41 +57,38 @@ class FakeQbit:
         return []
 
 
-def make_radarr(path):
-    conn = sqlite3.connect(path)
-    conn.executescript(
-        """
-        CREATE TABLE MovieMetadata (Id INTEGER PRIMARY KEY, TmdbId INTEGER,
-                                    Title TEXT, Year INTEGER);
-        CREATE TABLE Movies (Id INTEGER PRIMARY KEY, MovieMetadataId INTEGER);
-        CREATE TABLE History (Id INTEGER PRIMARY KEY, DownloadId TEXT,
-                              MovieId INTEGER);
-        INSERT INTO MovieMetadata VALUES (1, 100, 'Comp Movie', 2024);
-        INSERT INTO Movies VALUES (1, 1);
-        INSERT INTO History VALUES (1, 'COMP1', 1);
-        """
-    )
-    conn.commit()
-    conn.close()
+class FakeRadarrAPI:
+    def movies(self):
+        return [
+            {"id": 1, "tmdbId": 100, "title": "Comp Movie", "year": 2024}
+        ]
+
+    def history_all(self, **_kwargs):
+        return [{"downloadId": "COMP1", "movieId": 1}]
 
 
-def make_sonarr(path):
-    conn = sqlite3.connect(path)
-    conn.executescript(
-        """
-        CREATE TABLE Series (Id INTEGER PRIMARY KEY, TvdbId INTEGER,
-                             TmdbId INTEGER, Title TEXT);
-        CREATE TABLE Episodes (Id INTEGER PRIMARY KEY, SeasonNumber INTEGER,
-                               EpisodeNumber INTEGER);
-        CREATE TABLE History (Id INTEGER PRIMARY KEY, DownloadId TEXT,
-                              SeriesId INTEGER, EpisodeId INTEGER);
-        INSERT INTO Series VALUES (1, 555, 200, 'Test Show');
-        INSERT INTO Episodes VALUES (1, 1, 2);
-        INSERT INTO History VALUES (1, 'SER1', 1, 1);
-        """
-    )
-    conn.commit()
-    conn.close()
+class FakeSonarrAPI:
+    def series(self):
+        return [
+            {
+                "id": 1,
+                "tvdbId": 555,
+                "tmdbId": 200,
+                "title": "Test Show",
+            }
+        ]
+
+    def episodes(self, series_id):
+        return [
+            {
+                "id": 1,
+                "seasonNumber": 1,
+                "episodeNumber": 2,
+            }
+        ]
+
+    def history_all(self, **_kwargs):
+        return [{"downloadId": "SER1", "seriesId": 1, "episodeId": 1}]
 
 
 def seed_db(tmp_path):
@@ -127,10 +124,8 @@ def seed_db(tmp_path):
 
 
 def test_indexes(tmp_path):
-    radarr = tmp_path / "radarr.db"
-    sonarr = tmp_path / "sonarr.db"
-    make_radarr(radarr)
-    make_sonarr(sonarr)
+    radarr = FakeRadarrAPI()
+    sonarr = FakeSonarrAPI()
     assert radarr_index(radarr)["comp1"]["tmdb"] == 100
     assert sonarr_index(sonarr)["ser1"][0]["tmdb"] == 200
     assert sonarr_index(sonarr)["ser1"][0]["tvdb"] == 555
@@ -138,14 +133,12 @@ def test_indexes(tmp_path):
 
 def test_sync_read_only_and_dedup(tmp_path):
     db, asset_id = seed_db(tmp_path)
-    radarr = tmp_path / "radarr.db"
-    sonarr = tmp_path / "sonarr.db"
-    make_radarr(radarr)
-    make_sonarr(sonarr)
+    radarr = FakeRadarrAPI()
+    sonarr = FakeSonarrAPI()
     client = FakeQbit()
 
     report = sync(
-        db, client, radarr_db=radarr, sonarr_db=sonarr,
+        db, client, radarr=radarr, sonarr=sonarr,
         dry_run=False, check_exists=False, now=NOW,
     )
     assert report.torrents_seen == 3
@@ -185,15 +178,13 @@ def test_sync_read_only_and_dedup(tmp_path):
 
 def test_sync_is_idempotent_and_dry_run(tmp_path):
     db, _asset_id = seed_db(tmp_path)
-    radarr = tmp_path / "radarr.db"
-    sonarr = tmp_path / "sonarr.db"
-    make_radarr(radarr)
-    make_sonarr(sonarr)
+    radarr = FakeRadarrAPI()
+    sonarr = FakeSonarrAPI()
     client = FakeQbit()
 
-    first = sync(db, client, radarr_db=radarr, sonarr_db=sonarr,
+    first = sync(db, client, radarr=radarr, sonarr=sonarr,
                  check_exists=False, now=NOW)
-    second = sync(db, client, radarr_db=radarr, sonarr_db=sonarr,
+    second = sync(db, client, radarr=radarr, sonarr=sonarr,
                   check_exists=False, now=NOW)
     assert first.torrents_seen == second.torrents_seen == 3
     conn = sqlite3.connect(db)
@@ -202,7 +193,7 @@ def test_sync_is_idempotent_and_dry_run(tmp_path):
     conn.close()
 
     db2, _ = seed_db(tmp_path / "dry")
-    dry = sync(db2, client, radarr_db=radarr, sonarr_db=sonarr,
+    dry = sync(db2, client, radarr=radarr, sonarr=sonarr,
                dry_run=True, check_exists=False, now=NOW)
     assert dry.dry_run
     conn = sqlite3.connect(db2)
@@ -276,7 +267,7 @@ def test_ondemand_removed_after_min_seed_is_closed(tmp_path):
         tmp_path, NOW - timedelta(hours=200)
     )
     report = sync(
-        db, EmptyQbit(), radarr_db=None, sonarr_db=None,
+        db, EmptyQbit(), 
         check_exists=False, now=NOW,
     )
     assert report.torrents_removed == 1
@@ -298,7 +289,7 @@ def test_ondemand_removed_early_requests_reseed(tmp_path):
         tmp_path, NOW - timedelta(hours=1)
     )
     report = sync(
-        db, EmptyQbit(), radarr_db=None, sonarr_db=None,
+        db, EmptyQbit(), 
         check_exists=False, now=NOW,
     )
     assert report.torrents_removed == 1

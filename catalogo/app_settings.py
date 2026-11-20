@@ -156,18 +156,6 @@ SETTINGS: tuple[Setting, ...] = (
         default="/mnt/catalogo:/mnt/palantir",
         help="Rutas permitidas para /catalog/lookup, separadas por ':' o ','.",
     ),
-    Setting(
-        "radarr_db", "radarr_db", "directorios", "Radarr · base de datos",
-        kind="path", env="RADARR_DB",
-        default="/var/lib/radarr/radarr.db",
-        help="Solo lectura, para el puente y la biblioteca.",
-    ),
-    Setting(
-        "sonarr_db", "sonarr_db", "directorios", "Sonarr · base de datos",
-        kind="path", env="SONARR_DB",
-        default="/var/lib/sonarr/sonarr.db",
-        help="Solo lectura, para el puente y la biblioteca.",
-    ),
     # Reproducción
     Setting(
         "ondemand_max_active", "max_active_ondemand", "reproduccion",

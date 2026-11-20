@@ -204,8 +204,8 @@ def export_strm(
     year: int | None = None,
     kind: str | None = None,
     skip_library: bool = False,
-    radarr_db: str | Path | None = None,
-    sonarr_db: str | Path | None = None,
+    radarr=None,
+    sonarr=None,
 ) -> dict:
     if versions_filter not in ("available", "alive", "all"):
         raise ValueError(f"versions_filter no válido: {versions_filter}")
@@ -219,9 +219,7 @@ def export_strm(
     pruned = 0
     expected: set[Path] = set()
     skipped_reasons: dict[str, int] = {}
-    library = (
-        build_library_index(radarr_db, sonarr_db) if skip_library else None
-    )
+    library = build_library_index(radarr, sonarr) if skip_library else None
     conditions = ["EXISTS (SELECT 1 FROM releases r WHERE r.asset_id = a.id)"]
     params: list[object] = []
     if key:

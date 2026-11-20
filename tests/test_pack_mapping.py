@@ -36,36 +36,38 @@ class PackQbit:
         ]
 
 
-def make_sonarr_pack(path):
-    conn = sqlite3.connect(path)
-    conn.executescript(
-        """
-        CREATE TABLE Series (Id INTEGER PRIMARY KEY, TvdbId INTEGER,
-                             TmdbId INTEGER, Title TEXT);
-        CREATE TABLE Episodes (Id INTEGER PRIMARY KEY, SeasonNumber INTEGER,
-                               EpisodeNumber INTEGER);
-        CREATE TABLE History (Id INTEGER PRIMARY KEY, DownloadId TEXT,
-                              SeriesId INTEGER, EpisodeId INTEGER);
-        INSERT INTO Series VALUES (1, 555, 200, 'Test Show');
-        INSERT INTO Episodes VALUES (1, 1, 1);
-        INSERT INTO Episodes VALUES (2, 1, 2);
-        INSERT INTO History VALUES (1, 'SER1', 1, 1);
-        INSERT INTO History VALUES (2, 'SER1', 1, 2);
-        """
-    )
-    conn.commit()
-    conn.close()
+class FakeSonarr:
+    def series(self):
+        return [
+            {
+                "id": 1,
+                "tvdbId": 555,
+                "tmdbId": 200,
+                "title": "Test Show",
+            }
+        ]
+
+    def episodes(self, series_id):
+        return [
+            {"id": 1, "seasonNumber": 1, "episodeNumber": 1},
+            {"id": 2, "seasonNumber": 1, "episodeNumber": 2},
+        ]
+
+    def history_all(self, **_kwargs):
+        return [
+            {"downloadId": "SER1", "seriesId": 1, "episodeId": 1},
+            {"downloadId": "SER1", "seriesId": 1, "episodeId": 2},
+        ]
 
 
 def test_pack_maps_each_episode_and_keeps_readme_unassigned(tmp_path):
     db = tmp_path / "catalogo.db"
     init_db(db, MIGRATIONS)
-    sonarr = tmp_path / "sonarr.db"
-    make_sonarr_pack(sonarr)
+    sonarr = FakeSonarr()
     client = PackQbit()
 
     report = sync(
-        db, client, radarr_db=None, sonarr_db=sonarr,
+        db, client, sonarr=sonarr,
         check_exists=False, now=None,
     )
     assert report.errors == []

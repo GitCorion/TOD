@@ -32,33 +32,29 @@ class MovingQbit:
                  "progress": 1, "priority": 1}]
 
 
-def make_radarr(path):
-    conn = sqlite3.connect(path)
-    conn.executescript(
-        """
-        CREATE TABLE MovieMetadata (Id INTEGER PRIMARY KEY, TmdbId INTEGER,
-                                    Title TEXT, Year INTEGER);
-        CREATE TABLE Movies (Id INTEGER PRIMARY KEY, MovieMetadataId INTEGER);
-        CREATE TABLE History (Id INTEGER PRIMARY KEY, DownloadId TEXT,
-                              MovieId INTEGER);
-        INSERT INTO MovieMetadata VALUES (1, 300, 'Moving Movie', 2026);
-        INSERT INTO Movies VALUES (1, 1);
-        INSERT INTO History VALUES (1, 'MOV1', 1);
-        """
-    )
-    conn.commit()
-    conn.close()
+class FakeRadarr:
+    def movies(self):
+        return [
+            {
+                "id": 1,
+                "tmdbId": 300,
+                "title": "Moving Movie",
+                "year": 2026,
+            }
+        ]
+
+    def history_all(self, **_kwargs):
+        return [{"downloadId": "MOV1", "movieId": 1}]
 
 
 def test_moving_is_not_missing_and_transitions_to_1fichier(tmp_path):
     db = tmp_path / "catalogo.db"
     init_db(db, MIGRATIONS)
-    radarr = tmp_path / "radarr.db"
-    make_radarr(radarr)
+    radarr = FakeRadarr()
     client = MovingQbit()
 
     report = sync(
-        db, client, radarr_db=radarr, sonarr_db=None,
+        db, client, radarr=radarr,
         check_exists=False,
     )
     assert report.missing_files == 0
@@ -83,7 +79,7 @@ def test_moving_is_not_missing_and_transitions_to_1fichier(tmp_path):
     # Simula que el move termina: qBittorrent ya ve el fichero en 1fichier.
     client.state = "stalledUP"
     report = sync(
-        db, client, radarr_db=radarr, sonarr_db=None,
+        db, client, radarr=radarr,
         check_exists=False,
     )
     assert report.missing_files == 0

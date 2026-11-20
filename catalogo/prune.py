@@ -22,11 +22,11 @@ def prune_library(
     db_path,
     out_dir,
     *,
-    radarr_db: str | Path | None = None,
-    sonarr_db: str | Path | None = None,
+    radarr=None,
+    sonarr=None,
     dry_run: bool = True,
 ) -> dict:
-    index = build_library_index(radarr_db, sonarr_db)
+    index = build_library_index(radarr, sonarr)
     root = Path(out_dir)
     assets_in_library = 0
     removed: list[str] = []

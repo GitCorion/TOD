@@ -150,6 +150,7 @@ def cmd_targets(args, config: Config) -> int:
 
 
 def cmd_export_strm(args, config: Config) -> int:
+    radarr, sonarr = _arr_clients(config)
     result = export_strm(
         config.db_path,
         args.out,
@@ -165,8 +166,8 @@ def cmd_export_strm(args, config: Config) -> int:
         year=args.year,
         kind=args.kind,
         skip_library=args.skip_library,
-        radarr_db=args.radarr_db,
-        sonarr_db=args.sonarr_db,
+        radarr=radarr,
+        sonarr=sonarr,
     )
     _print(result)
     return 0
@@ -515,6 +516,16 @@ def _qbit(config: Config) -> QbittorrentClient | None:
         return None
 
 
+def _arr_clients(config: Config):
+    radarr = (
+        RadarrClient.from_config(config) if config.radarr_api_key else None
+    )
+    sonarr = (
+        SonarrClient.from_config(config) if config.sonarr_api_key else None
+    )
+    return radarr, sonarr
+
+
 def cmd_qbit_version(args, config: Config) -> int:
     client = _qbit(config)
     if client is None:
@@ -552,11 +563,12 @@ def cmd_qbit_sync(args, config: Config) -> int:
     client = _qbit(config)
     if client is None:
         return 2
+    radarr, sonarr = _arr_clients(config)
     report = qbit_sync(
         config.db_path,
         client,
-        radarr_db=args.radarr_db,
-        sonarr_db=args.sonarr_db,
+        radarr=radarr,
+        sonarr=sonarr,
         dry_run=args.dry_run,
         check_exists=not args.no_check_paths,
     )
@@ -793,10 +805,11 @@ def cmd_bridge(args, config: Config) -> int:
 
 
 def cmd_sync_library(args, config: Config) -> int:
+    radarr, sonarr = _arr_clients(config)
     report = sync_library(
         str(config.db_path),
-        radarr_db=args.radarr_db,
-        sonarr_db=args.sonarr_db,
+        radarr=radarr,
+        sonarr=sonarr,
     )
     _print(report)
     return 0 if report.get("ok") else 2
@@ -809,6 +822,7 @@ def cmd_restore_strm(args, config: Config) -> int:
         if part.strip()
     ]
     out = args.out or str(config.catalog_library)
+    radarr, sonarr = _arr_clients(config)
     report: dict = {}
     for year in years:
         report[f"movie_{year}"] = export_strm(
@@ -819,8 +833,8 @@ def cmd_restore_strm(args, config: Config) -> int:
             year=year,
             kind="movie",
             skip_library=False,
-            radarr_db=args.radarr_db,
-            sonarr_db=args.sonarr_db,
+            radarr=radarr,
+            sonarr=sonarr,
         )
     if not args.no_series:
         report["series"] = export_strm(
@@ -830,19 +844,20 @@ def cmd_restore_strm(args, config: Config) -> int:
             limit=None,
             kind="series",
             skip_library=False,
-            radarr_db=args.radarr_db,
-            sonarr_db=args.sonarr_db,
+            radarr=radarr,
+            sonarr=sonarr,
         )
     _print(report)
     return 0
 
 
 def cmd_prune_library(args, config: Config) -> int:
+    radarr, sonarr = _arr_clients(config)
     report = prune_library(
         str(config.db_path),
         args.out,
-        radarr_db=args.radarr_db,
-        sonarr_db=args.sonarr_db,
+        radarr=radarr,
+        sonarr=sonarr,
         dry_run=not args.execute,
     )
     _print(report)
@@ -978,6 +993,8 @@ def cmd_worker(args, config: Config) -> int:
         except QbittorrentError:
             qbit_write = None
 
+    arr_radarr, arr_sonarr = _arr_clients(config)
+
     def cleanup() -> dict:
         return {"leases": cleanup_leases(str(config.db_path), before_seconds=3600)}
 
@@ -986,7 +1003,7 @@ def cmd_worker(args, config: Config) -> int:
             return {"skipped": "no_sync"}
         return qbit_sync(
             str(config.db_path), qbit_read,
-            radarr_db=args.radarr_db, sonarr_db=args.sonarr_db,
+            radarr=arr_radarr, sonarr=arr_sonarr,
             check_exists=True,
         ).public()
 
@@ -1014,8 +1031,8 @@ def cmd_worker(args, config: Config) -> int:
     def library() -> dict:
         return sync_library(
             str(config.db_path),
-            radarr_db=args.radarr_db,
-            sonarr_db=args.sonarr_db,
+            radarr=arr_radarr,
+            sonarr=arr_sonarr,
         )
 
     def repair() -> dict:
@@ -1159,8 +1176,6 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--year", type=int)
     p.add_argument("--kind", choices=["movie", "series"])
     p.add_argument("--skip-library", action="store_true")
-    p.add_argument("--radarr-db", default="/var/lib/radarr/radarr.db")
-    p.add_argument("--sonarr-db", default="/var/lib/sonarr/sonarr.db")
     p.add_argument("--limit", type=int, default=20)
     p.add_argument("--include-unavailable", action="store_true")
     p.add_argument("--require-health", action="store_true")
@@ -1332,14 +1347,6 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("hash")
 
     p = sub.add_parser("qbit-sync", help="sincroniza qBittorrent en solo lectura")
-    p.add_argument(
-        "--radarr-db",
-        default="/var/lib/radarr/radarr.db",
-    )
-    p.add_argument(
-        "--sonarr-db",
-        default="/var/lib/sonarr/sonarr.db",
-    )
     p.add_argument("--dry-run", action="store_true")
     p.add_argument("--no-check-paths", action="store_true")
 
@@ -1378,8 +1385,6 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--no-seeding", action="store_true")
     p.add_argument("--no-evict", action="store_true")
     p.add_argument("--no-debrid", action="store_true")
-    p.add_argument("--radarr-db", default="/var/lib/radarr/radarr.db")
-    p.add_argument("--sonarr-db", default="/var/lib/sonarr/sonarr.db")
 
     p = sub.add_parser("abandon", help="pausa/borra descargas bajo el umbral sin reproducción")
     p.add_argument("--limit", type=int, default=20)
@@ -1423,8 +1428,6 @@ def build_parser() -> argparse.ArgumentParser:
 
     p = sub.add_parser("prune-library", help="borra .strm de títulos ya en Radarr/Sonarr")
     p.add_argument("--out", required=True)
-    p.add_argument("--radarr-db", default="/var/lib/radarr/radarr.db")
-    p.add_argument("--sonarr-db", default="/var/lib/sonarr/sonarr.db")
     p.add_argument("--execute", action="store_true")
 
     p = sub.add_parser("bridge", help="copia al *arr lo descargado por el catálogo")
@@ -1449,8 +1452,6 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--no-export", action="store_true")
 
     p = sub.add_parser("sync-library", help="sincroniza library_files desde Radarr/Sonarr")
-    p.add_argument("--radarr-db", default="/var/lib/radarr/radarr.db")
-    p.add_argument("--sonarr-db", default="/var/lib/sonarr/sonarr.db")
 
     p = sub.add_parser(
         "restore-strm",
@@ -1459,8 +1460,6 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--years", default="2020,2021,2022,2023,2024,2025,2026")
     p.add_argument("--out")
     p.add_argument("--base-url", default="http://127.0.0.1:8773")
-    p.add_argument("--radarr-db", default="/var/lib/radarr/radarr.db")
-    p.add_argument("--sonarr-db", default="/var/lib/sonarr/sonarr.db")
     p.add_argument("--no-series", action="store_true")
 
     p = sub.add_parser(

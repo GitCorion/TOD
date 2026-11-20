@@ -1216,6 +1216,41 @@ class Handler(PlaybackHandler):
             app.audit("web.scheduler_run", payload=result)
             return self._json(202, result, head=head)
 
+        if parts == ["setup"] and not mutate:
+            config = app.config
+            capabilities = {
+                "qbittorrent": bool(config.qbittorrent_pass),
+                "prowlarr": bool(config.prowlarr_api_key),
+                "jackett": bool(config.jackett_api_key),
+                "jellyfin": bool(config.jellyfin_api_key),
+                "radarr": bool(config.radarr_api_key),
+                "sonarr": bool(config.sonarr_api_key),
+                "tmdb": bool(config.tmdb_api_key),
+            }
+            paths = {
+                "catalog_library": app_settings.path_status(
+                    config.catalog_library
+                ),
+                "downloads_root": app_settings.path_status(
+                    config.downloads_root
+                ),
+            }
+            missing = [
+                name for name, ok in capabilities.items()
+                if not ok and name in ("qbittorrent", "prowlarr", "jellyfin", "tmdb")
+            ]
+            if not paths["catalog_library"].get("exists"):
+                missing.append("catalog_library")
+            return self._json(
+                200,
+                {
+                    "capabilities": capabilities,
+                    "missing": missing,
+                    "paths": paths,
+                },
+                head=head,
+            )
+
         if parts == ["system"] and not mutate:
             return self._json(200, self._system(), head=head)
 

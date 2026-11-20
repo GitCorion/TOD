@@ -41,42 +41,65 @@ def seed_catalog(tmp_path):
     return db
 
 
-def make_radarr(path):
-    conn = sqlite3.connect(path)
-    conn.executescript(
-        """
-        CREATE TABLE MovieMetadata (Id INTEGER PRIMARY KEY, TmdbId INTEGER);
-        CREATE TABLE Movies (Id INTEGER PRIMARY KEY, MovieMetadataId INTEGER,
-                             MovieFileId INTEGER);
-        INSERT INTO MovieMetadata VALUES (1, 1);
-        INSERT INTO Movies VALUES (1, 1, 1);
-        """
-    )
-    conn.commit()
-    conn.close()
+class FakeRadarr:
+    def __init__(self, movies):
+        self._movies = movies
+
+    def movies(self):
+        return self._movies
 
 
-def make_sonarr(path):
-    conn = sqlite3.connect(path)
-    conn.executescript(
-        """
-        CREATE TABLE Series (Id INTEGER PRIMARY KEY, TmdbId INTEGER);
-        CREATE TABLE Episodes (Id INTEGER PRIMARY KEY, SeriesId INTEGER,
-                               SeasonNumber INTEGER, EpisodeNumber INTEGER,
-                               EpisodeFileId INTEGER);
-        INSERT INTO Series VALUES (1, 2);
-        INSERT INTO Episodes VALUES (1, 1, 1, 3, 1);
-        """
+class FakeSonarr:
+    def __init__(self, series, episodes, files=None):
+        self._series = series
+        self._episodes = episodes
+        self._files = files or {}
+
+    def series(self):
+        return self._series
+
+    def episodes(self, series_id):
+        return self._episodes.get(int(series_id), [])
+
+    def episode_files(self, series_id):
+        return self._files.get(int(series_id), [])
+
+
+def make_radarr():
+    return FakeRadarr(
+        [
+            {
+                "id": 1,
+                "tmdbId": 1,
+                "hasFile": True,
+                "path": "/library/Test Movie (2020)",
+                "title": "Test Movie",
+                "year": 2020,
+            }
+        ]
     )
-    conn.commit()
-    conn.close()
+
+
+def make_sonarr():
+    return FakeSonarr(
+        [{"id": 1, "tmdbId": 2, "title": "Serie", "path": "/library/Serie"}],
+        {
+            1: [
+                {
+                    "id": 10,
+                    "seasonNumber": 1,
+                    "episodeNumber": 3,
+                    "hasFile": True,
+                    "episodeFileId": 100,
+                }
+            ]
+        },
+    )
 
 
 def test_library_index_detects_movie_and_episode(tmp_path):
-    radarr = tmp_path / "radarr.db"
-    sonarr = tmp_path / "sonarr.db"
-    make_radarr(radarr)
-    make_sonarr(sonarr)
+    radarr = make_radarr()
+    sonarr = make_sonarr()
     index = build_library_index(radarr, sonarr)
     assert index.movies == {1}
     assert index.episodes == {(2, 1, 3)}
@@ -96,10 +119,8 @@ def test_library_index_detects_movie_and_episode(tmp_path):
 
 def test_export_skips_library_and_prune_removes_strm(tmp_path):
     db = seed_catalog(tmp_path)
-    radarr = tmp_path / "radarr.db"
-    sonarr = tmp_path / "sonarr.db"
-    make_radarr(radarr)
-    make_sonarr(sonarr)
+    radarr = make_radarr()
+    sonarr = make_sonarr()
     out = tmp_path / "strm"
 
     first = export_strm(db, out, base_url="http://127.0.0.1:8773")
@@ -109,13 +130,13 @@ def test_export_skips_library_and_prune_removes_strm(tmp_path):
 
     skipped = export_strm(
         db, out, base_url="http://127.0.0.1:8773",
-        skip_library=True, radarr_db=radarr, sonarr_db=sonarr,
+        skip_library=True, radarr=radarr, sonarr=sonarr,
     )
     assert skipped["skipped"] == 2
     assert skipped["skipped_reasons"]["in_library"] == 2
 
     report = prune_library(
-        db, out, radarr_db=radarr, sonarr_db=sonarr, dry_run=False
+        db, out, radarr=radarr, sonarr=sonarr, dry_run=False
     )
     assert report["assets_in_library"] == 2
     assert report["removed_count"] == 2
@@ -124,27 +145,19 @@ def test_export_skips_library_and_prune_removes_strm(tmp_path):
 
 def test_restore_readds_strm_if_library_copy_disappears(tmp_path):
     db = seed_catalog(tmp_path)
-    radarr = tmp_path / "radarr.db"
-    sonarr = tmp_path / "sonarr.db"
-    make_radarr(radarr)
-    make_sonarr(sonarr)
+    radarr = make_radarr()
+    sonarr = make_sonarr()
     out = tmp_path / "strm"
     export_strm(db, out, base_url="http://127.0.0.1:8773")
-    prune_library(db, out, radarr_db=radarr, sonarr_db=sonarr, dry_run=False)
+    prune_library(db, out, radarr=radarr, sonarr=sonarr, dry_run=False)
     assert not list(out.rglob("*.strm"))
 
-    conn = sqlite3.connect(radarr)
-    conn.execute("UPDATE Movies SET MovieFileId=0")
-    conn.commit()
-    conn.close()
-    conn = sqlite3.connect(sonarr)
-    conn.execute("UPDATE Episodes SET EpisodeFileId=0")
-    conn.commit()
-    conn.close()
+    radarr._movies[0]["hasFile"] = False
+    sonarr._episodes[1][0]["hasFile"] = False
 
     restored = export_strm(
         db, out, base_url="http://127.0.0.1:8773",
-        skip_library=True, radarr_db=radarr, sonarr_db=sonarr,
+        skip_library=True, radarr=radarr, sonarr=sonarr,
     )
     assert restored["written"] == 2
     assert (out / "movies" / "Test Movie (2020)").is_dir()

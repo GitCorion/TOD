@@ -1,5 +1,5 @@
 [build-system]
-requires = ["setuptools>=68", "wheel"]
+requires = ["setuptools>=77", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
@@ -7,7 +7,8 @@ name = "tod"
 version = "0.2.0"
 description = "TOD — Torrent on Demand: catálogo, reproducción y administración unificados"
 readme = "README.md"
-license = { text = "MIT" }
+license = "MIT"
+license-files = ["LICENSE"]
 authors = [{ name = "TOD contributors" }]
 requires-python = ">=3.11"
 dependencies = []
@@ -15,13 +16,15 @@ keywords = ["torrent", "qbittorrent", "prowlarr", "jackett", "jellyfin", "stream
 classifiers = [
   "Development Status :: 4 - Beta",
   "Environment :: Web Environment",
-  "License :: OSI Approved :: MIT License",
   "Programming Language :: Python :: 3",
   "Programming Language :: Python :: 3.11",
   "Programming Language :: Python :: 3.12",
   "Programming Language :: Python :: 3.13",
   "Topic :: Multimedia :: Video",
 ]
+
+[project.optional-dependencies]
+dev = ["pytest>=8"]
 
 [project.urls]
 Homepage = "https://github.com/GitCorion/TOD"

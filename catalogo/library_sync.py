@@ -1,110 +1,106 @@
-"""Reconstruye `library_files` desde Radarr y Sonarr en solo lectura."""
+"""Reconstruye `library_files` desde las API de Radarr y Sonarr."""
 
 from __future__ import annotations
 
-import sqlite3
 from contextlib import closing
 from pathlib import Path
 
 from .db import connect
 
 
-def _readonly(path) -> sqlite3.Connection | None:
-    if not path:
+def _file_path(base: str | None, relative: str | None) -> str | None:
+    if not relative:
         return None
-    db = Path(path)
-    if not db.is_file():
+    path = Path(relative)
+    if path.is_absolute():
+        return str(path)
+    if not base:
         return None
-    conn = sqlite3.connect(
-        f"file:{db}?mode=ro", uri=True, timeout=10
-    )
-    conn.row_factory = sqlite3.Row
-    return conn
+    return str(Path(base) / path)
 
 
-def sync_library(
-    db_path,
-    *,
-    radarr_db=None,
-    sonarr_db=None,
-) -> dict:
+def sync_library(db_path, *, radarr=None, sonarr=None) -> dict:
     entries: list[tuple] = []
     movies = 0
     episodes = 0
-    readable = 0
+    errors: list[str] = []
 
-    conn = _readonly(radarr_db)
-    if conn is not None:
+    if radarr is not None:
         try:
-            with closing(conn):
-                for row in conn.execute(
-                    """
-                    SELECT m.TmdbId, mv.Path, f.RelativePath, f.Size
-                    FROM Movies mv
-                    JOIN MovieMetadata m ON m.Id = mv.MovieMetadataId
-                    JOIN MovieFiles f ON f.MovieId = mv.Id
-                    WHERE mv.MovieFileId > 0 AND m.TmdbId IS NOT NULL
-                    """
-                ):
-                    try:
-                        tmdb = int(row["TmdbId"] or 0)
-                    except (TypeError, ValueError):
-                        continue
-                    if not tmdb or not row["Path"] or not row["RelativePath"]:
-                        continue
-                    path = str(Path(row["Path"]) / row["RelativePath"])
-                    entries.append(
-                        ("movie", tmdb, 0, 0, path,
-                         int(row["Size"] or 0), "radarr")
+            for movie in radarr.movies():
+                if not movie.get("hasFile"):
+                    continue
+                tmdb = int(movie.get("tmdbId") or 0)
+                movie_file = movie.get("movieFile") or {}
+                path = movie_file.get("path") or _file_path(
+                    movie.get("path"), movie_file.get("relativePath")
+                )
+                if not tmdb or not path:
+                    continue
+                entries.append(
+                    (
+                        "movie",
+                        tmdb,
+                        0,
+                        0,
+                        str(path),
+                        int(movie_file.get("size") or 0),
+                        "radarr",
                     )
-                    movies += 1
-            readable += 1
-        except sqlite3.Error:
-            pass
+                )
+                movies += 1
+        except Exception as exc:
+            errors.append(f"radarr: {str(exc)[:160]}")
 
-    conn = _readonly(sonarr_db)
-    if conn is not None:
+    if sonarr is not None:
         try:
-            with closing(conn):
-                for row in conn.execute(
-                    """
-                    SELECT s.TmdbId, s.Path, e.SeasonNumber, e.EpisodeNumber,
-                           f.RelativePath, f.Size
-                    FROM Episodes e
-                    JOIN EpisodeFiles f ON f.Id = e.EpisodeFileId
-                    JOIN Series s ON s.Id = e.SeriesId
-                    WHERE e.EpisodeFileId > 0 AND s.TmdbId IS NOT NULL
-                    """
-                ):
-                    try:
-                        tmdb = int(row["TmdbId"] or 0)
-                        season = int(row["SeasonNumber"] or 0)
-                        episode = int(row["EpisodeNumber"] or 0)
-                    except (TypeError, ValueError):
+            for series in sonarr.series():
+                tmdb = int(series.get("tmdbId") or 0)
+                series_id = series.get("id")
+                if not tmdb or series_id is None:
+                    continue
+                files = {
+                    int(item.get("id") or 0): item
+                    for item in sonarr.episode_files(int(series_id))
+                }
+                for episode in sonarr.episodes(int(series_id)):
+                    if not episode.get("hasFile"):
                         continue
-                    if (
-                        not tmdb
-                        or not row["Path"]
-                        or not row["RelativePath"]
-                        or episode <= 0
-                    ):
+                    file_id = int(episode.get("episodeFileId") or 0)
+                    item = files.get(file_id)
+                    if item is None:
                         continue
-                    path = str(Path(row["Path"]) / row["RelativePath"])
+                    path = item.get("path") or _file_path(
+                        series.get("path"), item.get("relativePath")
+                    )
+                    if not path:
+                        continue
+                    season = int(episode.get("seasonNumber") or 0)
+                    number = int(episode.get("episodeNumber") or 0)
+                    if number <= 0:
+                        continue
                     entries.append(
-                        ("series", tmdb, season, episode, path,
-                         int(row["Size"] or 0), "sonarr")
+                        (
+                            "series",
+                            tmdb,
+                            season,
+                            number,
+                            str(path),
+                            int(item.get("size") or 0),
+                            "sonarr",
+                        )
                     )
                     episodes += 1
-            readable += 1
-        except sqlite3.Error:
-            pass
+        except Exception as exc:
+            errors.append(f"sonarr: {str(exc)[:160]}")
 
-    if readable == 0:
+    if radarr is None and sonarr is None:
         return {
             "ok": False,
-            "error": "sin bases de Radarr/Sonarr legibles",
+            "error": "sin Radarr/Sonarr configurados (API key)",
             "entries": 0,
         }
+
     with closing(connect(db_path)) as db:
         db.execute("BEGIN IMMEDIATE")
         db.execute("DELETE FROM library_files")
@@ -122,4 +118,5 @@ def sync_library(
         "entries": len(entries),
         "movies": movies,
         "episodes": episodes,
+        "errors": errors,
     }

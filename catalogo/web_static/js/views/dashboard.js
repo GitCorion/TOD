@@ -9,6 +9,7 @@ export async function renderDashboard({ signal }) {
   const activity = state.activity || await api('/api/activity', { signal }).catch(() => null);
   const jobsData = await api('/api/jobs?limit=6', { signal }).catch(() => ({ items: [] }));
   const preview = await api('/api/ondemand/catalog?publication=publicado&group=series&per_page=6&facets=0', { signal }).catch(() => ({ items: [] }));
+  const setup = await api('/api/setup', { signal }).catch(() => null);
   const recentJobs = jobsData.items || [];
   const catalog = data.catalog || {};
   const movies = catalog.movies || {};
@@ -28,6 +29,7 @@ export async function renderDashboard({ signal }) {
   }
   if (downloads.paused) alerts.push(`${fmtInt(downloads.paused)} descargas on-demand están pausadas.`);
   if (downloads.error) alerts.push(`${fmtInt(downloads.error)} descargas on-demand tienen error.`);
+  const setupMissing = setup?.missing || [];
 
   const recent = (library.recent || []).slice(0, 7).map((item) => {
     const meta = item.kind === 'movie'
@@ -69,6 +71,17 @@ export async function renderDashboard({ signal }) {
       <input name="q" placeholder="Título de película o serie…" autocomplete="off" style="flex:1;min-width:220px" aria-label="Buscar título para añadir">
       <button class="btn btn-primary" type="submit">${icon('search')} Buscar</button>
     </form>
+
+    ${setupMissing.length ? `<div class="panel pad section setup-card">
+      <div class="row between" style="align-items:flex-start;gap:16px">
+        <div>
+          <strong>Termina de configurar TOD</strong>
+          <p class="muted tiny" style="margin:4px 0 0">Conecta tus servicios y revisa los directorios. Sin esta configuración no se pueden buscar fuentes ni reproducir.</p>
+          <div class="row" style="margin-top:10px">${setupMissing.map((name) => badge(name === 'catalog_library' ? 'Biblioteca del catálogo' : capabilityLabel(name), 'mono')).join('')}</div>
+        </div>
+        <a class="btn btn-primary" href="#/settings">${icon('wrench', 'sm')} Configurar</a>
+      </div>
+    </div>` : ''}
 
     ${alerts.length ? `<div class="stack section">${alerts.map((text) => `<div class="notice">${esc(text)}</div>`).join('')}</div>` : ''}
 

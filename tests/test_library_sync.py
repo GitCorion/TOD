@@ -7,53 +7,68 @@ from catalogo.library_sync import sync_library
 MIGRATIONS = Path(__file__).resolve().parents[1] / "migrations"
 
 
-def make_radarr(path, root):
-    conn = sqlite3.connect(path)
-    conn.executescript(
-        f"""
-        CREATE TABLE MovieMetadata (Id INTEGER PRIMARY KEY, TmdbId INTEGER);
-        CREATE TABLE Movies (Id INTEGER PRIMARY KEY, MovieMetadataId INTEGER,
-                             MovieFileId INTEGER, Path TEXT);
-        CREATE TABLE MovieFiles (Id INTEGER PRIMARY KEY, MovieId INTEGER,
-                                 RelativePath TEXT, Size INTEGER);
-        INSERT INTO MovieMetadata VALUES (1, 100);
-        INSERT INTO Movies VALUES (1, 1, 1, '{root}/Peli (2024)');
-        INSERT INTO MovieFiles VALUES (1, 1, 'Peli (2024) WEBDL-1080p.mkv', 123);
-        """
-    )
-    conn.commit()
-    conn.close()
+class FakeRadarr:
+    def __init__(self, root):
+        self.root = root
+
+    def movies(self):
+        return [
+            {
+                "id": 1,
+                "tmdbId": 100,
+                "hasFile": True,
+                "path": f"{self.root}/Peli (2024)",
+                "movieFile": {
+                    "relativePath": "Peli (2024) WEBDL-1080p.mkv",
+                    "size": 123,
+                },
+            }
+        ]
 
 
-def make_sonarr(path, root):
-    conn = sqlite3.connect(path)
-    conn.executescript(
-        f"""
-        CREATE TABLE Series (Id INTEGER PRIMARY KEY, TmdbId INTEGER, Path TEXT);
-        CREATE TABLE Episodes (Id INTEGER PRIMARY KEY, SeriesId INTEGER,
-                               SeasonNumber INTEGER, EpisodeNumber INTEGER,
-                               EpisodeFileId INTEGER);
-        CREATE TABLE EpisodeFiles (Id INTEGER PRIMARY KEY, SeriesId INTEGER,
-                                   RelativePath TEXT, Size INTEGER);
-        INSERT INTO Series VALUES (1, 200, '{root}/Serie (2024)');
-        INSERT INTO Episodes VALUES (1, 1, 1, 2, 1);
-        INSERT INTO EpisodeFiles VALUES
-            (1, 1, 'Season 1/Serie - S01E02 - Piloto.mkv', 456);
-        """
-    )
-    conn.commit()
-    conn.close()
+class FakeSonarr:
+    def __init__(self, root):
+        self.root = root
+
+    def series(self):
+        return [
+            {
+                "id": 1,
+                "tmdbId": 200,
+                "path": f"{self.root}/Serie (2024)",
+            }
+        ]
+
+    def episodes(self, series_id):
+        return [
+            {
+                "seasonNumber": 1,
+                "episodeNumber": 2,
+                "hasFile": True,
+                "episodeFileId": 1,
+            }
+        ]
+
+    def episode_files(self, series_id):
+        return [
+            {
+                "id": 1,
+                "path": (
+                    f"{self.root}/Serie (2024)/Season 1/"
+                    "Serie - S01E02 - Piloto.mkv"
+                ),
+                "size": 456,
+            }
+        ]
 
 
 def test_sync_library_rebuilds_paths(tmp_path):
     db = tmp_path / "catalogo.db"
     init_db(db, MIGRATIONS)
-    radarr = tmp_path / "radarr.db"
-    sonarr = tmp_path / "sonarr.db"
-    make_radarr(radarr, "/mnt/fichier/Peliculas")
-    make_sonarr(sonarr, "/mnt/fichier/Series")
+    radarr = FakeRadarr("/mnt/fichier/Peliculas")
+    sonarr = FakeSonarr("/mnt/fichier/Series")
 
-    report = sync_library(db, radarr_db=radarr, sonarr_db=sonarr)
+    report = sync_library(db, radarr=radarr, sonarr=sonarr)
     assert report["ok"] is True
     assert report["movies"] == 1
     assert report["episodes"] == 1

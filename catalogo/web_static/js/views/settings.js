@@ -51,7 +51,7 @@ function field(item) {
     <div class="settings-control">
       ${input}
       <div class="settings-extra">${extra.join('')}${sourceBadge(item.source)}</div>
-      <span class="tiny faint path-status" data-path-for="${key}"></span>
+      <span class="tiny faint path-status" role="status" data-path-for="${key}"></span>
     </div>
   </div>`;
 }
@@ -66,7 +66,7 @@ function integrationCard(items, meta, paths) {
     </div>
     <div class="panel-body">
       ${items.map(field).join('')}
-      <span class="tiny faint" data-integration-result="${meta.name}"></span>
+      <span class="tiny faint" role="status" data-integration-result="${meta.name}"></span>
     </div>
   </div>`;
 }
@@ -88,7 +88,7 @@ function schedulerRow(task) {
     : status('Sin ejecutar', 'muted');
   return `<tr>
     <td data-label="Tarea"><strong>${esc(task.label)}</strong><div class="tiny faint">${esc(task.description)}</div></td>
-    <td data-label="Activa"><input type="checkbox" data-task="${esc(task.name)}" data-field="enabled" ${task.enabled ? 'checked' : ''}></td>
+    <td data-label="Activa"><input type="checkbox" aria-label="Activar ${esc(task.label)}" data-task="${esc(task.name)}" data-field="enabled" ${task.enabled ? 'checked' : ''}></td>
     <td data-label="Cadencia">${cadence}</td>
     <td data-label="Próxima">${task.next_run ? fmtDate(task.next_run) : '—'}</td>
     <td data-label="Última">${lastState}${last?.finished_at ? `<div class="tiny faint">${fmtDate(last.finished_at)}</div>` : ''}</td>

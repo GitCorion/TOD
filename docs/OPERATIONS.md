@@ -1,0 +1,130 @@
+# Operación y mantenimiento
+
+## Servicio
+
+```bash
+sudo systemctl status tod.service
+sudo systemctl restart tod.service
+sudo journalctl -u tod.service -f
+```
+
+Comprobación rápida:
+
+```bash
+curl -s http://127.0.0.1:8773/healthz
+curl -s http://127.0.0.1:8773/api/system | python3 -m json.tool
+```
+
+Actualizar:
+
+```bash
+cd /opt/catalogo
+git pull
+sudo systemctl restart tod.service
+```
+
+## Tareas programadas
+
+El scheduler interno sustituye a los timers. Se gestiona en
+**Configuración → Tareas programadas**.
+
+| Tarea | Por defecto |
+|---|---|
+| `worker-cycle` | cada 5 min |
+| `qbit-limits` | cada 1 min |
+| `rss-sync` | cada 30 min |
+| `bridge` | cada 30 min |
+| `monitor` | diario 04:20 |
+| `restore-strm` | diario 04:30 |
+| `backfill` | domingo 03:00 |
+| `metadata` | lunes 05:00, desactivado |
+
+Ejecutar a mano:
+
+```bash
+tod qbit-sync
+tod rss-sync --limit 200 --delay 0.3
+tod monitor --limit 100 --delay 2
+```
+
+## Reproducción
+
+`.strm` estable:
+
+```text
+http://127.0.0.1:8773/play?key=movie:tmdb:9737&download=0
+```
+
+- `download=0`: Jellyfin nunca arranca una descarga.
+- `download=1`: la app puede preparar un torrent frío.
+- `/status?key=...`: progreso, velocidad, seeds y `stream_ready`.
+- `/sources?key=...`: versiones vivas y su salud.
+
+Diagnóstico:
+
+```bash
+curl -s 'http://127.0.0.1:8773/status?key=movie%3Atmdb%3A9737' | python3 -m json.tool
+curl -s -r 0-1048575 'http://127.0.0.1:8773/play?key=movie%3Atmdb%3A9737' -o /tmp/test.bin
+```
+
+## qBittorrent
+
+- `qbit-sync` es solo lectura.
+- La escritura (añadir, pausar, mover) está aislada en `qbit_write.py`.
+- Límites por categoría: `radarr`, `tv-sonarr` y `ondemand`.
+- El worker mueve privados completos a `/mnt/fichier/descargas` si no hay stream activo.
+
+```bash
+tod qbit-version
+tod qbit-torrents --category ondemand
+tod qbit-sync --dry-run
+tod qbit-limits
+```
+
+## Seed y espacio
+
+- Privados: seed mínimo por política; no se borra al cumplir las horas.
+- Públicos: sin compromiso de seed.
+- `evict` es manual y solo actúa sobre compromisos ya cumplidos.
+
+```bash
+tod policies
+tod evictable
+tod reseed --limit 1 --execute
+tod evict --limit 10 --execute
+```
+
+## Almacenamiento
+
+```text
+temp:  /mnt/cache/tmp
+save:  /mnt/descargas/ondemand
+final: /mnt/fichier/descargas
+```
+
+Las rutas se cambian en **Configuración → Directorios**. TOD valida que
+existan y sean escribibles; no mueve datos por su cuenta.
+
+## Copias
+
+La base y las claves están en `var/catalogo.db`. Con el servicio parado:
+
+```bash
+sqlite3 var/catalogo.db ".backup '/ruta/segura/catalogo-$(date +%F).db'"
+```
+
+No copies `*.db-wal` por separado. Para restaurar, para el servicio, sustituye
+`var/catalogo.db` y arranca.
+
+## Problemas frecuentes
+
+| Síntoma | Comprobación |
+|---|---|
+| Panel sin conexión | `systemctl status tod.service`, `curl /healthz` |
+| qBittorrent no aparece | URL, usuario y contraseña en Configuración |
+| Prowlarr vacío | API key en Configuración; debe listar indexers |
+| Jackett falla | API key y que Jackett tenga indexers configurados |
+| Jellyfin 401 | API key de Jellyfin |
+| Reproducción 403 | `.strm` con `download=0` y torrent frío; usa `/prepare` o `download=1` |
+| Sin espacio | `df -h`, límite on-demand y `evictable` |
+| Tarea atascada | `Tareas` en la web; `jobs` guarda estado y error |

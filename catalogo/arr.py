@@ -74,6 +74,28 @@ class _ArrClient:
         rows = (data or {}).get("records") if isinstance(data, dict) else None
         return rows if isinstance(rows, list) else []
 
+    def history_all(self, *, page_size: int = 1000) -> list[dict]:
+        """Historial completo paginado, para mapear DownloadId -> título."""
+        records: list[dict] = []
+        page = 1
+        while True:
+            data = self._request(
+                "/history",
+                params={
+                    "page": page,
+                    "pageSize": max(1, int(page_size)),
+                    "sortKey": "date",
+                    "sortDirection": "descending",
+                },
+            ) or {}
+            rows = data.get("records") or []
+            total = int(data.get("totalRecords") or 0)
+            records.extend(rows)
+            if not rows or len(records) >= total:
+                break
+            page += 1
+        return records
+
     def _queue(self, unknown_param: str, *, page_size: int = 1000) -> dict:
         records: list[dict] = []
         page = 1
@@ -154,6 +176,12 @@ class SonarrClient(_ArrClient):
 
     def episodes(self, series_id: int) -> list[dict]:
         rows = self._request("/episode", params={"seriesId": int(series_id)})
+        return rows if isinstance(rows, list) else []
+
+    def episode_files(self, series_id: int) -> list[dict]:
+        rows = self._request(
+            "/episodefile", params={"seriesId": int(series_id)}
+        )
         return rows if isinstance(rows, list) else []
 
     def episode(

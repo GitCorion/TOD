@@ -930,3 +930,6 @@ details.fold[open] > summary::before { content: "▾"; }
 @media (max-width: 720px) {
   .settings-item { grid-template-columns: 1fr; gap: 6px; }
 }
+
+/* Puesta en marcha */
+.setup-card { border-left: 3px solid var(--carmine); }

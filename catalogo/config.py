@@ -107,8 +107,6 @@ class Config:
     ondemand_save_path: Path = Path("/mnt/descargas/ondemand")
     strm_roots: tuple[str, ...] = ("/mnt/catalogo", "/mnt/palantir")
     playback_base_url: str = "http://127.0.0.1:8773"
-    radarr_db: Path = Path("/var/lib/radarr/radarr.db")
-    sonarr_db: Path = Path("/var/lib/sonarr/sonarr.db")
 
     @classmethod
     def from_env(cls) -> "Config":
@@ -176,12 +174,6 @@ class Config:
             ),
             playback_base_url=os.environ.get(
                 "CATALOGO_PLAYBACK_BASE_URL", "http://127.0.0.1:8773"
-            ),
-            radarr_db=_path(
-                "RADARR_DB", Path("/var/lib/radarr/radarr.db")
-            ),
-            sonarr_db=_path(
-                "SONARR_DB", Path("/var/lib/sonarr/sonarr.db")
             ),
         )
 

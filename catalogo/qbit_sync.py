@@ -12,7 +12,6 @@ from __future__ import annotations
 
 import os
 import re
-import sqlite3
 from collections import Counter, defaultdict
 from contextlib import closing
 from dataclasses import dataclass, field
@@ -141,80 +140,71 @@ def _main_video(files: list[dict]) -> dict | None:
     return max(videos, key=lambda item: int(item.get("size") or 0))
 
 
-def _readonly(path: str | os.PathLike[str]) -> sqlite3.Connection:
-    uri = f"file:{Path(path)}?mode=ro"
-    conn = sqlite3.connect(uri, uri=True, timeout=10)
-    conn.row_factory = sqlite3.Row
-    return conn
-
-
-def radarr_index(db_path: str | os.PathLike[str]) -> dict[str, dict]:
-    """infohash -> película (tmdb/título/año)."""
+def radarr_index(client) -> dict[str, dict]:
+    """DownloadId -> película (tmdb/título/año), vía API de Radarr."""
     result: dict[str, dict] = {}
-    try:
-        conn = _readonly(db_path)
-    except Exception:
+    if client is None:
         return result
     try:
-        rows = conn.execute(
-            """
-            SELECT h.DownloadId, m.TmdbId, m.Title, m.Year
-            FROM History h
-            JOIN Movies mv ON mv.Id = h.MovieId
-            JOIN MovieMetadata m ON m.Id = mv.MovieMetadataId
-            WHERE h.DownloadId IS NOT NULL AND h.DownloadId <> ''
-            ORDER BY h.Id
-            """
-        ).fetchall()
-    except sqlite3.Error:
-        rows = []
-    finally:
-        conn.close()
-    for row in rows:
-        result[str(row["DownloadId"]).lower()] = {
-            "tmdb": int(row["TmdbId"] or 0),
-            "title": row["Title"],
-            "year": row["Year"],
+        movies = {
+            int(item.get("id") or 0): item for item in client.movies()
         }
+        for row in client.history_all():
+            download_id = str(row.get("downloadId") or "").lower()
+            if not download_id:
+                continue
+            movie = movies.get(int(row.get("movieId") or 0))
+            if not movie:
+                continue
+            result[download_id] = {
+                "tmdb": int(movie.get("tmdbId") or 0),
+                "title": movie.get("title"),
+                "year": movie.get("year"),
+            }
+    except Exception:
+        return result
     return result
 
 
-def sonarr_index(db_path: str | os.PathLike[str]) -> dict[str, list[dict]]:
-    """infohash -> episodios (tmdb/tvdb/temporada/episodio)."""
+def sonarr_index(client) -> dict[str, list[dict]]:
+    """DownloadId -> episodios (tmdb/tvdb/temporada/episodio), vía API."""
     result: dict[str, list[dict]] = defaultdict(list)
-    try:
-        conn = _readonly(db_path)
-    except Exception:
+    if client is None:
         return dict(result)
     try:
-        rows = conn.execute(
-            """
-            SELECT h.DownloadId, s.TvdbId, s.TmdbId, s.Title,
-                   e.SeasonNumber, e.EpisodeNumber, h.EpisodeId
-            FROM History h
-            JOIN Series s ON s.Id = h.SeriesId
-            LEFT JOIN Episodes e ON e.Id = h.EpisodeId
-            WHERE h.DownloadId IS NOT NULL AND h.DownloadId <> ''
-            ORDER BY h.Id
-            """
-        ).fetchall()
-    except sqlite3.Error:
-        rows = []
-    finally:
-        conn.close()
-    for row in rows:
-        if row["SeasonNumber"] is None or row["EpisodeNumber"] is None:
-            continue
-        item = {
-            "tmdb": int(row["TmdbId"] or 0),
-            "tvdb": int(row["TvdbId"] or 0),
-            "season": int(row["SeasonNumber"]),
-            "episode": int(row["EpisodeNumber"]),
-            "title": row["Title"],
+        series_map = {
+            int(item.get("id") or 0): item for item in client.series()
         }
-        key = str(row["DownloadId"]).lower()
-        if item not in result[key]:
-            result[key].append(item)
+        episode_cache: dict[int, dict[int, dict]] = {}
+        for row in client.history_all():
+            download_id = str(row.get("downloadId") or "").lower()
+            if not download_id:
+                continue
+            series_id = int(row.get("seriesId") or 0)
+            series = series_map.get(series_id)
+            if not series:
+                continue
+            if series_id not in episode_cache:
+                episode_cache[series_id] = {
+                    int(item.get("id") or 0): item
+                    for item in client.episodes(series_id)
+                }
+            episode = episode_cache[series_id].get(
+                int(row.get("episodeId") or 0)
+            )
+            if not episode:
+                continue
+            item = {
+                "tmdb": int(series.get("tmdbId") or 0),
+                "tvdb": int(series.get("tvdbId") or 0),
+                "season": int(episode.get("seasonNumber") or 0),
+                "episode": int(episode.get("episodeNumber") or 0),
+                "title": series.get("title"),
+            }
+            if item not in result[download_id]:
+                result[download_id].append(item)
+    except Exception:
+        return dict(result)
     return dict(result)
 
 
@@ -255,7 +245,7 @@ def _ensure_episode(
         scheme = "ok"
     elif tvdb:
         key = f"series:tvdb:{tvdb}:{season}:{episode}"
-        scheme = "needs_tmdb"
+        scheme = "needs_identity"
     else:
         return None, False
     row = conn.execute(
@@ -541,16 +531,16 @@ def sync(
     db_path: str | os.PathLike[str],
     client: QbittorrentClient,
     *,
-    radarr_db: str | os.PathLike[str] | None = None,
-    sonarr_db: str | os.PathLike[str] | None = None,
+    radarr=None,
+    sonarr=None,
     dry_run: bool = False,
     check_exists: bool = True,
     now: datetime | None = None,
 ) -> SyncReport:
     current = now or datetime.now(timezone.utc)
     report = SyncReport(dry_run=dry_run)
-    radarr = radarr_index(radarr_db) if radarr_db else {}
-    sonarr = sonarr_index(sonarr_db) if sonarr_db else {}
+    radarr = radarr_index(radarr)
+    sonarr = sonarr_index(sonarr)
 
     torrents = client.torrents()
     report.torrents_seen = len(torrents)

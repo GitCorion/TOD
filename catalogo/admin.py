@@ -68,6 +68,21 @@ def _qb_write(config: Config) -> QbittorrentWriteClient:
         raise JobError(str(exc)) from exc
 
 
+def _arr_clients(config: Config):
+    """Clientes de Radarr/Sonarr solo si hay API key configurada."""
+    radarr = (
+        RadarrClient.from_config(config)
+        if getattr(config, "radarr_api_key", None)
+        else None
+    )
+    sonarr = (
+        SonarrClient.from_config(config)
+        if getattr(config, "sonarr_api_key", None)
+        else None
+    )
+    return radarr, sonarr
+
+
 def _prowlarr(config: Config) -> ProwlarrClient:
     try:
         return ProwlarrClient.from_config(config)
@@ -1292,6 +1307,7 @@ def job_export(ctx: JobContext) -> dict[str, Any]:
     versions = params.get("versions") or "available"
     if versions not in ("available", "alive", "all"):
         versions = "available"
+    radarr, sonarr = _arr_clients(ctx.config)
     if keys:
         written = 0
         unchanged = 0
@@ -1314,6 +1330,8 @@ def job_export(ctx: JobContext) -> dict[str, Any]:
                 include_unavailable=_bool(params.get("include_unavailable"), False),
                 require_health=_bool(params.get("require_health"), False),
                 skip_library=_bool(params.get("skip_library"), False),
+                radarr=radarr,
+                sonarr=sonarr,
             )
             written += int(report.get("written") or 0)
             unchanged += int(report.get("unchanged") or 0)
@@ -1345,6 +1363,8 @@ def job_export(ctx: JobContext) -> dict[str, Any]:
         require_health=_bool(params.get("require_health"), False),
         skip_library=_bool(params.get("skip_library"), False),
         prune=_bool(params.get("prune"), False),
+        radarr=radarr,
+        sonarr=sonarr,
     )
     ctx.report("exportación terminada", progress=0.95)
     from .strm_inventory import invalidate
@@ -1355,11 +1375,12 @@ def job_export(ctx: JobContext) -> dict[str, Any]:
 
 def job_qbit_sync(ctx: JobContext) -> dict[str, Any]:
     ctx.report("sincronizando qBittorrent", progress=0.1)
+    radarr, sonarr = _arr_clients(ctx.config)
     report = qbit_sync(
         str(ctx.config.db_path),
         _qb_read(ctx.config),
-        radarr_db=str(ctx.config.radarr_db),
-        sonarr_db=str(ctx.config.sonarr_db),
+        radarr=radarr,
+        sonarr=sonarr,
         dry_run=_bool(ctx.params.get("dry_run"), False),
         check_exists=_bool(ctx.params.get("check_exists"), True),
     )
@@ -1461,21 +1482,23 @@ def job_seeding(ctx: JobContext) -> dict[str, Any]:
 
 def job_prune(ctx: JobContext) -> dict[str, Any]:
     ctx.report("podando .strm de títulos ya en Radarr/Sonarr", progress=0.1)
+    radarr, sonarr = _arr_clients(ctx.config)
     return prune_library(
         str(ctx.config.db_path),
         ctx.config.catalog_library,
-        radarr_db=str(ctx.config.radarr_db),
-        sonarr_db=str(ctx.config.sonarr_db),
+        radarr=radarr,
+        sonarr=sonarr,
         dry_run=not _bool(ctx.params.get("execute"), False),
     )
 
 
 def job_library(ctx: JobContext) -> dict[str, Any]:
     ctx.report("sincronizando biblioteca Radarr/Sonarr", progress=0.1)
+    radarr, sonarr = _arr_clients(ctx.config)
     return sync_library(
         str(ctx.config.db_path),
-        radarr_db=str(ctx.config.radarr_db),
-        sonarr_db=str(ctx.config.sonarr_db),
+        radarr=radarr,
+        sonarr=sonarr,
     )
 
 
@@ -1569,17 +1592,19 @@ def job_worker_cycle(ctx: JobContext) -> dict[str, Any]:
 
         return {"leases": cleanup_leases(db, before_seconds=3600)}
 
+    radarr, sonarr = _arr_clients(config)
+
     def sync() -> dict:
         return qbit_sync(
             db,
             qbit_read,
-            radarr_db=str(ctx.config.radarr_db),
-            sonarr_db=str(ctx.config.sonarr_db),
+            radarr=radarr,
+            sonarr=sonarr,
             check_exists=True,
         ).public()
 
     def library() -> dict:
-        return sync_library(db, radarr_db=str(ctx.config.radarr_db), sonarr_db=str(ctx.config.sonarr_db))
+        return sync_library(db, radarr=radarr, sonarr=sonarr)
 
     def repair() -> dict:
         return repair_torrents(
@@ -1660,6 +1685,7 @@ def job_restore_strm(ctx: JobContext) -> dict[str, Any]:
         if part.strip().lstrip("-").isdigit()
     ]
     out = str(ctx.config.catalog_library)
+    radarr, sonarr = _arr_clients(ctx.config)
     report: dict[str, Any] = {}
     for year in years:
         ctx.check()
@@ -1671,8 +1697,8 @@ def job_restore_strm(ctx: JobContext) -> dict[str, Any]:
             year=year,
             kind="movie",
             skip_library=False,
-            radarr_db=str(ctx.config.radarr_db),
-            sonarr_db=str(ctx.config.sonarr_db),
+            radarr=radarr,
+            sonarr=sonarr,
         )
     report["series"] = export_strm(
         ctx.config.db_path,
@@ -1681,8 +1707,8 @@ def job_restore_strm(ctx: JobContext) -> dict[str, Any]:
         limit=None,
         kind="series",
         skip_library=False,
-        radarr_db=str(ctx.config.radarr_db),
-        sonarr_db=str(ctx.config.sonarr_db),
+        radarr=radarr,
+        sonarr=sonarr,
     )
     return report
 
