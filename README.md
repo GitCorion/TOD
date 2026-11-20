@@ -4,12 +4,12 @@
 [![license](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![python](https://img.shields.io/badge/python-3.11%2B-3776AB.svg)](https://www.python.org/)
 
-**Catálogo, qBittorrent y Jellyfin en un solo servicio.**
+**Catálogo bajo demanda para qBittorrent y Jellyfin.**
 
-TOD convierte un servidor en un catálogo bajo demanda: busca títulos, los
-publica como `.strm` para Jellyfin y descarga solo cuando alguien los
-reproduce. Web, API, reproducción y tareas programadas viven en el mismo
-proceso y se configuran desde el navegador.
+TOD unifica catálogo, reproducción y administración en un servicio. Se integra
+con qBittorrent, Jellyfin, Prowlarr, Jackett y, opcionalmente, Radarr/Sonarr.
+Esos servicios siguen siendo independientes: el `docker-compose.yml` incluido
+los levanta juntos para que la instalación sea de un solo comando.
 
 No hace falta editar bases de datos, ni archivos de configuración de Prowlarr,
 ni variables de entorno para empezar. Las URLs y API keys se introducen en la
@@ -44,10 +44,44 @@ Un único proceso sirve:
   `/catalog/lookup`, `/prepare`, `/lease`),
 - el scheduler interno de tareas periódicas.
 
-## Instalación rápida
+## Instalación con Docker Compose
 
-Requisitos: Linux, Python 3.11+ y, para el uso completo, qBittorrent,
-Prowlarr, Jackett y Jellyfin. No hay dependencias Python externas.
+Es la opción recomendada para una instalación completa: TOD, qBittorrent,
+Jellyfin, Prowlarr y Jackett, cada uno en su contenedor y conectados entre sí.
+
+```bash
+git clone https://github.com/GitCorion/TOD.git
+cd TOD
+cp .env.docker.example .env
+# edita .env: IP del servidor, UID/GID y claves
+docker compose up -d --build
+```
+
+Servicios y puertos:
+
+| Servicio | URL | Para qué |
+|---|---|---|
+| TOD | `http://IP_DEL_SERVIDOR:8773` | catálogo, alta y configuración |
+| Jellyfin | `http://IP_DEL_SERVIDOR:8096` | reproducir la biblioteca |
+| qBittorrent | `http://IP_DEL_SERVIDOR:8080` | descargas y seed |
+| Prowlarr | `http://IP_DEL_SERVIDOR:9696` | indexers |
+| Jackett | `http://IP_DEL_SERVIDOR:9117` | fallback público |
+
+Primera puesta en marcha:
+
+1. Abre TOD en `8773`.
+2. Configura qBittorrent con `http://qbittorrent:8080` y sus credenciales.
+3. Pega la API key de Prowlarr, Jackett y Jellyfin.
+4. En Jellyfin, añade la biblioteca `/media/catalogo` como **Películas** y
+   **Series** (o una biblioteca mixta).
+5. En TOD, revisa **Configuración → Directorios**.
+
+Los detalles de volúmenes, claves y primer arranque están en
+[docs/DOCKER.md](docs/DOCKER.md).
+
+## Instalación con systemd
+
+Para instalar sobre un servidor Linux ya existente, sin contenedores:
 
 ```bash
 git clone https://github.com/GitCorion/TOD.git
@@ -55,10 +89,10 @@ cd TOD
 sudo bash deploy/install-unified.sh
 ```
 
-El instalador crea `/etc/tod.env` si no existe, instala `tod.service`,
-desactiva los servicios antiguos y arranca TOD en `0.0.0.0:8773`.
+Requiere Python 3.11+. El instalador crea `/etc/tod.env` si no existe, instala
+`tod.service`, desactiva servicios antiguos y arranca TOD en `0.0.0.0:8773`.
 
-Abre `http://IP_DEL_SERVIDOR:8773` y completa la configuración:
+Después, abre `http://IP_DEL_SERVIDOR:8773` y configura:
 
 1. **qBittorrent**: URL, usuario y contraseña.
 2. **Prowlarr**: URL y API key.
@@ -129,6 +163,7 @@ tod service --host 0.0.0.0 --port 8773
 
 ## Documentación
 
+- [Docker Compose](docs/DOCKER.md)
 - [Arquitectura](docs/ARCHITECTURE.md)
 - [Operación y mantenimiento](docs/OPERATIONS.md)
 - [Integraciones paso a paso](docs/INTEGRATIONS.md)
