@@ -35,7 +35,12 @@ export async function renderDashboard({ signal }) {
     const meta = item.kind === 'movie'
       ? `Película, ${item.year || '—'}`
       : `T${String(item.season || 0).padStart(2, '0')}E${String(item.episode || 0).padStart(2, '0')}`;
-    return `<a class="media-row" href="#/catalog?q=${encodeURIComponent(item.title || '')}">
+    const href = item.kind === 'movie' && item.asset_id
+      ? `#/title/${item.asset_id}`
+      : item.kind === 'series' && item.series_tmdb
+        ? `#/series/${item.series_tmdb}`
+        : `#/catalog?q=${encodeURIComponent(item.title || '')}`;
+    return `<a class="media-row" href="${href}">
       <div class="info"><strong>${esc(item.title || '—')}</strong><small>${esc(meta)}</small></div>
       <span class="tiny faint nowrap">${esc(fmtRelative(item.date))}</span>
       ${icon('chevron', 'sm')}

@@ -205,6 +205,23 @@ def overview(
         "ok": False,
         "error": "Radarr/Sonarr no configurados",
     })
+    recent = library.get("recent") or []
+    if recent:
+        with closing(connect(db_path)) as conn:
+            for item in recent:
+                tmdb = item.get("tmdb")
+                if not tmdb:
+                    continue
+                if item.get("kind") == "movie":
+                    row = conn.execute(
+                        "SELECT id FROM media_items WHERE kind='movie' "
+                        "AND tmdb = ? ORDER BY id LIMIT 1",
+                        (int(tmdb),),
+                    ).fetchone()
+                    if row is not None:
+                        item["asset_id"] = int(row["id"])
+                elif item.get("kind") == "series":
+                    item["series_tmdb"] = int(tmdb)
     limit = settings.ondemand_max_active(
         db_path, getattr(config, "max_active_ondemand", settings.DEFAULT_MAX_ACTIVE)
     )
