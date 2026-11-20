@@ -87,7 +87,7 @@ docker compose up -d --build
 ```
 
 Si abres el panel por IP, añade esa IP a `TOD_WEB_ALLOWED_HOSTS` en `.env`. Por
-defecto solo se aceptan `localhost` y `127.0.0.1`.
+defecto el compose solo permite `localhost` y la red interna.
 
 Servicios y puertos:
 
