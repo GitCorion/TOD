@@ -23,6 +23,11 @@ classifiers = [
   "Topic :: Multimedia :: Video",
 ]
 
+[project.urls]
+Homepage = "https://github.com/GitCorion/TOD"
+Repository = "https://github.com/GitCorion/TOD"
+Issues = "https://github.com/GitCorion/TOD/issues"
+
 [project.scripts]
 tod = "catalogo.cli:main"
 catalogo = "catalogo.cli:main"

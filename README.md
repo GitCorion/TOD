@@ -1,4 +1,4 @@
-# TOD — Torrent on Demand (`/opt/catalogo`)
+# TOD — Torrent on Demand
 
 TOD es el producto: un **servicio único** que reúne el catálogo, el motor de
 reproducción bajo demanda, el panel web y el scheduler. La configuración de
@@ -73,8 +73,8 @@ Requisitos: Python 3.11+ y, para el uso completo, qBittorrent, Prowlarr,
 Jackett y Jellyfin. No hay dependencias Python externas.
 
 ```bash
-git clone https://github.com/TU_USUARIO/tod.git
-cd tod
+git clone https://github.com/GitCorion/TOD.git
+cd TOD
 sudo bash deploy/install-unified.sh
 ```
 
@@ -93,7 +93,7 @@ en la web. `var/`, `.env` y las bases de datos están ignorados por git.
 ### Publicar el repositorio
 
 ```bash
-git remote add origin git@github.com:TU_USUARIO/tod.git
+git remote add origin git@github.com:GitCorion/TOD.git
 git push -u origin main
 ```
 
