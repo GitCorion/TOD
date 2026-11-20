@@ -8,11 +8,15 @@ from pathlib import Path
 from typing import Any, Protocol
 
 from .db import connect
+from .policy import parse_time
 from .stream_leases import active as stream_active
 
 DEFAULT_TARGET = "/mnt/library/archive"
 DEFAULT_SOURCE = "/mnt/descargas/ondemand"
 DEFAULT_GRACE_SECONDS = 300
+# Margen tras completar para que el usuario pueda empezar a ver antes de
+# que el fichero se mueva a la nube.
+DEFAULT_MIN_AGE_SECONDS = 900
 
 
 class MoveClient(Protocol):
@@ -28,8 +32,9 @@ def _candidates(db_path: str, limit: int, source_root: str) -> list[Any]:
         return conn.execute(
             """
             SELECT t.id AS torrent_id, t.info_hash, t.save_path,
-                   t.category, t.progress, t.qbit_state,
-                   m.id AS media_item_id, m.media_id, r.tracker,
+                   t.category, t.progress, t.qbit_state, t.completed_at,
+                   m.id AS media_item_id, m.key AS media_key,
+                   m.media_id, r.tracker,
                    p.privacy
             FROM torrents t
             JOIN releases r ON r.id = t.release_id
@@ -59,17 +64,27 @@ def _files_for(conn, torrent_id: int) -> list[Any]:
 
 
 def _media_ids_for(conn, torrent_id: int) -> list[str]:
-    """Todos los episodios/películas enlazados a un torrent (packs)."""
+    """Todos los episodios/películas enlazados a un torrent (packs).
+
+    Los leases de reproducción usan la clave del catálogo (`m.key`), no el
+    `media_id` de TMDB, que en los ítems del catálogo suele estar vacío.
+    """
     rows = conn.execute(
         """
-        SELECT DISTINCT m.media_id
+        SELECT DISTINCT m.key, m.media_id
         FROM torrent_files f
         JOIN media_items m ON m.id = f.asset_id
-        WHERE f.torrent_id = ? AND m.media_id IS NOT NULL
+        WHERE f.torrent_id = ?
         """,
         (torrent_id,),
     ).fetchall()
-    return [str(row["media_id"]) for row in rows]
+    result: list[str] = []
+    for row in rows:
+        if row["key"]:
+            result.append(str(row["key"]))
+        if row["media_id"]:
+            result.append(str(row["media_id"]))
+    return result
 
 
 def move_completed(
@@ -79,6 +94,7 @@ def move_completed(
     target: str = DEFAULT_TARGET,
     source_root: str = DEFAULT_SOURCE,
     grace_seconds: int = DEFAULT_GRACE_SECONDS,
+    min_age_seconds: int = DEFAULT_MIN_AGE_SECONDS,
     limit: int = 10,
     dry_run: bool = True,
     now: datetime | None = None,
@@ -89,6 +105,7 @@ def move_completed(
         "planned": [],
         "moved": [],
         "skipped_streaming": [],
+        "skipped_recent": [],
         "skipped_target_exists": [],
         "errors": [],
         "dry_run": dry_run,
@@ -96,7 +113,15 @@ def move_completed(
     for row in _candidates(db_path, limit, source_root):
         report["checked"] += 1
         torrent_id = int(row["torrent_id"])
-        media_id = row["media_id"]
+        media_id = row["media_key"] or row["media_id"] or str(torrent_id)
+        completed = parse_time(row["completed_at"])
+        if (
+            completed is not None
+            and min_age_seconds > 0
+            and (current - completed).total_seconds() < min_age_seconds
+        ):
+            report["skipped_recent"].append(media_id)
+            continue
         with closing(connect(db_path)) as conn:
             media_ids = _media_ids_for(conn, torrent_id) or [media_id]
         # Un pack puede estar reproduciéndose por cualquier episodio, no

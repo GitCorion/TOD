@@ -205,10 +205,6 @@ def test_calendar_and_scheduler_params(tmp_path):
         assert status == 200
         assert [item["key"] for item in payload["items"]] == ["movie:tmdb:1"]
 
-        status, payload = _request(base, "/api/tracker-urls")
-        assert status == 200
-        assert payload["items"] == {}
-
         status, payload = _request(
             base,
             "/api/scheduler/rss-sync",
@@ -219,6 +215,40 @@ def test_calendar_and_scheduler_params(tmp_path):
         assert status == 200
         assert payload["params"]["limit"] == 42
         assert payload["params"]["delay"] == 0.5
+    finally:
+        server.shutdown()
+        server.server_close()
+        server.app.runner.stop()
+
+
+def test_release_torrent_download(tmp_path):
+    server, base = _server(tmp_path)
+    try:
+        with sqlite3.connect(server.app.db_path) as conn:
+            asset_id = conn.execute(
+                "SELECT id FROM media_items LIMIT 1"
+            ).fetchone()[0]
+            conn.execute(
+                "INSERT INTO releases(asset_id,tracker,title,size_bytes,health,"
+                "source,privacy,torrent_blob) VALUES(?,?,?,?,?,?,?,?)",
+                (
+                    asset_id,
+                    "TrackerEspanol",
+                    "Viva 1080p",
+                    1000,
+                    "alive",
+                    "prowlarr",
+                    "private",
+                    b"d4:info4:teste",
+                ),
+            )
+            conn.commit()
+        with urllib.request.urlopen(
+            base + "/api/releases/1/torrent", timeout=5
+        ) as response:
+            assert response.status == 200
+            assert response.headers.get_content_type() == "application/x-bittorrent"
+            assert response.read() == b"d4:info4:teste"
     finally:
         server.shutdown()
         server.server_close()

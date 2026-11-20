@@ -88,6 +88,33 @@ def test_move_skips_active_stream(tmp_path):
     assert client.calls == []
 
 
+def test_move_skips_stream_when_media_id_empty(tmp_path):
+    db, media_id, _ = seed(tmp_path)
+    conn = sqlite3.connect(db)
+    conn.execute("UPDATE media_items SET media_id='' WHERE id=?", (media_id,))
+    conn.commit()
+    conn.close()
+    touch(str(db), "movie:tmdb:1", "sess", now=NOW)
+    client = FakeMoveClient()
+    report = move_completed(str(db), client, dry_run=False, now=NOW)
+    assert report["skipped_streaming"] == ["movie:tmdb:1"]
+    assert client.calls == []
+
+
+def test_move_waits_after_completion(tmp_path):
+    db, _media_id, _ = seed(tmp_path)
+    conn = sqlite3.connect(db)
+    conn.execute(
+        "UPDATE torrents SET completed_at=?", (NOW.isoformat(),)
+    )
+    conn.commit()
+    conn.close()
+    client = FakeMoveClient()
+    report = move_completed(str(db), client, dry_run=False, now=NOW)
+    assert report["skipped_recent"] == ["movie:tmdb:1"]
+    assert client.calls == []
+
+
 def test_move_skips_public_and_missing_media(tmp_path):
     db, _media_id, _ = seed(tmp_path, privacy="public")
     client = FakeMoveClient()

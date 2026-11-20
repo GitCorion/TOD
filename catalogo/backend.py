@@ -236,7 +236,12 @@ def priorities_for(
     *,
     private: bool,
 ) -> dict[int, int]:
-    """Privados: todo se descarga; el capítulo pedido va a máxima prioridad.
+    """Privados: todo se descarga; el capítulo pedido va por delante.
+
+    Prioridad 6 (alta), no 7 (máxima): con 7 qBittorrent reparte las piezas
+    fuera de orden y el buffer contiguo no crece, así que el stream no puede
+    arrancar hasta terminar la descarga. Con 6 se mantiene el orden
+    secuencial y el fichero pedido se descarga primero.
 
     Públicos: solo se pide el fichero objetivo (parcial permitido).
     """
@@ -244,7 +249,7 @@ def priorities_for(
     for item in files:
         index = int(item.get("index") or 0)
         if private:
-            result[index] = 7 if index == target_index else 1
+            result[index] = 6 if index == target_index else 1
         else:
             result[index] = 1 if index == target_index else 0
     return result

@@ -18,7 +18,9 @@ import socket
 import subprocess
 import time
 import traceback
+import urllib.error
 import urllib.parse
+import urllib.request
 import gzip
 from contextlib import closing
 from dataclasses import replace
@@ -49,8 +51,6 @@ HASH_RE = re.compile(r"^[0-9a-fA-F]{40}$")
 
 _INDEXER_CACHE: dict[str, tuple[float, list[dict[str, Any]], str | None]] = {}
 _INDEXER_TTL = 120.0
-_TRACKER_URLS_CACHE: dict[str, tuple[float, dict[str, str]]] = {}
-_TRACKER_URLS_TTL = 300.0
 
 
 SERVICES = (
@@ -96,27 +96,6 @@ def _valid_cookie(token: str, value: str | None) -> bool:
     if expiry < _now():
         return False
     return hmac.compare_digest(signature, _sign(token, expiry))
-
-
-def _tracker_urls(config: Config) -> dict[str, str]:
-    """Nombre del indexer de Prowlarr -> URL pública del tracker."""
-    key = str(config.prowlarr_url)
-    cached = _TRACKER_URLS_CACHE.get(key)
-    if cached is not None and time.monotonic() - cached[0] < _TRACKER_URLS_TTL:
-        return cached[1]
-    urls: dict[str, str] = {}
-    try:
-        from .prowlarr import ProwlarrClient
-
-        for item in ProwlarrClient.from_config(config).indexers():
-            name = str(item.get("name") or "").strip()
-            candidates = item.get("indexerUrls") or []
-            if name and candidates:
-                urls[name] = str(candidates[0]).rstrip("/")
-    except Exception:
-        pass
-    _TRACKER_URLS_CACHE[key] = (time.monotonic(), urls)
-    return urls
 
 
 def _systemctl(unit: str) -> dict[str, Any]:
@@ -631,6 +610,14 @@ class Handler(PlaybackHandler):
         app = self.app
         db = app.db_path
 
+        if (
+            len(parts) == 3
+            and parts[0] == "releases"
+            and parts[2] == "torrent"
+            and not mutate
+        ):
+            return self._release_torrent(parts[1], head=head)
+
         if parts == ["overview"] and not mutate:
             qbit, error = app.qbit()
             return self._json(
@@ -902,11 +889,6 @@ class Handler(PlaybackHandler):
 
         if parts and parts[0] == "ondemand":
             return self._ondemand(parts, params, body, head=head, mutate=mutate)
-
-        if parts == ["tracker-urls"] and not mutate:
-            return self._json(
-                200, {"items": _tracker_urls(app.config)}, head=head
-            )
 
         if parts == ["trackers"] and not mutate:
             return self._json(200, {"items": queries.list_trackers(db)}, head=head)
@@ -2151,6 +2133,74 @@ class Handler(PlaybackHandler):
         self.send_header("X-Content-Type-Options", "nosniff")
         self.send_header("X-Frame-Options", "DENY")
         self.send_header("Referrer-Policy", "no-referrer")
+
+    def _release_torrent(self, raw_id: str, *, head: bool) -> None:
+        try:
+            release_id = int(raw_id)
+        except (TypeError, ValueError):
+            raise WebError(400, "release inválido")
+        with closing(connect(self.app.db_path)) as conn:
+            row = conn.execute(
+                "SELECT id, title, download_url, torrent_blob "
+                "FROM releases WHERE id = ?",
+                (release_id,),
+            ).fetchone()
+        if row is None:
+            raise WebError(404, "release no encontrado")
+
+        blob = row["torrent_blob"]
+        if blob:
+            blob = bytes(blob)
+        else:
+            url = str(row["download_url"] or "").strip()
+            if not url:
+                raise WebError(404, "este release no tiene .torrent")
+            parsed = urllib.parse.urlparse(url)
+            jackett = urllib.parse.urlparse(self.app.config.jackett_url)
+            if (
+                jackett.netloc
+                and parsed.netloc == jackett.netloc
+                and "jackett_apikey=" not in url
+                and self.app.config.jackett_api_key
+            ):
+                from .jackett import with_api_key
+
+                url = with_api_key(url, self.app.config.jackett_api_key)
+            request = urllib.request.Request(
+                url,
+                headers={
+                    "Accept": "application/x-bittorrent, application/octet-stream",
+                    "User-Agent": "tod-web/0.1",
+                },
+            )
+            try:
+                with urllib.request.urlopen(request, timeout=30) as response:
+                    blob = response.read(50 * 1024 * 1024)
+            except (urllib.error.URLError, TimeoutError, OSError) as exc:
+                raise WebError(
+                    502, "no se pudo descargar el .torrent", str(exc)[:200]
+                ) from exc
+            if not blob.startswith(b"d"):
+                raise WebError(
+                    502, "el tracker no devolvió un .torrent válido"
+                )
+
+        title = re.sub(r"[^\w.\- ]+", "_", str(row["title"] or "")).strip()
+        filename = (title[:120] or f"release-{release_id}") + ".torrent"
+        self.send_response(200)
+        self.send_header("Content-Type", "application/x-bittorrent")
+        self.send_header("Content-Length", str(len(blob)))
+        self.send_header(
+            "Content-Disposition", f'attachment; filename="{filename}"'
+        )
+        self.send_header("Cache-Control", "no-store")
+        self.send_header("X-Content-Type-Options", "nosniff")
+        self.end_headers()
+        if not head:
+            try:
+                self.wfile.write(blob)
+            except (BrokenPipeError, ConnectionResetError):
+                pass
 
     def _json(
         self,

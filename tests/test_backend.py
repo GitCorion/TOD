@@ -11,6 +11,7 @@ from catalogo.backend import (
     NoSeedCommitment,
     info_hash,
     prepare_download,
+    priorities_for,
 )
 from catalogo.db import init_db
 from catalogo.policy import TrackerPolicy, upsert_policy
@@ -346,3 +347,9 @@ def test_capacity_ignores_queued_and_checking(tmp_path):
     )
     assert result["info_hash"] == info_hash(TORRENT)
     assert len(client.added) == 1
+
+
+def test_priorities_private_target_high_not_max():
+    """Prioridad 6 mantiene el orden secuencial; la 7 lo rompe."""
+    files = [{"index": 0}, {"index": 1}]
+    assert priorities_for(files, 0, private=True) == {0: 6, 1: 1}

@@ -5,8 +5,7 @@ import { updateQuery } from '../router.js';
 import { state } from '../store.js';
 import { $, badge, bar, empty, icon, poster, setHeader, status } from '../ui.js';
 
-function releaseRow(release, trackerUrls = {}) {
-  const trackerUrl = trackerUrls[release.tracker] || '';
+function releaseRow(release) {
   const health = healthStatus(release.health);
   const progress = release.torrent_progress !== null && release.torrent_progress !== undefined
     ? `<div class="progress-cell">${bar(release.torrent_progress)}<span>${pct(release.torrent_progress)}%</span></div>`
@@ -20,7 +19,7 @@ function releaseRow(release, trackerUrls = {}) {
     <td data-label="Privacidad">${badge(release.privacy === 'public' ? 'público' : 'privado', 'mono')} ${release.debrid_cached ? badge('debrid', 'mono') : ''}</td>
     <td data-label="Progreso">${progress}</td>
     <td class="actions" data-label="">
-      ${trackerUrl ? `<a class="btn btn-sm btn-ghost" href="${esc(trackerUrl)}" target="_blank" rel="noopener noreferrer" aria-label="Abrir ${esc(release.tracker || 'tracker')}">${icon('external', 'sm')} Tracker</a>` : ''}
+      <a class="btn btn-sm btn-ghost" href="/api/releases/${release.id}/torrent" download aria-label="Descargar .torrent de ${esc(release.title || 'esta versión')}">${icon('download', 'sm')} Torrent</a>
       <button class="btn btn-sm btn-ghost" data-action="release-target" data-release="${release.id}">Fijar</button>
       <button class="btn btn-sm btn-ghost" data-action="release-health" data-release="${release.id}">Verificar</button>
       <button class="btn btn-sm" data-action="release-prepare" data-release="${release.id}">Preparar</button>
@@ -31,11 +30,7 @@ function releaseRow(release, trackerUrls = {}) {
 export async function renderTitle({ params, query, signal }) {
   const id = Number(params[0] || 0);
   if (!id) { location.hash = '#/catalog'; return; }
-  const [data, trackerData] = await Promise.all([
-    api(`/api/titles/${id}`, { signal }),
-    api('/api/tracker-urls', { signal }).catch(() => ({ items: {} })),
-  ]);
-  const trackerUrls = trackerData.items || {};
+  const data = await api(`/api/titles/${id}`, { signal });
   const item = data.item || {};
   const statusData = data.status || {};
   const od = data.ondemand || {};
@@ -106,7 +101,7 @@ export async function renderTitle({ params, query, signal }) {
       </div>
       ${data.releases.length ? `<div class="table-wrap"><table class="table--stack">
         <thead><tr><th>Versión</th><th>Calidad</th><th>Tamaño</th><th>Seeds</th><th>Salud</th><th>Privacidad</th><th>Progreso</th><th></th></tr></thead>
-        <tbody>${data.releases.map((release) => releaseRow(release, trackerUrls)).join('')}</tbody>
+        <tbody>${data.releases.map(releaseRow).join('')}</tbody>
       </table></div>` : empty('Sin versiones', 'Busca fuentes para capturar candidatos.', `<button class="btn btn-sm" data-action="manual-search" data-id="${id}" data-title="${esc(item.title || '')}">Buscar manualmente</button>`)}
     </div>
   `;
