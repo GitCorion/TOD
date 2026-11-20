@@ -24,11 +24,30 @@ if [[ ! -f "$ROOT/pyproject.toml" ]]; then
 fi
 
 # Entorno de arranque (solo si no existe).
-if [[ ! -f /etc/catalogo.env ]]; then
+if [[ ! -f /etc/tod.env && ! -f /etc/catalogo.env ]]; then
   install -m 640 -o root -g "$TOD_GROUP" \
-    "$ROOT/deploy/catalogo.env.example" /etc/catalogo.env
-  echo "Creado /etc/catalogo.env: edítalo o configura todo desde la web."
+    "$ROOT/deploy/tod.env.example" /etc/tod.env
+  echo "Creado /etc/tod.env: edítalo o configura todo desde la web."
 fi
+
+# Rutas de datos configuradas en TOD; systemd debe poder escribirlas.
+MEDIA_PATHS="$(
+  cd "$ROOT" && python3 - <<'PY' 2>/dev/null
+from catalogo.config import Config
+
+config = Config.load()
+paths = {
+    config.catalog_library,
+    config.library_root,
+    config.downloads_root,
+    config.ondemand_save_path,
+    config.seed_root,
+    *config.strm_roots,
+}
+print(" ".join(f"-{path}" for path in sorted({str(p) for p in paths})))
+PY
+)"
+MEDIA_PATHS="${MEDIA_PATHS:--/mnt/catalogo -/mnt/library -/mnt/descargas -/mnt/cache}"
 
 sed \
   -e "s|@ROOT@|$ROOT|g" \
@@ -36,6 +55,7 @@ sed \
   -e "s|@GROUP@|$TOD_GROUP|g" \
   -e "s|@HOST@|$TOD_HOST|g" \
   -e "s|@PORT@|$TOD_PORT|g" \
+  -e "s|@MEDIA_PATHS@|$MEDIA_PATHS|g" \
   "$ROOT/deploy/tod.service.in" > "$UNIT_DIR/tod.service"
 chmod 644 "$UNIT_DIR/tod.service"
 
@@ -65,7 +85,8 @@ for unit in "${LEGACY[@]}"; do
 done
 
 systemctl daemon-reload
-systemctl enable --now tod.service
+systemctl enable tod.service
+systemctl restart tod.service
 systemctl --no-pager --lines=0 status tod.service || true
 
 echo

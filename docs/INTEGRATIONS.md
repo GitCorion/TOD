@@ -9,7 +9,7 @@ tiene un botón **Probar** que no guarda nada.
 |---|---|
 | URL | `http://127.0.0.1:1340` |
 | Usuario | `qbittorrent` |
-| Contraseña | la de tu Web UI |
+| Contraseña | la de la Web UI del servicio |
 
 TOD usa qBittorrent para descargar, sembrar y servir. El cliente de lectura no
 expone operaciones de escritura; estas viven en `qbit_write.py` y solo se usan
@@ -22,8 +22,8 @@ desde admisión, workers y acciones explícitas.
 | URL | `http://127.0.0.1:9696/api/v1` |
 | API key | Settings → General → API Key |
 
-TOD toma todos los indexers habilitados, su idioma y su privacidad. No lee
-`config.xml`. Para excluir un tracker, desactívalo en Prowlarr.
+TOD toma todos los indexers habilitados, su idioma y su privacidad. Para
+excluir un tracker, desactívalo en Prowlarr.
 
 ## Jackett
 
@@ -53,8 +53,8 @@ cuando Jellyfin informa de una reproducción activa.
 | URL Sonarr | `http://127.0.0.1:8989/api/v3` |
 | API key | Settings → General → API Key |
 
-TOD **solo usa la API**: biblioteca, cola, historial y reescaneo. No abre ni
-modifica `radarr.db` ni `sonarr.db`. Si no los usas, déjalos vacíos.
+TOD se integra mediante la API: biblioteca, cola, historial y reescaneo. Solo
+necesita la URL y la API key. Si no se usan, se pueden dejar vacíos.
 
 ## TMDB
 

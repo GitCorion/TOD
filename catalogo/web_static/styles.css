@@ -737,8 +737,8 @@ html[data-theme="light"] {
 body { font-size: 13.5px; line-height: 1.45; }
 .brand-text strong { font-family: var(--sans); font-size: 18px; font-weight: 600; letter-spacing: 0; }
 .brand-text small { font-size: 10.5px; letter-spacing: .04em; }
-.page-head h1 { font-family: var(--sans); font-size: 20px; font-weight: 600; letter-spacing: 0; }
-.panel-head h2, .section-head h2 { font-family: var(--sans); font-size: 15px; font-weight: 600; letter-spacing: 0; }
+.page-head h1 { font-family: var(--sans); font-size: 22px; font-weight: 600; letter-spacing: -.01em; }
+.panel-head h2, .section-head h2 { font-family: var(--sans); font-size: 17px; font-weight: 600; letter-spacing: -.01em; }
 .detail-hero h2 { font-family: var(--sans); font-size: 30px; font-weight: 600; letter-spacing: -.01em; }
 .detail-hero .overview { font-size: 13.5px; max-width: 74ch; }
 .stat .value { font-family: var(--sans); font-size: 23px; font-weight: 600; letter-spacing: 0; }
@@ -807,7 +807,7 @@ html[data-theme="light"] tbody tr:hover { background: rgba(26, 32, 39, .035); }
 input, select, textarea { background: var(--paper); border: 1px solid var(--rule); border-radius: 4px; padding: 6px 8px; }
 input:focus, select:focus, textarea:focus { border-color: var(--carmine); box-shadow: 0 0 0 2px var(--carmine-soft); }
 .field > span { font-size: 11px; }
-.notice { border: 1px solid rgba(227, 179, 65, .28); border-left: 3px solid var(--amber); background: var(--amber-soft); border-radius: 4px; padding: 7px 9px; color: var(--ink); }
+.notice { border: 1px solid rgba(227, 179, 65, .28); background: var(--amber-soft); border-radius: 4px; padding: 7px 9px; color: var(--ink); }
 
 /* Tarjetas y pósters */
 .poster-grid { grid-template-columns: repeat(auto-fill, minmax(156px, 1fr)); gap: 22px 14px; }
@@ -931,5 +931,7 @@ details.fold[open] > summary::before { content: "▾"; }
   .settings-item { grid-template-columns: 1fr; gap: 6px; }
 }
 
-/* Puesta en marcha */
-.setup-card { border-left: 3px solid var(--carmine); }
+
+@media (max-width: 720px) {
+  .settings-hint { display: none; }
+}

@@ -1142,7 +1142,7 @@ def cmd_web(args, config: Config) -> int:
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="tod")
     parser.add_argument(
-        "--db", help="ruta de la base nueva (por defecto CATALOGO_DB)"
+        "--db", help="ruta de la base (por defecto TOD_DB o var/tod.db)"
     )
     sub = parser.add_subparsers(dest="command", required=True)
 

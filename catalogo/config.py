@@ -14,8 +14,19 @@ from pathlib import Path
 BASE_DIR = Path(__file__).resolve().parent.parent
 
 
+def _env_value(name: str, default: str | None = None) -> str | None:
+    """Lee `TOD_*` y mantiene compatibilidad con `CATALOGO_*`."""
+    keys = [name]
+    if name.startswith("CATALOGO_"):
+        keys.insert(0, f"TOD_{name[len('CATALOGO_'):]}")
+    for key in keys:
+        if key in os.environ:
+            return os.environ[key]
+    return default
+
+
 def _path(name: str, default: Path) -> Path:
-    return Path(os.environ.get(name, str(default))).expanduser()
+    return Path(_env_value(name, str(default)) or str(default)).expanduser()
 
 
 def _secret(name: str) -> str | None:
@@ -64,8 +75,17 @@ def _jackett_key() -> str | None:
     return key.strip() if isinstance(key, str) and key.strip() else None
 
 
+def _default_db_path() -> Path:
+    """Base nueva en `var/tod.db`; conserva `var/catalogo.db` si ya existe."""
+    current = BASE_DIR / "var" / "tod.db"
+    legacy = BASE_DIR / "var" / "catalogo.db"
+    if not current.exists() and legacy.exists():
+        return legacy
+    return current
+
+
 def _roots_from_env(name: str, default: tuple[str, ...]) -> tuple[str, ...]:
-    raw = os.environ.get(name, "")
+    raw = _env_value(name, "") or ""
     if not raw.strip():
         return default
     parts = [
@@ -110,8 +130,12 @@ class Config:
 
     @classmethod
     def from_env(cls) -> "Config":
+        db_env = os.environ.get("TOD_DB") or os.environ.get("CATALOGO_DB")
+        db_path = (
+            Path(db_env).expanduser() if db_env else _default_db_path()
+        )
         return cls(
-            db_path=_path("CATALOGO_DB", BASE_DIR / "var" / "catalogo.db"),
+            db_path=db_path,
             legacy_db=_path(
                 "CATALOGO_LEGACY_DB", BASE_DIR / "assets.db"
             ),
@@ -137,14 +161,15 @@ class Config:
             jackett_api_key=os.environ.get("JACKETT_API_KEY") or _jackett_key(),
             rd_api_key=_secret("RD_API_KEY"),
             max_stream_bytes=int(
-                float(os.environ.get("CATALOGO_MAX_STREAM_GB", "0")) * 1024**3
+                float(_env_value("CATALOGO_MAX_STREAM_GB", "0") or "0")
+                * 1024**3
             ),
             tmdb_api_key=_secret("TMDB_API_KEY"),
             catalog_library=_path(
                 "CATALOGO_CATALOG_LIBRARY", Path("/mnt/catalogo")
             ),
             max_active_ondemand=int(
-                os.environ.get("CATALOGO_MAX_ACTIVE_ONDEMAND", "4")
+                _env_value("CATALOGO_MAX_ACTIVE_ONDEMAND", "4") or "4"
             ),
             radarr_url=os.environ.get(
                 "RADARR_URL", "http://127.0.0.1:7878/api/v3"
@@ -154,15 +179,16 @@ class Config:
                 "SONARR_URL", "http://127.0.0.1:8989/api/v3"
             ),
             sonarr_api_key=_secret("SONARR_API_KEY"),
-            web_token=os.environ.get("CATALOGO_WEB_TOKEN")
+            web_token=_env_value("CATALOGO_WEB_TOKEN")
+            or _secret("TOD_WEB_TOKEN")
             or _secret("CATALOGO_WEB_TOKEN"),
             jellyfin_url=os.environ.get(
                 "JELLYFIN_URL", "http://127.0.0.1:8086"
             ),
             jellyfin_api_key=_secret("JELLYFIN_API_KEY"),
-            web_allowed_hosts=os.environ.get(
+            web_allowed_hosts=_env_value(
                 "CATALOGO_WEB_ALLOWED_HOSTS", ""
-            ),
+            ) or "",
             downloads_root=_path(
                 "CATALOGO_DOWNLOADS_ROOT", Path("/mnt/descargas")
             ),
@@ -172,9 +198,9 @@ class Config:
             strm_roots=_roots_from_env(
                 "CATALOGO_STRM_ROOTS", ("/mnt/catalogo", "/mnt/palantir")
             ),
-            playback_base_url=os.environ.get(
+            playback_base_url=_env_value(
                 "CATALOGO_PLAYBACK_BASE_URL", "http://127.0.0.1:8773"
-            ),
+            ) or "http://127.0.0.1:8773",
         )
 
     @classmethod

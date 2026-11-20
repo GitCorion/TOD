@@ -130,11 +130,11 @@ export async function renderSettings({ signal } = {}) {
         </div>
         <button class="btn btn-primary" data-action="settings-save">${icon('check', 'sm')} Guardar configuración</button>
       </div>
-      ${data.restart_required?.length ? `<div class="notice">Requieren reinicio: ${data.restart_required.map(esc).join(', ')}</div>` : ''}
+      ${data.restart_required?.length ? `<div class="notice">Requieren reinicio: ${data.restart_required.map((key) => esc(items.find((item) => item.key === key)?.label || key)).join(', ')}</div>` : ''}
     </div>
 
     <div class="section">
-      <div class="panel-head"><h2>Integraciones</h2><span class="right tiny faint">Prowlarr, Jackett, qBittorrent, Jellyfin, Radarr/Sonarr</span></div>
+      <div class="panel-head"><h2>Integraciones</h2><span class="right tiny faint settings-hint">Prowlarr, Jackett, qBittorrent, Jellyfin, Radarr/Sonarr</span></div>
       <div class="settings-grid">
         ${INTEGRATIONS.map((meta) => integrationCard(
           items.filter((item) => item.key.startsWith(`${meta.prefix}_`)), meta, data.paths,

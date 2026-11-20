@@ -61,7 +61,7 @@ SETTINGS: tuple[Setting, ...] = (
         "prowlarr_api_key", "prowlarr_api_key", "integraciones",
         "Prowlarr · API key", kind="text", env="PROWLARR_API_KEY",
         secret=True,
-        help="Se configura aquí o con PROWLARR_API_KEY. No se lee config.xml.",
+        help="Se configura aquí o con PROWLARR_API_KEY.",
     ),
     Setting(
         "jackett_url", "jackett_url", "integraciones", "Jackett · URL",
@@ -71,7 +71,8 @@ SETTINGS: tuple[Setting, ...] = (
     Setting(
         "jackett_api_key", "jackett_api_key", "integraciones",
         "Jackett · API key", kind="text", env="JACKETT_API_KEY",
-        secret=True, help="Si está vacía se lee del ServerConfig.json.",
+        secret=True,
+        help="Si está vacía, se usa la configuración local de Jackett.",
     ),
     Setting(
         "qbittorrent_url", "qbittorrent_url", "integraciones",
@@ -368,8 +369,14 @@ def _source(setting: Setting, config: Config, overrides: dict[str, str]) -> str:
     current = getattr(config, setting.attr, None)
     if setting.secret:
         return "env" if current else "default"
-    if setting.env and os.environ.get(setting.env):
-        return "env"
+    if setting.env:
+        keys = [setting.env]
+        if setting.env.startswith("CATALOGO_"):
+            keys.insert(0, f"TOD_{setting.env[len('CATALOGO_'):]}")
+        elif setting.env.startswith("TOD_"):
+            keys.append(f"CATALOGO_{setting.env[len('TOD_'):]}")
+        if any(key in os.environ for key in keys):
+            return "env"
     return "default"
 
 
@@ -401,7 +408,6 @@ def serialize(config: Config) -> dict[str, Any]:
     """Vista segura para la web: sin secretos en claro."""
     overrides = _read_overrides(config.db_path)
     items: list[dict[str, Any]] = []
-    restart: list[str] = []
     for setting in SETTINGS:
         source = _source(setting, config, overrides)
         item: dict[str, Any] = {
@@ -426,8 +432,6 @@ def serialize(config: Config) -> dict[str, Any]:
             item["value"] = ""
         else:
             item["value"] = _display(config, setting)
-        if setting.restart_required and source == "db":
-            restart.append(setting.key)
         items.append(item)
     sections = [
         {
@@ -440,7 +444,7 @@ def serialize(config: Config) -> dict[str, Any]:
     return {
         "sections": sections,
         "settings": items,
-        "restart_required": restart,
+        "restart_required": [],
     }
 
 

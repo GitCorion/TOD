@@ -151,6 +151,16 @@ def test_path_status_reports_space_and_writability(tmp_path):
     assert status["checked_parent"] == str(tmp_path)
 
 
+def test_tod_env_aliases(monkeypatch, tmp_path):
+    monkeypatch.setenv("TOD_LIBRARY_ROOT", str(tmp_path / "library"))
+    monkeypatch.setenv("TOD_WEB_TOKEN", "token-tod")
+    monkeypatch.setenv("TOD_DB", str(tmp_path / "tod.db"))
+    config = Config.from_env()
+    assert config.library_root == tmp_path / "library"
+    assert config.web_token == "token-tod"
+    assert config.db_path == tmp_path / "tod.db"
+
+
 def test_source_reports_environment(monkeypatch, tmp_path):
     db = _db(tmp_path)
     base = _config(tmp_path, db)

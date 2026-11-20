@@ -56,7 +56,7 @@ export async function renderAdd({ query, signal }) {
     <div class="toolbar">
       <label class="field grow">
         <span>Buscar en TMDB</span>
-        <input data-input="add-q" value="${esc(text)}" placeholder="Título en español o internacional" autocomplete="off" aria-label="Buscar en TMDB">
+        <input data-input="add-q" value="${esc(text)}" placeholder="Título original o internacional" autocomplete="off" aria-label="Buscar en TMDB">
       </label>
       <label class="field" style="width:110px">
         <span>Año</span>

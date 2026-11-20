@@ -76,7 +76,7 @@ export async function renderDashboard({ signal }) {
       <div class="row between" style="align-items:flex-start;gap:16px">
         <div>
           <strong>Termina de configurar TOD</strong>
-          <p class="muted tiny" style="margin:4px 0 0">Conecta tus servicios y revisa los directorios. Sin esta configuración no se pueden buscar fuentes ni reproducir.</p>
+          <p class="muted tiny" style="margin:4px 0 0">Conecta los servicios y revisa los directorios. Sin esta configuración no se pueden buscar fuentes ni reproducir.</p>
           <div class="row" style="margin-top:10px">${setupMissing.map((name) => badge(name === 'catalog_library' ? 'Biblioteca del catálogo' : capabilityLabel(name), 'mono')).join('')}</div>
         </div>
         <a class="btn btn-primary" href="#/settings">${icon('wrench', 'sm')} Configurar</a>

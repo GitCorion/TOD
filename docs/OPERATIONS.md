@@ -18,14 +18,14 @@ curl -s http://127.0.0.1:8773/api/system | python3 -m json.tool
 Actualizar:
 
 ```bash
-cd /opt/catalogo
+cd /ruta/a/TOD
 git pull
 sudo systemctl restart tod.service
 ```
 
 ## Tareas programadas
 
-El scheduler interno sustituye a los timers. Se gestiona en
+El scheduler interno ejecuta las tareas periódicas. Se gestiona en
 **Configuración → Tareas programadas**.
 
 | Tarea | Por defecto |
@@ -107,14 +107,14 @@ existan y sean escribibles; no mueve datos por su cuenta.
 
 ## Copias
 
-La base y las claves están en `var/catalogo.db`. Con el servicio parado:
+La base y las claves están en `var/tod.db`. Con el servicio parado:
 
 ```bash
-sqlite3 var/catalogo.db ".backup '/ruta/segura/catalogo-$(date +%F).db'"
+sqlite3 var/tod.db ".backup '/ruta/segura/tod-$(date +%F).db'"
 ```
 
 No copies `*.db-wal` por separado. Para restaurar, para el servicio, sustituye
-`var/catalogo.db` y arranca.
+`var/tod.db` y arranca.
 
 ## Problemas frecuentes
 

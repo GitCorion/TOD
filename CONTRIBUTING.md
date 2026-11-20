@@ -1,6 +1,6 @@
 # Contribuir a TOD
 
-1. Haz un fork y crea una rama: `git switch -c feat/mi-cambio`.
+1. Haz un fork y crea una rama: `git switch -c feat/cambio`.
 2. Instala en modo editable: `python3 -m pip install -e .`.
 3. Ejecuta los tests antes de abrir el PR:
 

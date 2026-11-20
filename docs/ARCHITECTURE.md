@@ -33,7 +33,8 @@ catalogo/
 ## Descubrimiento de trackers
 
 - **Prowlarr**: TOD usa todos los indexers habilitados. De cada uno lee
-  `name`, `language` (para inferir castellano) y `privacy`.
+  `name`, `language` y `privacy`; el idioma del indexer se usa para inferir el
+  audio cuando el título no trae una etiqueta explícita.
 - **Jackett**: consulta el indexer `all`; cada resultado incluye
   `<jackettindexer>` y `<type>`, así que TOD conoce el tracker real y descarta
   los privados en el fallback público.
@@ -41,8 +42,8 @@ catalogo/
 
 ## Radarr y Sonarr
 
-TOD **no abre sus bases de datos**. Usa `radarr_url` + `radarr_api_key` y
-`sonarr_url` + `sonarr_api_key`:
+TOD se integra con Radarr y Sonarr mediante sus APIs, configuradas con
+`radarr_url` + `radarr_api_key` y `sonarr_url` + `sonarr_api_key`:
 
 - biblioteca (`/movie`, `/series`, `/episode`, `/episodefile`),
 - historial (`/history`) para mapear `DownloadId`,
@@ -54,7 +55,7 @@ Los clientes están en `catalogo/arr.py`; los índices de biblioteca en
 
 ## Base de datos
 
-SQLite en `var/catalogo.db` (`0600`, WAL). Tablas principales:
+SQLite en `var/tod.db` (`0600`, WAL). Tablas principales:
 
 | Tabla | Contenido |
 |---|---|
@@ -81,10 +82,13 @@ SQLite en `var/catalogo.db` (`0600`, WAL). Tablas principales:
 | `/play`, `/resolve`, `/sources`, `/status` | reproducción |
 | `/catalog/lookup` | resolver un `.strm` desde la app |
 
-## Decisiones
+## Principios de diseño
 
-- Un solo `PlayService` y un solo `StreamGuard`.
-- Secretos en SQLite, enmascarados en la API.
-- Configuración: BD > entorno > valores por defecto.
-- Recarga en caliente al guardar; las reproducciones activas conservan su instancia.
+- Un proceso, una configuración y un motor de reproducción.
+- Los secretos viven en SQLite y se enmascaran en la API.
+- Precedencia de configuración: base de datos > entorno > valores por defecto.
+- Los cambios se aplican en caliente; las reproducciones activas conservan su
+  instancia anterior.
 - El scheduler usa `jobs`, que serializa tareas y evita solapamientos.
+- Las integraciones se prueban antes de guardar y nunca se accede a las bases
+  de datos de Radarr/Sonarr.

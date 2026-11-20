@@ -1129,6 +1129,11 @@ class Handler(PlaybackHandler):
                 {
                     **result,
                     **app_settings.serialize(config),
+                    "restart_labels": [
+                        app_settings.BY_KEY[key].label
+                        for key in result.get("restart_required", [])
+                        if key in app_settings.BY_KEY
+                    ],
                 },
                 head=head,
             )

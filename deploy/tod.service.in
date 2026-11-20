@@ -10,6 +10,7 @@ User=@USER@
 Group=@GROUP@
 WorkingDirectory=@ROOT@
 Environment=PYTHONUNBUFFERED=1
+EnvironmentFile=-/etc/tod.env
 EnvironmentFile=-/etc/catalogo.env
 ExecStart=/usr/bin/python3 -m catalogo.cli service --host @HOST@ --port @PORT@
 Restart=on-failure
@@ -18,7 +19,7 @@ NoNewPrivileges=yes
 PrivateTmp=yes
 ProtectSystem=strict
 ProtectHome=read-only
-ReadWritePaths=@ROOT@/var -/mnt/catalogo -/mnt/library -/mnt/descargas -/mnt/cache
+ReadWritePaths=@ROOT@/var @MEDIA_PATHS@
 
 [Install]
 WantedBy=multi-user.target

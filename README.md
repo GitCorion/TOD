@@ -4,21 +4,21 @@
 [![license](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![python](https://img.shields.io/badge/python-3.11%2B-3776AB.svg)](https://www.python.org/)
 
-**Tu catálogo, tu qBittorrent y tu Jellyfin, en un solo servicio.**
+**Catálogo, qBittorrent y Jellyfin en un solo servicio.**
 
-TOD convierte tu servidor en un catálogo bajo demanda: busca títulos, los
+TOD convierte un servidor en un catálogo bajo demanda: busca títulos, los
 publica como `.strm` para Jellyfin y descarga solo cuando alguien los
 reproduce. Web, API, reproducción y tareas programadas viven en el mismo
 proceso y se configuran desde el navegador.
 
-No necesitas editar bases de datos, ni `config.xml`, ni archivos de entorno
-para empezar. Pones las URLs y las API keys de tus servicios en la web y TOD
-hace el resto.
+No hace falta editar bases de datos, ni archivos de configuración de Prowlarr,
+ni variables de entorno para empezar. Las URLs y API keys se introducen en la
+web y TOD aplica el resto.
 
 ## Qué puedes hacer
 
 - **Buscar y añadir** películas y series desde TMDB.
-- **Publicar `.strm`** en tu biblioteca de Jellyfin, con una versión por fuente.
+- **Publicar `.strm`** en la biblioteca de Jellyfin, con una versión por fuente.
 - **Reproducir bajo demanda** desde qBittorrent con rangos HTTP reales (206).
 - **Sembrar con reglas** por tracker: tiempo mínimo, ratio, abandono y reseed.
 - **Descubrir fuentes** en Prowlarr y Jackett, sin listas de trackers escritas a mano.
@@ -42,7 +42,7 @@ Un único proceso sirve:
 - la web y su API (`/`, `/api/*`),
 - el motor de reproducción (`/play`, `/resolve`, `/sources`, `/status`,
   `/catalog/lookup`, `/prepare`, `/lease`),
-- el scheduler interno que sustituye a los timers.
+- el scheduler interno de tareas periódicas.
 
 ## Instalación rápida
 
@@ -55,7 +55,7 @@ cd TOD
 sudo bash deploy/install-unified.sh
 ```
 
-El instalador crea `/etc/catalogo.env` si no existe, instala `tod.service`,
+El instalador crea `/etc/tod.env` si no existe, instala `tod.service`,
 desactiva los servicios antiguos y arranca TOD en `0.0.0.0:8773`.
 
 Abre `http://IP_DEL_SERVIDOR:8773` y completa la configuración:
@@ -68,7 +68,7 @@ Abre `http://IP_DEL_SERVIDOR:8773` y completa la configuración:
 6. **Radarr/Sonarr** (opcional): URL y API key. TOD solo usa su API.
 
 Cada bloque tiene **Probar** para validar antes de guardar. Los secretos se
-guardan en `var/catalogo.db` con permisos `0600` y nunca se devuelven al
+guardan en `var/tod.db` con permisos `0600` y nunca se devuelven al
 navegador.
 
 ## Integraciones
@@ -83,7 +83,8 @@ navegador.
 | Sonarr | Biblioteca y cola, solo API | Opcional |
 | TMDB | Metadatos, pósters y sinopsis | Recomendado |
 
-TOD no lee ni escribe las bases de datos de Radarr/Sonarr. Usa sus API keys.
+TOD se integra con Radarr y Sonarr mediante sus APIs. Solo necesita la URL y
+la API key de cada servicio.
 Los trackers se descubren de Prowlarr (incluido su idioma) y de Jackett
 (`all`, con el indexer real de cada resultado): no hay listas privadas en el
 repositorio.
@@ -98,15 +99,15 @@ repositorio.
 - **Seguridad**: token web y hosts permitidos.
 - **Tareas programadas**: activar, cambiar cadencia, ver la próxima ejecución y lanzar ahora.
 
-Los valores se guardan en SQLite y mandan sobre `/etc/catalogo.env`. Los
+Los valores se guardan en SQLite y mandan sobre `/etc/tod.env`. Los
 cambios se aplican en caliente, salvo el puerto y la URL base de reproducción.
 
 ## Seguridad
 
 - Pensado para LAN o WireGuard. No publiques el puerto en Internet.
 - `/prepare`, `/lease` y `/play?...&download=1` están restringidos a loopback.
-- Define `CATALOGO_WEB_TOKEN` si el panel queda accesible desde la LAN.
-- Los secretos viven en `var/catalogo.db` (`0600`); `.env` y `var/` están
+- Define `TOD_WEB_TOKEN` si el panel queda accesible desde la LAN.
+- Los secretos viven en `var/tod.db` (`0600`); `.env` y `var/` están
   ignorados por git.
 - Lee [SECURITY.md](SECURITY.md) antes de exponer el servicio.
 
@@ -119,8 +120,7 @@ pip install -e ".[dev]"
 python -m pytest -q
 ```
 
-El paquete interno se llama `catalogo` por compatibilidad; el producto, el CLI
-y el servicio se llaman TOD. El comando instalado es `tod`:
+TOD se distribuye como paquete Python y se ejecuta con el comando `tod`:
 
 ```bash
 tod --help

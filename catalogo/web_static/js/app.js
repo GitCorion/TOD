@@ -941,7 +941,13 @@ document.addEventListener('click', async (event) => {
         values[key] = input.value;
       });
       const result = await apiPost('/api/settings', { values });
-      toast(`Configuración guardada (${result.saved?.length || 0} ajustes)`, 'ok');
+      const restart = result.restart_labels || [];
+      toast(
+        restart.length
+          ? `Guardado. Requiere reinicio: ${restart.join(', ')}`
+          : `Configuración guardada (${result.saved?.length || 0} ajustes)`,
+        restart.length ? 'warn' : 'ok',
+      );
       await route();
       return;
     }
