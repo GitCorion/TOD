@@ -80,10 +80,9 @@ def _media_ids_for(conn, torrent_id: int) -> list[str]:
     ).fetchall()
     result: list[str] = []
     for row in rows:
-        if row["key"]:
-            result.append(str(row["key"]))
-        if row["media_id"]:
-            result.append(str(row["media_id"]))
+        for value in (row["key"], row["media_id"]):
+            if value and str(value) not in result:
+                result.append(str(value))
     return result
 
 

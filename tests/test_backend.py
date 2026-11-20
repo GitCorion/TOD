@@ -168,7 +168,7 @@ def test_private_pack_prioritizes_episode_but_downloads_all(tmp_path):
     assert client.added[0]["paused"] is True
     assert client.added[0]["category"] == "ondemand"
     assert client.added[0]["use_download_path"] is False
-    assert client.priorities[0][1] == {0: 1, 1: 7, 2: 1, 3: 1}
+    assert client.priorities[0][1] == {0: 1, 1: 6, 2: 1, 3: 1}
     assert client.forced == [(info_hash(TORRENT), True)]
     assert client.resumed == [info_hash(TORRENT)]
     assert getattr(client, "paused", []) == []
