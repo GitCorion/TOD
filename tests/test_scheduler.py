@@ -1,0 +1,122 @@
+from datetime import datetime, timedelta, timezone
+from pathlib import Path
+
+import pytest
+
+from catalogo import scheduler
+from catalogo.db import init_db
+
+MIGRATIONS = Path(__file__).resolve().parents[1] / "migrations"
+
+
+def _db(tmp_path):
+    db = tmp_path / "catalogo.db"
+    init_db(db, MIGRATIONS)
+    return db
+
+
+def test_defaults_are_exposed(tmp_path):
+    db = _db(tmp_path)
+    tasks = scheduler.list_tasks(
+        db, now=datetime(2026, 11, 20, 12, 0, tzinfo=timezone.utc)
+    )
+    names = [task["name"] for task in tasks]
+    assert "worker-cycle" in names
+    assert "rss-sync" in names
+    assert "restore-strm" in names
+    worker = next(task for task in tasks if task["name"] == "worker-cycle")
+    assert worker["enabled"] is True
+    assert worker["next_run"] is not None
+    metadata = next(task for task in tasks if task["name"] == "metadata")
+    assert metadata["enabled"] is False
+
+
+def test_save_task_persists_and_validates(tmp_path):
+    db = _db(tmp_path)
+    state = scheduler.save_task(
+        db, "rss-sync", {"enabled": False, "interval": 900}
+    )
+    assert state["enabled"] is False
+    assert state["interval"] == 900
+    loaded = scheduler.load_task(db, scheduler.BY_NAME["rss-sync"])
+    assert loaded["enabled"] is False
+    assert loaded["interval"] == 900
+
+    with pytest.raises(ValueError):
+        scheduler.save_task(db, "rss-sync", {"interval": 1})
+    with pytest.raises(ValueError):
+        scheduler.save_task(db, "monitor", {"at": "99:99"})
+    with pytest.raises(ValueError):
+        scheduler.save_task(db, "backfill", {"weekday": 9})
+    with pytest.raises(ValueError):
+        scheduler.save_task(db, "inventada", {})
+
+
+def test_next_daily_and_weekly():
+    now = datetime(2026, 11, 20, 12, 0, tzinfo=timezone.utc)  # viernes
+    daily = scheduler.BY_NAME["monitor"]
+    state = {
+        "enabled": True, "at": "04:20", "interval": 300, "weekday": 4,
+        "params": {},
+    }
+    nxt = scheduler.compute_next(daily, state, None, now)
+    assert nxt == datetime(2026, 11, 21, 4, 20, tzinfo=timezone.utc)
+
+    weekly = scheduler.BY_NAME["backfill"]
+    state = {**state, "at": "03:00", "weekday": 6}
+    nxt = scheduler.compute_next(weekly, state, None, now)
+    assert nxt == datetime(2026, 11, 22, 3, 0, tzinfo=timezone.utc)
+
+    disabled = {**state, "enabled": False}
+    assert scheduler.compute_next(weekly, disabled, None, now) is None
+
+
+def test_scheduler_tick_submits_due_tasks(tmp_path):
+    db = _db(tmp_path)
+    for task in scheduler.DEFAULT_TASKS:
+        if task.name != "worker-cycle":
+            scheduler.save_task(db, task.name, {"enabled": False})
+
+    class FakeRunner:
+        def __init__(self):
+            self.calls = []
+
+        def submit(self, kind, params=None, *, requested_by=None):
+            self.calls.append((kind, params, requested_by))
+            return len(self.calls)
+
+    runner = FakeRunner()
+    now = datetime(2026, 11, 20, 12, 0, tzinfo=timezone.utc)
+    sched = scheduler.Scheduler(db, runner, clock=lambda: now)
+    sched._prepare_initial(now)
+    assert sched.tick(now + timedelta(seconds=5)) == []
+    submitted = sched.tick(now + timedelta(seconds=11))
+    assert submitted == [{"name": "worker-cycle", "job_id": 1}]
+    assert runner.calls[0][0] == "worker-cycle"
+    assert runner.calls[0][2] == "scheduler"
+
+
+def test_scheduler_cooldown_on_conflict(tmp_path):
+    db = _db(tmp_path)
+    for task in scheduler.DEFAULT_TASKS:
+        scheduler.save_task(db, task.name, {"enabled": False})
+    scheduler.save_task(db, "worker-cycle", {"enabled": True})
+
+    class BusyRunner:
+        def submit(self, *args, **kwargs):
+            from catalogo.jobs import JobConflict
+
+            raise JobConflict("ocupado")
+
+    now = datetime(2026, 11, 20, 12, 0, tzinfo=timezone.utc)
+    sched = scheduler.Scheduler(db, BusyRunner(), clock=lambda: now)
+    sched._prepare_initial(now)
+    assert sched.tick(now + timedelta(seconds=11)) == []
+    assert sched._cooldown["worker-cycle"] > now.timestamp()
+
+
+def test_run_now_unknown_task(tmp_path):
+    db = _db(tmp_path)
+    sched = scheduler.Scheduler(db, None)
+    with pytest.raises(ValueError):
+        sched.run_now("inventada")

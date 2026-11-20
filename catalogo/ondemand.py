@@ -1,0 +1,1266 @@
+"""Vista del catálogo on-demand.
+
+Los estados se calculan con hechos:
+- `.strm` existente en disco -> publicado.
+- torrent de categoría ondemand en qBittorrent -> descarga real.
+- Radarr/Sonarr -> si el título ya está en biblioteca (solo lectura).
+"""
+
+from __future__ import annotations
+
+from contextlib import closing
+from datetime import date, datetime, timezone
+from typing import Any
+
+from . import queries, settings, strm_inventory
+from .db import connect
+
+PAGE_SIZE = 25
+
+
+def _now() -> str:
+    return datetime.now(timezone.utc).isoformat()
+
+
+def _asset_ids_with_releases(db_path) -> set[int]:
+    with closing(connect(db_path)) as conn:
+        rows = conn.execute("SELECT DISTINCT asset_id FROM releases").fetchall()
+    return {int(row["asset_id"]) for row in rows}
+
+
+def _asset_ids_with_downloads(db_path) -> set[int]:
+    with closing(connect(db_path)) as conn:
+        rows = conn.execute(
+            """
+            SELECT DISTINCT asset_id FROM torrent_files
+            WHERE asset_id IS NOT NULL
+              AND (
+                (storage_location='LOCAL_DISK' AND state IN ('ready','seeding'))
+                OR (storage_location='1FICHIER' AND state='archived')
+              )
+            """
+        ).fetchall()
+    return {int(row["asset_id"]) for row in rows}
+
+
+def downloaded_asset_ids(db_path) -> set[int]:
+    return _asset_ids_with_downloads(db_path)
+
+
+def _ondemand_torrents(db_path, qbit=None) -> dict[int, dict[str, Any]]:
+    """asset_id -> último torrent ondemand que lo contiene."""
+    with closing(connect(db_path)) as conn:
+        rows = conn.execute(
+            """
+            SELECT f.asset_id, t.info_hash, t.state, t.qbit_state,
+                   t.progress, t.ratio, t.id AS torrent_id
+            FROM torrent_files f
+            JOIN torrents t ON t.id = f.torrent_id
+            WHERE t.category = 'ondemand' AND t.state <> 'removed'
+              AND f.asset_id IS NOT NULL
+            ORDER BY t.id
+            """
+        ).fetchall()
+    live: dict[str, dict] = {}
+    if qbit is not None:
+        try:
+            for torrent in qbit.torrents(category="ondemand"):
+                live[(torrent.get("hash") or "").lower()] = torrent
+        except Exception:
+            live = {}
+    result: dict[int, dict[str, Any]] = {}
+    for row in rows:
+        item = dict(row)
+        info_hash = (item.get("info_hash") or "").lower()
+        current = live.get(info_hash)
+        if current is not None:
+            item["state"] = current.get("state") or item.get("state")
+            item["progress"] = current.get("progress") or 0
+        result[int(item["asset_id"])] = item
+    return result
+
+
+def _download_state(torrent: dict[str, Any] | None) -> tuple[str, float]:
+    if not torrent:
+        return "sin_descarga", 0.0
+    raw = (torrent.get("state") or "").lower()
+    progress = float(torrent.get("progress") or 0)
+    if "error" in raw or "missing" in raw:
+        return "error", progress
+    if progress >= 1 or "seed" in raw or "upload" in raw or raw.endswith("up"):
+        return "sembrando", progress
+    if raw.startswith(("paused", "stopped")):
+        return "pausado", progress
+    if "dl" in raw or "download" in raw or "meta" in raw:
+        return "descargando", progress
+    return "sin_descarga", progress
+
+
+def _summary_states(db_path, config, qbit=None) -> dict[str, Any]:
+    inventory = strm_inventory.inventory(config.catalog_library)
+    keys = inventory["keys"]
+    with_releases = _asset_ids_with_releases(db_path)
+    with closing(connect(db_path)) as conn:
+        media = conn.execute(
+            """
+            SELECT id, key, kind, tmdb, title, year, season, episode,
+                   COALESCE(popularity,0) AS popularity
+            FROM media_items
+            """
+        ).fetchall()
+
+    movies = {"published": 0, "pending": 0, "no_source": 0, "total": 0}
+    series: dict[int, dict[str, Any]] = {}
+    published_episodes = 0
+    db_keys: set[str] = set()
+    for row in media:
+        item = dict(row)
+        db_keys.add(item["key"])
+        published = strm_inventory.is_key_published(item, keys)
+        has_release = int(item["id"]) in with_releases
+        if item["kind"] == "movie":
+            movies["total"] += 1
+            if published:
+                movies["published"] += 1
+            elif has_release:
+                movies["pending"] += 1
+            else:
+                movies["no_source"] += 1
+            continue
+        tmdb = int(item["tmdb"] or 0)
+        group = series.setdefault(
+            tmdb,
+            {"published": False, "has_release": False, "episodes": 0},
+        )
+        group["episodes"] += 1
+        group["has_release"] = group["has_release"] or has_release
+        if published:
+            group["published"] = True
+            published_episodes += 1
+
+    series_counts = {"published": 0, "pending": 0, "no_source": 0, "total": len(series)}
+    for group in series.values():
+        if group["published"]:
+            series_counts["published"] += 1
+        elif group["has_release"]:
+            series_counts["pending"] += 1
+        else:
+            series_counts["no_source"] += 1
+
+    return {
+        "movies": movies,
+        "series": series_counts,
+        "episodes": published_episodes,
+        "orphans": len(keys - db_keys),
+        "inventory": inventory,
+    }
+
+
+def _download_counts(qbit) -> dict[str, int]:
+    counts = {
+        "total": 0,
+        "downloading": 0,
+        "seeding": 0,
+        "paused": 0,
+        "error": 0,
+        "other": 0,
+    }
+    if qbit is None:
+        return counts
+    try:
+        torrents = qbit.torrents(category="ondemand")
+    except Exception:
+        return counts
+    for torrent in torrents:
+        state, _ = _download_state(torrent)
+        counts["total"] += 1
+        key = {
+            "descargando": "downloading",
+            "sembrando": "seeding",
+            "pausado": "paused",
+            "error": "error",
+        }.get(state, "other")
+        counts[key] += 1
+    return counts
+
+
+def public_arr(data: dict[str, Any]) -> dict[str, Any]:
+    return {
+        key: value
+        for key, value in data.items()
+        if key not in ("movies_by_tmdb", "series_by_tmdb")
+    }
+
+
+def overview(
+    db_path,
+    config,
+    *,
+    qbit=None,
+    arr=None,
+) -> dict[str, Any]:
+    states = _summary_states(db_path, config, qbit=qbit)
+    downloads = _download_counts(qbit)
+    library = public_arr(arr.overview() if arr is not None else {
+        "ok": False,
+        "error": "Radarr/Sonarr no configurados",
+    })
+    limit = settings.ondemand_max_active(
+        db_path, getattr(config, "max_active_ondemand", settings.DEFAULT_MAX_ACTIVE)
+    )
+    disk = library.get("disk") if library.get("ok") else None
+    if not disk:
+        disk = queries._disk(config.catalog_library)
+    return {
+        "catalog": {
+            "movies": states["movies"],
+            "series": states["series"],
+            "episodes": states["episodes"],
+            "orphans": states.get("orphans", 0),
+            "versions": states["inventory"]["versions"],
+            "root": states["inventory"]["root"],
+        },
+        "downloads": downloads,
+        "limit": limit,
+        "library": library,
+        "disk": disk,
+        "generated_at": _now(),
+    }
+
+
+def catalog(
+    db_path,
+    config,
+    *,
+    qbit=None,
+    arr=None,
+    q: str = "",
+    kind: str = "",
+    publication: str = "",
+    download: str = "",
+    library: str = "",
+    page: int = 1,
+    per_page: int = PAGE_SIZE,
+    group: str = "episode",
+    facets: bool = True,
+    sort: str = "popularity",
+) -> dict[str, Any]:
+    """Catálogo paginado.
+
+    `group=series` colapsa los episodios en una entrada por serie. Es el modo
+    que usa la interfaz: una serie no debe ocupar 13 filas seguidas.
+    """
+    page = max(1, int(page))
+    per_page = max(1, min(int(per_page), 100))
+    group = "series" if group == "series" else "episode"
+    inventory = strm_inventory.inventory(config.catalog_library)
+    keys = inventory["keys"]
+    with_releases = _asset_ids_with_releases(db_path)
+    downloaded_assets = _asset_ids_with_downloads(db_path)
+    torrents = _ondemand_torrents(db_path, qbit)
+    arr_cache: dict[int, dict[str, Any]] = {}
+
+    def series_library(tmdb: int, season: int | None = None,
+                       episode: int | None = None) -> dict[str, Any]:
+        if arr is None:
+            return {"in_library": False, "has_file": False}
+        cache_key = int(tmdb)
+        if season and episode:
+            return arr.in_library(
+                "series", cache_key, season=season, episode=episode
+            )
+        cached = arr_cache.get(cache_key)
+        if cached is None:
+            cached = arr.in_library("series", cache_key)
+            arr_cache[cache_key] = cached
+        return cached
+
+    with closing(connect(db_path)) as conn:
+        rows = conn.execute(
+            """
+            SELECT m.id, m.key, m.kind, m.tmdb, m.title, m.year, m.season,
+                   m.episode, m.status, m.updated_at,
+                   m.poster_path, m.overview, m.vote_average, m.library_added,
+                   COALESCE(m.popularity,0) AS popularity,
+                   (SELECT COUNT(*) FROM releases r WHERE r.asset_id=m.id)
+                       AS releases,
+                   (SELECT COUNT(*) FROM releases r WHERE r.asset_id=m.id
+                       AND r.health='alive') AS alive
+            FROM media_items m
+            """
+        ).fetchall()
+
+    base: list[dict[str, Any]] = []
+    q = (q or "").strip().lower()
+    for row in rows:
+        item = dict(row)
+        if q and q not in (item["title"] or "").lower() and q not in (item["key"] or "").lower():
+            continue
+        if kind in ("movie", "series") and item["kind"] != kind:
+            continue
+        published = strm_inventory.is_key_published(item, keys)
+        library_added = bool(item.get("library_added"))
+        if published or library_added:
+            pub_state = "publicado"
+        elif int(item["id"]) in with_releases:
+            pub_state = "pendiente"
+        else:
+            pub_state = "sin_fuente"
+        torrent = torrents.get(int(item["id"]))
+        dl_state, progress = _download_state(torrent)
+        lib = (
+            arr.in_library(item["kind"], int(item["tmdb"]))
+            if arr is not None and item["kind"] == "movie" and item.get("tmdb")
+            else {"in_library": False, "has_file": False}
+        )
+        downloaded = (
+            dl_state == "sembrando"
+            or int(item["id"]) in downloaded_assets
+            or (item["kind"] == "movie" and bool(lib.get("has_file")))
+        )
+        item.update(
+            {
+                "publication": pub_state,
+                "published": published,
+                "library_added": library_added,
+                "download": dl_state,
+                "downloaded": downloaded,
+                "progress": progress,
+                "in_library": bool(lib.get("in_library")),
+                "has_file": bool(lib.get("has_file")),
+            }
+        )
+        if item["kind"] == "series" and item.get("tmdb"):
+            lib_series = series_library(int(item["tmdb"]))
+            item["in_library"] = bool(lib_series.get("in_library"))
+            item["has_file"] = bool(lib_series.get("has_file"))
+        base.append(item)
+
+    if group == "series":
+        grouped = _group_series(base, series_library)
+        grouped.sort(key=lambda item: (
+            -(float(item.get("popularity") or 0)),
+            (item.get("title") or "").lower(),
+        ))
+        # Para una serie, el estado de la ficha manda sobre el de un episodio.
+        for item in grouped:
+            if item["kind"] == "series":
+                item["in_library"] = bool(
+                    series_library(int(item["tmdb"])).get("in_library")
+                )
+                item["has_file"] = bool(
+                    series_library(int(item["tmdb"])).get("has_file")
+                )
+        entries = grouped
+        episodes_total = sum(
+            int(item.get("episodes") or 0)
+            for item in entries
+            if item["kind"] == "series"
+        )
+        episodes_published_total = sum(
+            int(item.get("published_episodes") or 0)
+            for item in entries
+            if item["kind"] == "series"
+        )
+        episodes_library_total = sum(
+            int(item.get("library_episodes") or 0)
+            for item in entries
+            if item["kind"] == "series"
+        )
+    else:
+        entries = base
+        episodes_total = sum(
+            1 for item in entries if item["kind"] == "series"
+        )
+        episodes_published_total = sum(
+            1 for item in entries
+            if item["kind"] == "series" and item.get("published")
+        )
+        episodes_library_total = sum(
+            1 for item in entries
+            if item["kind"] == "series" and item.get("library_added")
+        )
+
+    facet_source = [
+        item
+        for item in entries
+        if (not kind or item["kind"] == kind)
+    ]
+    facet_data = _facets(facet_source) if facets else None
+
+    def keep(item: dict[str, Any]) -> bool:
+        if publication and item.get("publication") != publication:
+            return False
+        if download:
+            if item["kind"] == "series":
+                counts = item.get("download_counts") or {}
+                if download == "descargado":
+                    if not counts.get("descargado"):
+                        return False
+                elif download == "sin_descarga":
+                    if counts.get("descargado") or counts.get("descargando") \
+                            or counts.get("pausado") or counts.get("error"):
+                        return False
+                elif download in ("descargando", "pausado", "error"):
+                    if not counts.get(download):
+                        return False
+                elif item.get("download") != download:
+                    return False
+            elif download == "descargado":
+                if not item.get("downloaded"):
+                    return False
+            elif download == "sin_descarga":
+                if item.get("downloaded") or item.get("download") in (
+                    "descargando", "pausado", "error", "sembrando"
+                ):
+                    return False
+            elif item.get("download") != download:
+                return False
+        if library == "yes" and not item.get("in_library"):
+            return False
+        if library == "no" and item.get("in_library"):
+            return False
+        return True
+
+    filtered = [item for item in entries if keep(item)]
+    if sort == "title":
+        filtered.sort(key=lambda item: (item.get("title") or "").lower())
+    elif sort == "year":
+        filtered.sort(
+            key=lambda item: (-(int(item.get("year") or 0)),
+                              (item.get("title") or "").lower())
+        )
+    elif sort == "recent":
+        filtered.sort(
+            key=lambda item: str(item.get("updated_at") or ""), reverse=True
+        )
+
+    total = len(filtered)
+    start = (page - 1) * per_page
+    page_items = filtered[start:start + per_page]
+    if arr is not None:
+        for entry in page_items:
+            if (
+                entry["kind"] == "series"
+                and not entry.get("downloaded")
+                and entry.get("tmdb")
+            ):
+                lib = series_library(
+                    int(entry["tmdb"]),
+                    entry.get("season"),
+                    entry.get("episode"),
+                )
+                entry["in_library"] = bool(lib.get("in_library"))
+                entry["has_file"] = bool(lib.get("has_file"))
+                entry["downloaded"] = bool(lib.get("has_file"))
+    return {
+        "items": page_items,
+        "page": page,
+        "per_page": per_page,
+        "total": total,
+        "pages": max(1, (total + per_page - 1) // per_page),
+        "group": group,
+        "episodes_total": episodes_total,
+        "episodes_published_total": episodes_published_total,
+        "episodes_library_total": episodes_library_total,
+        "facets": facet_data,
+        "generated_at": _now(),
+    }
+
+
+def _release_available(value: str | None) -> tuple[bool, str | None]:
+    """Disponible cuando la fecha de estreno/emisión ya ha llegado."""
+    text = (value or "").strip()[:10]
+    if not text:
+        return True, None
+    return text <= date.today().isoformat(), text
+
+
+def _group_series(items, series_library) -> list[dict[str, Any]]:
+    """Colapsa episodios en una entrada por serie, con contadores."""
+    groups: dict[int, list[dict[str, Any]]] = {}
+    output: list[dict[str, Any]] = []
+    for item in items:
+        if item["kind"] != "series" or not item.get("tmdb"):
+            output.append(item)
+            continue
+        groups.setdefault(int(item["tmdb"]), []).append(item)
+
+    for tmdb, rows in groups.items():
+        rows.sort(
+            key=lambda row: (
+                int(row.get("season") or 0),
+                int(row.get("episode") or 0),
+            )
+        )
+        first = rows[0]
+        counts = {
+            "descargado": 0,
+            "descargando": 0,
+            "pausado": 0,
+            "error": 0,
+            "sin_descarga": 0,
+        }
+        published_count = 0
+        library_count = 0
+        for row in rows:
+            if row.get("published"):
+                published_count += 1
+            if row.get("published") or row.get("library_added"):
+                library_count += 1
+            if row.get("downloaded"):
+                counts["descargado"] += 1
+                continue
+            state = row.get("download") or "sin_descarga"
+            if state == "sembrando":
+                counts["descargado"] += 1
+            elif state in ("descargando", "pausado", "error"):
+                counts[state] += 1
+            else:
+                counts["sin_descarga"] += 1
+        if counts["descargando"]:
+            primary = "descargando"
+        elif counts["pausado"]:
+            primary = "pausado"
+        elif counts["error"]:
+            primary = "error"
+        elif counts["descargado"]:
+            primary = "sembrando"
+        else:
+            primary = "sin_descarga"
+        publication = (
+            "publicado"
+            if library_count
+            else "pendiente"
+            if any(row.get("publication") == "pendiente" for row in rows)
+            else "sin_fuente"
+        )
+        poster = next(
+            (row.get("poster_path") for row in rows if row.get("poster_path")),
+            None,
+        )
+        overview = next(
+            (row.get("overview") for row in rows if row.get("overview")), None
+        )
+        vote = next(
+            (row.get("vote_average") for row in rows
+             if row.get("vote_average") is not None),
+            None,
+        )
+        output.append(
+            {
+                "id": first["id"],
+                "key": f"series:tmdb:{tmdb}",
+                "kind": "series",
+                "tmdb": tmdb,
+                "title": first.get("title"),
+                "year": first.get("year"),
+                "season": None,
+                "episode": None,
+                "status": first.get("status"),
+                "updated_at": max(
+                    (str(row.get("updated_at") or "") for row in rows),
+                    default="",
+                ),
+                "popularity": max(
+                    float(row.get("popularity") or 0) for row in rows
+                ),
+                "releases": sum(int(row.get("releases") or 0) for row in rows),
+                "alive": sum(int(row.get("alive") or 0) for row in rows),
+                "publication": publication,
+                "published": bool(published_count),
+                "library_added": bool(library_count),
+                "library_episodes": library_count,
+                "download": primary,
+                "downloaded": bool(counts["descargado"]),
+                "progress": max(
+                    (float(row.get("progress") or 0) for row in rows),
+                    default=0.0,
+                ),
+                "in_library": any(bool(row.get("in_library")) for row in rows),
+                "has_file": any(bool(row.get("has_file")) for row in rows),
+                "episodes": len(rows),
+                "published_episodes": published_count,
+                "download_counts": counts,
+                "seasons": sorted(
+                    {int(row.get("season") or 0) for row in rows if row.get("season")}
+                ),
+                "poster_path": poster,
+                "overview": overview,
+                "vote_average": vote,
+            }
+        )
+    return output
+
+
+def _facets(items: list[dict[str, Any]]) -> dict[str, dict[str, int]]:
+    publication = {"publicado": 0, "pendiente": 0, "sin_fuente": 0}
+    downloads = {
+        "descargando": 0,
+        "pausado": 0,
+        "error": 0,
+        "descargado": 0,
+        "sin_descarga": 0,
+    }
+    kinds = {"movie": 0, "series": 0}
+    for item in items:
+        publication[item.get("publication") or "sin_fuente"] = (
+            publication.get(item.get("publication") or "sin_fuente", 0) + 1
+        )
+        if item.get("kind") in kinds:
+            kinds[item["kind"]] += 1
+        if item["kind"] == "series":
+            counts = item.get("download_counts") or {}
+            if counts.get("descargando"):
+                downloads["descargando"] += 1
+            elif counts.get("pausado"):
+                downloads["pausado"] += 1
+            elif counts.get("error"):
+                downloads["error"] += 1
+            elif counts.get("descargado"):
+                downloads["descargado"] += 1
+            else:
+                downloads["sin_descarga"] += 1
+        else:
+            state = item.get("download") or "sin_descarga"
+            if state == "sembrando":
+                downloads["descargado"] += 1
+            elif state in downloads:
+                downloads[state] += 1
+            else:
+                downloads["sin_descarga"] += 1
+    return {
+        "publication": publication,
+        "download": downloads,
+        "kind": kinds,
+    }
+
+
+def series_detail(
+    db_path,
+    config,
+    tmdb: int,
+    *,
+    qbit=None,
+    arr=None,
+    tmdb_data: dict[str, Any] | None = None,
+) -> dict[str, Any] | None:
+    """Serie completa, cruzando TMDB con lo que existe en el catálogo.
+
+    TMDB manda para la estructura (temporadas y episodios). La base local
+    aporta el estado real de cada episodio: catálogo, `.strm`, descarga,
+    releases y salud. Los episodios que aún no están en la base aparecen
+    marcados como ``sin_catalogo``.
+    """
+    tmdb = int(tmdb)
+    inventory = strm_inventory.inventory(config.catalog_library)
+    keys = inventory["keys"]
+    with_releases = _asset_ids_with_releases(db_path)
+    downloaded_assets = _asset_ids_with_downloads(db_path)
+    torrents = _ondemand_torrents(db_path, qbit)
+    with closing(connect(db_path)) as conn:
+        rows = [
+            dict(row)
+            for row in conn.execute(
+                """
+                SELECT id, key, kind, tmdb, title, year, season, episode,
+                       status, updated_at, poster_path, overview, vote_average,
+                       library_added, monitored, air_date
+                FROM media_items
+                WHERE kind='series' AND tmdb=?
+                ORDER BY season, episode, id
+                """,
+                (tmdb,),
+            ).fetchall()
+        ]
+        release_counts = {
+            int(row["asset_id"]): (int(row["releases"]), int(row["alive"]))
+            for row in conn.execute(
+                """
+                SELECT asset_id, COUNT(*) AS releases,
+                       SUM(CASE WHEN health='alive' THEN 1 ELSE 0 END) AS alive
+                FROM releases
+                WHERE asset_id IN (SELECT id FROM media_items
+                                   WHERE kind='series' AND tmdb=?)
+                GROUP BY asset_id
+                """,
+                (tmdb,),
+            ).fetchall()
+        }
+    if not rows and not tmdb_data:
+        return None
+
+    lib = (
+        arr.in_library("series", tmdb)
+        if arr is not None
+        else {"in_library": False, "has_file": False}
+    )
+
+    def state_for(row: dict[str, Any]) -> dict[str, Any]:
+        published = strm_inventory.is_key_published(row, keys)
+        library_added = bool(row.get("library_added")) or published
+        publication = (
+            "publicado"
+            if library_added
+            else "pendiente"
+            if int(row["id"]) in with_releases
+            else "sin_fuente"
+        )
+        torrent = torrents.get(int(row["id"]))
+        download, progress = _download_state(torrent)
+        downloaded = download == "sembrando" or int(row["id"]) in downloaded_assets
+        releases, alive = release_counts.get(int(row["id"]), (0, 0))
+        available, available_at = _release_available(row.get("air_date"))
+        return {
+            "id": row["id"],
+            "key": row["key"],
+            "season": int(row["season"] or 0),
+            "episode": int(row["episode"] or 0),
+            "title": row.get("title"),
+            "publication": publication,
+            "published": published,
+            "library_added": library_added,
+            "monitored": bool(row.get("monitored")),
+            "available": available,
+            "available_at": available_at,
+            "download": download,
+            "downloaded": downloaded,
+            "progress": progress,
+            "releases": releases,
+            "alive": alive,
+            "in_catalog": True,
+            "name": None,
+            "air_date": None,
+            "overview": None,
+            "still_path": None,
+        }
+
+    states: dict[tuple[int, int], dict[str, Any]] = {}
+    for row in rows:
+        episode = state_for(row)
+        states[(episode["season"], episode["episode"])] = episode
+
+    tmdb_seasons = (tmdb_data or {}).get("seasons") or []
+    seasons_out: list[dict[str, Any]] = []
+    matched: set[tuple[int, int]] = set()
+    for season in tmdb_seasons:
+        try:
+            number = int(season.get("season") or 0)
+        except (TypeError, ValueError):
+            continue
+        episodes: list[dict[str, Any]] = []
+        for source in season.get("episodes") or []:
+            try:
+                episode_number = int(source.get("episode") or 0)
+            except (TypeError, ValueError):
+                continue
+            key = (number, episode_number)
+            state = states.get(key)
+            if state is not None:
+                matched.add(key)
+                episode = dict(state)
+            else:
+                episode = {
+                    "id": None,
+                    "key": f"series:tmdb:{tmdb}:{number}:{episode_number}",
+                    "season": number,
+                    "episode": episode_number,
+                    "title": None,
+                    "publication": "sin_catalogo",
+                    "published": False,
+                    "download": "sin_descarga",
+                    "downloaded": False,
+                    "progress": 0.0,
+                    "releases": 0,
+                    "alive": 0,
+                    "in_catalog": False,
+                }
+            episode.update(
+                {
+                    "name": source.get("name") or f"Episodio {episode_number}",
+                    "air_date": source.get("air_date"),
+                    "overview": source.get("overview"),
+                    "still_path": source.get("still_path"),
+                    "in_catalog": bool(state),
+                }
+            )
+            available, available_at = _release_available(source.get("air_date"))
+            episode["available"] = available
+            episode["available_at"] = available_at
+            episodes.append(episode)
+        seasons_out.append(
+            {
+                "season": number,
+                "name": season.get("name") or (
+                    "Especiales" if number == 0 else f"Temporada {number}"
+                ),
+                "air_date": season.get("air_date"),
+                "poster_path": season.get("poster_path"),
+                "episodes": episodes,
+            }
+        )
+
+    # Episodios que existen en la base pero no aparecen en TMDB.
+    extras: dict[int, list[dict[str, Any]]] = {}
+    for key, state in states.items():
+        if key in matched:
+            continue
+        extras.setdefault(state["season"], []).append(state)
+    existing_seasons = {season["season"]: season for season in seasons_out}
+    for number, episodes in sorted(extras.items()):
+        episodes.sort(key=lambda item: item["episode"])
+        if number in existing_seasons:
+            existing_seasons[number]["episodes"].extend(episodes)
+            existing_seasons[number]["episodes"].sort(
+                key=lambda item: item["episode"]
+            )
+        else:
+            seasons_out.append(
+                {
+                    "season": number,
+                    "name": "Especiales" if number == 0 else f"Temporada {number}",
+                    "air_date": None,
+                    "poster_path": None,
+                    "episodes": episodes,
+                }
+            )
+    seasons_out.sort(key=lambda season: season["season"])
+    for season in seasons_out:
+        season["episode_count"] = len(season["episodes"])
+        season["catalog_episodes"] = sum(
+            1 for episode in season["episodes"] if episode.get("in_catalog")
+        )
+        season["published"] = sum(
+            1 for episode in season["episodes"] if episode.get("published")
+        )
+        season["library"] = sum(
+            1 for episode in season["episodes"] if episode.get("library_added")
+        )
+        season["downloaded"] = sum(
+            1 for episode in season["episodes"] if episode.get("downloaded")
+        )
+
+    first = rows[0] if rows else {}
+    tmdb_series = (tmdb_data or {}).get("series") or {}
+    series = {
+        "tmdb": tmdb,
+        "title": tmdb_series.get("title") or first.get("title"),
+        "year": tmdb_series.get("year") or first.get("year"),
+        "poster_path": tmdb_series.get("poster_path") or next(
+            (row.get("poster_path") for row in rows if row.get("poster_path")),
+            None,
+        ),
+        "backdrop_path": tmdb_series.get("backdrop_path"),
+        "overview": tmdb_series.get("overview") or next(
+            (row.get("overview") for row in rows if row.get("overview")), None
+        ),
+        "vote_average": tmdb_series.get("vote_average") if tmdb_series.get("vote_average") is not None else next(
+            (row.get("vote_average") for row in rows
+             if row.get("vote_average") is not None),
+            None,
+        ),
+        "in_library": bool(lib.get("in_library")),
+        "has_file": bool(lib.get("has_file")),
+    }
+    all_episodes = [
+        episode for season in seasons_out for episode in season["episodes"]
+    ]
+    totals = {
+        "episodes": len(all_episodes),
+        "catalog_episodes": len(rows),
+        "missing_episodes": sum(
+            1 for episode in all_episodes if not episode.get("in_catalog")
+        ),
+        "published": sum(1 for episode in all_episodes if episode.get("published")),
+        "library": sum(1 for episode in all_episodes if episode.get("library_added")),
+        "downloaded": sum(
+            1 for episode in all_episodes if episode.get("downloaded")
+        ),
+        "downloading": sum(
+            1 for episode in all_episodes
+            if episode.get("download") == "descargando"
+        ),
+        "seasons": len(seasons_out),
+    }
+    return {
+        "series": series,
+        "totals": totals,
+        "seasons": seasons_out,
+        "tmdb_ok": bool(tmdb_data),
+        "tmdb_errors": (tmdb_data or {}).get("errors") or [],
+        "tmdb_url": f"https://www.themoviedb.org/tv/{tmdb}",
+    }
+
+def collection_states(db_path, config, parts: list[dict]) -> list[dict]:
+    """Cruza las películas de una colección con el catálogo local."""
+    inventory = strm_inventory.inventory(config.catalog_library)
+    published_keys = inventory["keys"]
+    downloaded_ids = _asset_ids_with_downloads(db_path)
+    with_releases = _asset_ids_with_releases(db_path)
+    tmdb_ids = [int(part["tmdb"]) for part in parts if part.get("tmdb")]
+    rows = []
+    if tmdb_ids:
+        placeholders = ",".join("?" for _ in tmdb_ids)
+        with closing(connect(db_path)) as conn:
+            rows = [
+                dict(row)
+                for row in conn.execute(
+                    f"SELECT id, key, tmdb, title, year, poster_path, monitored, library_added, release_date "
+                    f"FROM media_items WHERE kind='movie' AND tmdb IN ({placeholders})",
+                    tmdb_ids,
+                ).fetchall()
+            ]
+    by_tmdb = {int(row["tmdb"]): row for row in rows}
+    result = []
+    for part in parts:
+        item = dict(part)
+        row = by_tmdb.get(int(part.get("tmdb") or 0))
+        if row is None:
+            item.update(
+                {
+                    "asset_id": None,
+                    "in_catalog": False,
+                    "published": False,
+                    "downloaded": False,
+                    "publication": "sin_catalogo",
+                }
+            )
+        else:
+            published = row["key"] in published_keys
+            library_added = bool(row.get("library_added")) or published
+            publication = (
+                "publicado"
+                if library_added
+                else "pendiente"
+                if int(row["id"]) in with_releases
+                else "sin_fuente"
+            )
+            item.update(
+                {
+                    "asset_id": int(row["id"]),
+                    "key": row["key"],
+                    "in_catalog": True,
+                    "published": published,
+                    "library_added": library_added,
+                    "downloaded": int(row["id"]) in downloaded_ids,
+                    "publication": publication,
+                    "monitored": bool(row.get("monitored")),
+                    "available": _release_available(row.get("release_date"))[0],
+                    "available_at": _release_available(row.get("release_date"))[1],
+                    "poster_path": row.get("poster_path") or item.get("poster_path"),
+                }
+            )
+        result.append(item)
+    return result
+
+
+def monitored_items(
+    db_path,
+    config,
+    *,
+    q: str = "",
+    state: str = "",
+    kind: str = "",
+    page: int = 1,
+    per_page: int = 50,
+) -> dict[str, Any]:
+    """Cola de seguimiento: títulos monitorizados que aún no tienen .strm."""
+    inventory = strm_inventory.inventory(config.catalog_library)
+    published_keys = inventory["keys"]
+    query = (
+        "SELECT id, key, kind, tmdb, title, year, season, episode, poster_path, "
+        "monitored, monitor_source, monitor_last_search_at, "
+        "release_date, air_date "
+        "FROM media_items WHERE monitored = 1"
+    )
+    params: list[Any] = []
+    if kind in ("movie", "series"):
+        query += " AND kind = ?"
+        params.append(kind)
+    text = (q or "").strip().lower()
+    if text:
+        query += " AND (lower(title) LIKE ? OR lower(key) LIKE ?)"
+        params.extend([f"%{text}%", f"%{text}%"])
+    query += " ORDER BY monitor_last_search_at IS NULL, monitor_last_search_at, id"
+    with closing(connect(db_path)) as conn:
+        rows = [dict(row) for row in conn.execute(query, params).fetchall()]
+        asset_ids = [int(row["id"]) for row in rows]
+        release_counts: dict[int, tuple[int, int]] = {}
+        active_torrents: dict[int, dict[str, Any]] = {}
+        if asset_ids:
+            placeholders = ",".join("?" for _ in asset_ids)
+            release_counts = {
+                int(row["asset_id"]): (int(row["releases"]), int(row["alive"]))
+                for row in conn.execute(
+                    f"SELECT asset_id, COUNT(*) AS releases, "
+                    f"SUM(CASE WHEN health='alive' THEN 1 ELSE 0 END) AS alive "
+                    f"FROM releases WHERE asset_id IN ({placeholders}) "
+                    f"GROUP BY asset_id",
+                    asset_ids,
+                ).fetchall()
+            }
+            active_torrents = {
+                int(row["asset_id"]): dict(row)
+                for row in conn.execute(
+                    f"SELECT f.asset_id, MIN(t.state) AS state, "
+                    f"MAX(t.progress) AS progress "
+                    f"FROM torrent_files f JOIN torrents t ON t.id = f.torrent_id "
+                    f"WHERE f.asset_id IN ({placeholders}) "
+                    f"AND t.category = 'ondemand' "
+                    f"AND t.state IN ('waiting', 'downloading') "
+                    f"GROUP BY f.asset_id",
+                    asset_ids,
+                ).fetchall()
+            }
+
+    items: list[dict[str, Any]] = []
+    for row in rows:
+        if row["key"] in published_keys:
+            continue
+        available, available_at = _release_available(
+            row.get("release_date") or row.get("air_date")
+        )
+        active = active_torrents.get(int(row["id"]))
+        last_search = row.get("monitor_last_search_at")
+        if active is not None:
+            item_state = (
+                "downloading" if active.get("state") == "downloading" else "queued"
+            )
+        elif not available:
+            item_state = "pending"
+        elif not last_search:
+            item_state = "waiting"
+        else:
+            item_state = "searching"
+        releases, alive = release_counts.get(int(row["id"]), (0, 0))
+        items.append(
+            {
+                **row,
+                "available": available,
+                "available_at": available_at,
+                "state": item_state,
+                "last_search": last_search,
+                "releases": releases,
+                "alive": alive,
+                "progress": float((active or {}).get("progress") or 0),
+            }
+        )
+
+    summary = {
+        "total": len(items),
+        "missing": sum(
+            1 for item in items if item["state"] in ("waiting", "searching")
+        ),
+        "pending": sum(1 for item in items if item["state"] == "pending"),
+        "downloading": sum(
+            1 for item in items if item["state"] in ("downloading", "queued")
+        ),
+    }
+    if state == "missing":
+        items = [item for item in items if item["state"] in ("waiting", "searching")]
+    elif state in ("pending", "downloading"):
+        wanted = (
+            ("downloading", "queued")
+            if state == "downloading"
+            else (state,)
+        )
+        items = [item for item in items if item["state"] in wanted]
+    per_page = max(1, min(int(per_page or 50), 200))
+    total = len(items)
+    pages = max(1, (total + per_page - 1) // per_page)
+    page = max(1, min(int(page or 1), pages))
+    start = (page - 1) * per_page
+    return {
+        "items": items[start : start + per_page],
+        "total": total,
+        "page": page,
+        "pages": pages,
+        "per_page": per_page,
+        "summary": summary,
+    }
+
+
+def pending_targets(
+    db_path,
+    config,
+    *,
+    publication: str = "pendiente",
+    kind: str = "",
+    q: str = "",
+    limit: int = 0,
+) -> list[dict[str, Any]]:
+    """Títulos sin `.strm` que aún se pueden buscar.
+
+    `pendiente` = ya tiene algún release; `sin_fuente` = no tiene ninguno.
+    Se devuelven claves reales, porque el buscador trabaja por título.
+    """
+    publication = publication if publication in ("pendiente", "sin_fuente") else "pendiente"
+    inventory = strm_inventory.inventory(config.catalog_library)
+    published = inventory["keys"]
+    with_releases = _asset_ids_with_releases(db_path)
+    text = (q or "").strip().lower()
+    with closing(connect(db_path)) as conn:
+        rows = [
+            dict(row)
+            for row in conn.execute(
+                """
+                SELECT id, key, kind, tmdb, title, year, season, episode,
+                       COALESCE(popularity,0) AS popularity
+                FROM media_items
+                ORDER BY popularity DESC, title, season, episode
+                """
+            ).fetchall()
+        ]
+    targets: list[dict[str, Any]] = []
+    for row in rows:
+        if row["key"] in published:
+            continue
+        has_release = int(row["id"]) in with_releases
+        if publication == "pendiente" and not has_release:
+            continue
+        if publication == "sin_fuente" and has_release:
+            continue
+        if kind in ("movie", "series") and row["kind"] != kind:
+            continue
+        if text and text not in (row.get("title") or "").lower() \
+                and text not in (row.get("key") or "").lower():
+            continue
+        targets.append(
+            {
+                "id": int(row["id"]),
+                "key": row["key"],
+                "kind": row["kind"],
+                "tmdb": row.get("tmdb"),
+                "title": row.get("title"),
+                "year": row.get("year"),
+                "season": row.get("season"),
+                "episode": row.get("episode"),
+                "popularity": row.get("popularity"),
+            }
+        )
+    if limit and limit > 0:
+        targets = targets[: int(limit)]
+    return targets
+
+
+def pending_summary(
+    db_path,
+    config,
+    *,
+    publication: str = "pendiente",
+    kind: str = "",
+    q: str = "",
+) -> dict[str, Any]:
+    targets = pending_targets(
+        db_path, config, publication=publication, kind=kind, q=q
+    )
+    series_tmdb = {
+        int(target["tmdb"])
+        for target in targets
+        if target["kind"] == "series" and target.get("tmdb")
+    }
+    return {
+        "publication": publication,
+        "kind": kind,
+        "q": q,
+        "total": len(targets),
+        "movies": sum(1 for target in targets if target["kind"] == "movie"),
+        "series_episodes": sum(
+            1 for target in targets if target["kind"] == "series"
+        ),
+        "series": len(series_tmdb),
+    }
+
+
+def search_catalog(db_path, query: str, *, limit: int = 8) -> dict[str, Any]:
+    """Búsqueda rápida para la paleta global, sin tocar Radarr/Sonarr."""
+    text = (query or "").strip()
+    if len(text) < 2:
+        return {"items": [], "total": 0}
+    pattern = f"%{text.lower()}%"
+    prefix = f"{text.lower()}%"
+    word = f"% {text.lower()}%"
+    with closing(connect(db_path)) as conn:
+        rows = [
+            dict(row)
+            for row in conn.execute(
+                """
+                SELECT id, key, kind, tmdb, title, year, season, episode,
+                       poster_path, COALESCE(popularity,0) AS popularity
+                FROM media_items
+                WHERE lower(title) LIKE ? OR lower(original_title) LIKE ?
+                   OR lower(key) LIKE ?
+                ORDER BY CASE
+                    WHEN lower(title) LIKE ? THEN 0
+                    WHEN lower(title) LIKE ? THEN 1
+                    WHEN lower(original_title) LIKE ? THEN 2
+                    ELSE 3
+                END, popularity DESC, title
+                LIMIT 300
+                """,
+                (pattern, pattern, pattern, prefix, word, prefix),
+            ).fetchall()
+        ]
+    seen_series: set[int] = set()
+    items: list[dict[str, Any]] = []
+    for row in rows:
+        if row["kind"] == "series":
+            tmdb = int(row.get("tmdb") or 0)
+            if not tmdb or tmdb in seen_series:
+                continue
+            seen_series.add(tmdb)
+            row = {
+                **row,
+                "key": f"series:tmdb:{tmdb}",
+                "season": None,
+                "episode": None,
+            }
+        items.append(row)
+        if len(items) >= max(1, min(int(limit), 30)):
+            break
+    return {"items": items, "total": len(items)}
+
+
+def item_state(db_path, config, item: dict[str, Any], *, qbit=None, arr=None) -> dict[str, Any]:
+    inventory = strm_inventory.inventory(config.catalog_library)
+    published = strm_inventory.is_key_published(item, inventory["keys"])
+    library_added = bool(item.get("library_added")) or published
+    available, available_at = _release_available(
+        item.get("release_date") or item.get("air_date")
+    )
+    with_releases = _asset_ids_with_releases(db_path)
+    if library_added:
+        publication = "publicado"
+    elif int(item["id"]) in with_releases:
+        publication = "pendiente"
+    else:
+        publication = "sin_fuente"
+    torrents = _ondemand_torrents(db_path, qbit)
+    torrent = torrents.get(int(item["id"]))
+    dl_state, progress = _download_state(torrent)
+    downloaded_assets = _asset_ids_with_downloads(db_path)
+    lib = {"in_library": False, "has_file": False}
+    if arr is not None and item.get("tmdb"):
+        lib = arr.in_library(
+            item["kind"],
+            int(item["tmdb"]),
+            season=item.get("season"),
+            episode=item.get("episode"),
+        )
+    return {
+        "publication": publication,
+        "published": published,
+        "library_added": library_added,
+        "available": available,
+        "available_at": available_at,
+        "download": dl_state,
+        "downloaded": (
+            dl_state == "sembrando"
+            or int(item["id"]) in downloaded_assets
+            or bool(lib.get("has_file"))
+        ),
+        "progress": progress,
+        "in_library": bool(lib.get("in_library")),
+        "has_file": bool(lib.get("has_file")),
+        "info_hash": (torrent or {}).get("info_hash"),
+    }

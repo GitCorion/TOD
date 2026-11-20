@@ -1,0 +1,364 @@
+import sqlite3
+from datetime import datetime, timedelta, timezone
+from pathlib import Path
+
+from catalogo.db import init_db
+from catalogo.qbit_sync import radarr_index, sonarr_index, sync
+
+MIGRATIONS = Path(__file__).resolve().parents[1] / "migrations"
+NOW = datetime(2026, 11, 18, 12, 0, tzinfo=timezone.utc)
+EPOCH = 1794000000
+
+
+class FakeQbit:
+    def __init__(self):
+        self.files_calls = []
+        self._torrents = [
+            {
+                "hash": "cat1", "category": "catalogo", "state": "stalledUP",
+                "progress": 1, "save_path": "/mnt/descargas/catalogo",
+                "content_path": "/mnt/descargas/catalogo/Test.mkv",
+                "download_path": "/mnt/cache/tmp/catalogo",
+                "completion_on": EPOCH, "seeding_time": 100,
+                "added_on": EPOCH - 1000, "uploaded": 10, "downloaded": 1000,
+                "ratio": 0.01, "size": 1000, "tracker": "TrackerEspanol2",
+            },
+            {
+                "hash": "rad1", "category": "radarr", "state": "queuedDL",
+                "progress": 0, "save_path": "/mnt/descargas/radarr",
+                "content_path": "/mnt/cache/tmp/radarr/Test2.mkv",
+                "download_path": "/mnt/cache/tmp/radarr",
+                "completion_on": -1, "seeding_time": 0,
+                "added_on": EPOCH - 100, "uploaded": 0, "downloaded": 0,
+                "ratio": 0, "size": 2000, "tracker": "TrackerEspanol2",
+            },
+            {
+                "hash": "comp1", "category": "completo", "state": "stalledUP",
+                "progress": 1, "save_path": "/mnt/fichier/descargas",
+                "content_path": "/mnt/fichier/descargas/Comp.mkv",
+                "download_path": "/mnt/cache/tmp/completo",
+                "completion_on": EPOCH, "seeding_time": 5000,
+                "added_on": EPOCH - 5000, "uploaded": 0, "downloaded": 3000,
+                "ratio": 0, "size": 3000, "tracker": "TrackerEspanol2",
+            },
+        ]
+
+    def torrents(self, category=None):
+        return self._torrents
+
+    def files(self, info_hash):
+        self.files_calls.append(info_hash)
+        if info_hash == "cat1":
+            return [{"index": 0, "name": "Test.mkv", "size": 1000,
+                     "progress": 1, "priority": 1}]
+        if info_hash == "comp1":
+            return [{"index": 0, "name": "Comp.mkv", "size": 3000,
+                     "progress": 1, "priority": 1}]
+        return []
+
+
+def make_radarr(path):
+    conn = sqlite3.connect(path)
+    conn.executescript(
+        """
+        CREATE TABLE MovieMetadata (Id INTEGER PRIMARY KEY, TmdbId INTEGER,
+                                    Title TEXT, Year INTEGER);
+        CREATE TABLE Movies (Id INTEGER PRIMARY KEY, MovieMetadataId INTEGER);
+        CREATE TABLE History (Id INTEGER PRIMARY KEY, DownloadId TEXT,
+                              MovieId INTEGER);
+        INSERT INTO MovieMetadata VALUES (1, 100, 'Comp Movie', 2024);
+        INSERT INTO Movies VALUES (1, 1);
+        INSERT INTO History VALUES (1, 'COMP1', 1);
+        """
+    )
+    conn.commit()
+    conn.close()
+
+
+def make_sonarr(path):
+    conn = sqlite3.connect(path)
+    conn.executescript(
+        """
+        CREATE TABLE Series (Id INTEGER PRIMARY KEY, TvdbId INTEGER,
+                             TmdbId INTEGER, Title TEXT);
+        CREATE TABLE Episodes (Id INTEGER PRIMARY KEY, SeasonNumber INTEGER,
+                               EpisodeNumber INTEGER);
+        CREATE TABLE History (Id INTEGER PRIMARY KEY, DownloadId TEXT,
+                              SeriesId INTEGER, EpisodeId INTEGER);
+        INSERT INTO Series VALUES (1, 555, 200, 'Test Show');
+        INSERT INTO Episodes VALUES (1, 1, 2);
+        INSERT INTO History VALUES (1, 'SER1', 1, 1);
+        """
+    )
+    conn.commit()
+    conn.close()
+
+
+def seed_db(tmp_path):
+    db = tmp_path / "catalogo.db"
+    init_db(db, MIGRATIONS)
+    conn = sqlite3.connect(db)
+    conn.execute(
+        "INSERT INTO media_items(key, media_id, kind, tmdb, title, year) "
+        "VALUES(?,?,?,?,?,?)",
+        ("movie:tmdb:1", "movie:tmdb:1", "movie", 1, "Test", 2020),
+    )
+    asset_id = conn.execute("SELECT id FROM media_items").fetchone()[0]
+    conn.execute(
+        "INSERT INTO releases(asset_id,tracker,title,size_bytes) VALUES(?,?,?,?)",
+        (asset_id, "TrackerEspanol2", "Test.mkv", 1000),
+    )
+    release_id = conn.execute("SELECT id FROM releases").fetchone()[0]
+    conn.execute(
+        "INSERT INTO torrents(info_hash, release_id, state) VALUES(?,?,?)",
+        ("cat1", release_id, "seeding"),
+    )
+    torrent_id = conn.execute("SELECT id FROM torrents").fetchone()[0]
+    conn.execute(
+        "INSERT INTO torrent_files(asset_id, release_id, torrent_id, file_index, "
+        "local_path, size_bytes, state, storage_location) "
+        "VALUES(?,?,?,?,?,?,?,?)",
+        (asset_id, release_id, torrent_id, 0,
+         "/mnt/descargas/catalogo/Test.mkv", 1000, "ready", "LOCAL_DISK"),
+    )
+    conn.commit()
+    conn.close()
+    return db, asset_id
+
+
+def test_indexes(tmp_path):
+    radarr = tmp_path / "radarr.db"
+    sonarr = tmp_path / "sonarr.db"
+    make_radarr(radarr)
+    make_sonarr(sonarr)
+    assert radarr_index(radarr)["comp1"]["tmdb"] == 100
+    assert sonarr_index(sonarr)["ser1"][0]["tmdb"] == 200
+    assert sonarr_index(sonarr)["ser1"][0]["tvdb"] == 555
+
+
+def test_sync_read_only_and_dedup(tmp_path):
+    db, asset_id = seed_db(tmp_path)
+    radarr = tmp_path / "radarr.db"
+    sonarr = tmp_path / "sonarr.db"
+    make_radarr(radarr)
+    make_sonarr(sonarr)
+    client = FakeQbit()
+
+    report = sync(
+        db, client, radarr_db=radarr, sonarr_db=sonarr,
+        dry_run=False, check_exists=False, now=NOW,
+    )
+    assert report.torrents_seen == 3
+    assert report.files_fetched == 2
+    assert "rad1" not in client.files_calls
+    assert set(client.files_calls) == {"cat1", "comp1"}
+
+    conn = sqlite3.connect(db)
+    conn.row_factory = sqlite3.Row
+    torrents = {
+        row["info_hash"]: row for row in conn.execute("SELECT * FROM torrents")
+    }
+    assert torrents["comp1"]["category"] == "completo"
+    assert torrents["comp1"]["progress"] == 1
+    assert torrents["rad1"]["category"] == "radarr"
+    assert torrents["rad1"]["progress"] == 0
+
+    media = conn.execute(
+        "SELECT * FROM media_items WHERE key='movie:tmdb:100'"
+    ).fetchone()
+    assert media["status"] == "ON_1FICHIER"
+    assert media["active_file_id"] is not None
+
+    cat_media = conn.execute(
+        "SELECT * FROM media_items WHERE id=?", (asset_id,)
+    ).fetchone()
+    assert cat_media["status"] == "SEEDING_LOCAL"
+
+    files = conn.execute(
+        "SELECT * FROM torrent_files WHERE asset_id=?", (media["id"],)
+    ).fetchall()
+    assert len(files) == 1
+    assert files[0]["storage_location"] == "1FICHIER"
+    assert files[0]["cloud_uploaded_at"] is not None
+    conn.close()
+
+
+def test_sync_is_idempotent_and_dry_run(tmp_path):
+    db, _asset_id = seed_db(tmp_path)
+    radarr = tmp_path / "radarr.db"
+    sonarr = tmp_path / "sonarr.db"
+    make_radarr(radarr)
+    make_sonarr(sonarr)
+    client = FakeQbit()
+
+    first = sync(db, client, radarr_db=radarr, sonarr_db=sonarr,
+                 check_exists=False, now=NOW)
+    second = sync(db, client, radarr_db=radarr, sonarr_db=sonarr,
+                  check_exists=False, now=NOW)
+    assert first.torrents_seen == second.torrents_seen == 3
+    conn = sqlite3.connect(db)
+    assert conn.execute("SELECT COUNT(*) FROM torrents").fetchone()[0] == 3
+    assert conn.execute("SELECT COUNT(*) FROM media_items WHERE key='movie:tmdb:100'").fetchone()[0] == 1
+    conn.close()
+
+    db2, _ = seed_db(tmp_path / "dry")
+    dry = sync(db2, client, radarr_db=radarr, sonarr_db=sonarr,
+               dry_run=True, check_exists=False, now=NOW)
+    assert dry.dry_run
+    conn = sqlite3.connect(db2)
+    assert conn.execute("SELECT COUNT(*) FROM media_items WHERE key='movie:tmdb:100'").fetchone()[0] == 0
+    assert conn.execute("SELECT COUNT(*) FROM torrents WHERE info_hash='comp1'").fetchone()[0] == 0
+    conn.close()
+
+
+def test_qbittorrent5_stopped_states_are_paused():
+    from catalogo.qbit_sync import _qbit_state_to_db
+
+    assert _qbit_state_to_db("stoppedDL", 0) == "paused"
+    assert _qbit_state_to_db("stoppedUP", 1) == "paused"
+    assert _qbit_state_to_db("pausedDL", 0.5) == "paused"
+
+
+def seed_removed_commitment(tmp_path, started_at):
+    db = tmp_path / "catalogo.db"
+    init_db(db, MIGRATIONS)
+    conn = sqlite3.connect(db)
+    conn.execute(
+        "INSERT INTO tracker_policies(tracker,privacy,min_seed_hours,"
+        "target_ratio,enabled) VALUES(?,?,?,?,?)",
+        ("TrackerEspanol2", "private", 120, 0.0, 1),
+    )
+    conn.execute(
+        "INSERT INTO media_items(key,kind,tmdb,title,year,status) "
+        "VALUES(?,?,?,?,?,?)",
+        ("movie:tmdb:9", "movie", 9, "Borrada", 2026, "SEEDING_LOCAL"),
+    )
+    asset_id = conn.execute("SELECT id FROM media_items").fetchone()[0]
+    conn.execute(
+        "INSERT INTO releases(asset_id,tracker,title,size_bytes,health) "
+        "VALUES(?,?,?,?,?)",
+        (asset_id, "TrackerEspanol2", "Borrada.mkv", 1000, "alive"),
+    )
+    release_id = conn.execute("SELECT id FROM releases").fetchone()[0]
+    conn.execute(
+        "INSERT INTO torrents(info_hash,release_id,tracker,state,category,"
+        "progress) VALUES(?,?,?,?,?,?)",
+        ("gone", release_id, "TrackerEspanol2", "seeding", "ondemand", 1),
+    )
+    torrent_id = conn.execute("SELECT id FROM torrents").fetchone()[0]
+    conn.execute(
+        "INSERT INTO torrent_files(asset_id,release_id,torrent_id,file_index,"
+        "rel_path,local_path,size_bytes,state) VALUES(?,?,?,?,?,?,?,?)",
+        (asset_id, release_id, torrent_id, 0, "Borrada.mkv",
+         "/mnt/descargas/ondemand/Borrada.mkv", 1000, "ready"),
+    )
+    conn.execute(
+        "INSERT INTO seed_commitments(asset_id,release_id,tracker,info_hash,"
+        "size_bytes,state,started_at) VALUES(?,?,?,?,?,?,?)",
+        (asset_id, release_id, "TrackerEspanol2", "gone", 1000, "seeding",
+         started_at.isoformat()),
+    )
+    conn.commit()
+    conn.close()
+    return db, asset_id, release_id
+
+
+class EmptyQbit:
+    def torrents(self, category=None):
+        return []
+
+    def files(self, info_hash):
+        return []
+
+
+def test_ondemand_removed_after_min_seed_is_closed(tmp_path):
+    db, asset_id, release_id = seed_removed_commitment(
+        tmp_path, NOW - timedelta(hours=200)
+    )
+    report = sync(
+        db, EmptyQbit(), radarr_db=None, sonarr_db=None,
+        check_exists=False, now=NOW,
+    )
+    assert report.torrents_removed == 1
+    assert report.reseed_required == 0
+    conn = sqlite3.connect(db)
+    conn.row_factory = sqlite3.Row
+    assert conn.execute(
+        "SELECT state FROM seed_commitments WHERE release_id=?",
+        (release_id,),
+    ).fetchone()["state"] == "done"
+    assert conn.execute(
+        "SELECT status FROM media_items WHERE id=?", (asset_id,)
+    ).fetchone()["status"] == "COLD"
+    conn.close()
+
+
+def test_ondemand_removed_early_requests_reseed(tmp_path):
+    db, asset_id, release_id = seed_removed_commitment(
+        tmp_path, NOW - timedelta(hours=1)
+    )
+    report = sync(
+        db, EmptyQbit(), radarr_db=None, sonarr_db=None,
+        check_exists=False, now=NOW,
+    )
+    assert report.torrents_removed == 1
+    assert report.reseed_required == 1
+    conn = sqlite3.connect(db)
+    conn.row_factory = sqlite3.Row
+    row = conn.execute(
+        "SELECT state, reason, started_at FROM seed_commitments "
+        "WHERE release_id=?",
+        (release_id,),
+    ).fetchone()
+    assert row["state"] == "approved"
+    assert row["reason"] == "reseed_early_removal"
+    assert row["started_at"] is None
+    assert conn.execute(
+        "SELECT status FROM media_items WHERE id=?", (asset_id,)
+    ).fetchone()["status"] == "COLD"
+    conn.close()
+
+
+def test_choose_active_prefers_healthy_spanish_over_larger_blocked(tmp_path):
+    from catalogo.qbit_sync import _choose_active
+
+    db = tmp_path / "catalogo.db"
+    init_db(db, MIGRATIONS)
+    conn = sqlite3.connect(db)
+    conn.row_factory = sqlite3.Row
+    conn.execute(
+        "INSERT INTO media_items(key,kind,tmdb,season,episode,title,status) "
+        "VALUES(?,?,?,?,?,?,?)",
+        ("series:tmdb:9:1:1", "series", 9, 1, 1, "Test", "COLD"),
+    )
+    asset_id = conn.execute("SELECT id FROM media_items").fetchone()[0]
+    blocked = conn.execute(
+        "INSERT INTO releases(asset_id,tracker,title,size_bytes,health,audio) "
+        "VALUES(?,?,?,?,?,?)",
+        (asset_id, "TrackerInternacional", "ep.mkv", 5000, "blocked", "unknown"),
+    ).lastrowid
+    spanish = conn.execute(
+        "INSERT INTO releases(asset_id,tracker,title,size_bytes,health,audio) "
+        "VALUES(?,?,?,?,?,?)",
+        (asset_id, "TrackerEspanol2", "pack", 4000, "alive", "castellano"),
+    ).lastrowid
+    conn.execute(
+        "INSERT INTO torrent_files(asset_id,release_id,file_index,rel_path,"
+        "size_bytes,state,library_path) VALUES(?,?,?,?,?,?,?)",
+        (asset_id, blocked, 0, "ep.mkv", 5000, "archived",
+         "/mnt/fichier/descargas/ep.mkv"),
+    )
+    conn.execute(
+        "INSERT INTO torrent_files(asset_id,release_id,file_index,rel_path,"
+        "size_bytes,state,local_path) VALUES(?,?,?,?,?,?,?)",
+        (asset_id, spanish, 0, "pack/ep.mkv", 4000, "ready",
+         "/mnt/descargas/ondemand/pack/ep.mkv"),
+    )
+    conn.commit()
+    good = conn.execute(
+        "SELECT id FROM torrent_files WHERE release_id=?", (spanish,)
+    ).fetchone()[0]
+    status, active = _choose_active(conn, asset_id)
+    conn.close()
+    assert active == good
+    assert status == "SEEDING_LOCAL"

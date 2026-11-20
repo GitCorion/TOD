@@ -1,0 +1,35 @@
+# Datos locales
+var/
+*.db
+*.db-shm
+*.db-wal
+*.sqlite
+*.log
+
+# Secretos y configuración local
+.env
+.env.*
+!.env.example
+
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.venv/
+venv/
+build/
+dist/
+*.egg-info/
+
+# Sistema y editor
+.DS_Store
+*.swp
+IMG_*.JPG
+
+# Prototipos anteriores: se conservan, no se versionan
+/assets.db
+/assets.db-*
+/build_assets.py
+/health_prowlarr.py
+/resolver.py
+/MEMORIA.md
