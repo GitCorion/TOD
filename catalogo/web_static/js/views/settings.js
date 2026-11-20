@@ -131,9 +131,16 @@ export async function renderSettings({ signal } = {}) {
         <button class="btn btn-primary" data-action="settings-save">${icon('check', 'sm')} Guardar configuración</button>
       </div>
       ${data.restart_required?.length ? `<div class="notice">Requieren reinicio: ${data.restart_required.map((key) => esc(items.find((item) => item.key === key)?.label || key)).join(', ')}</div>` : ''}
+      <nav class="chips settings-nav" aria-label="Secciones de configuración">
+        <button class="chip" data-action="settings-jump" data-target="settings-integrations">Integraciones</button>
+        <button class="chip" data-action="settings-jump" data-target="settings-directories">Directorios</button>
+        <button class="chip" data-action="settings-jump" data-target="settings-playback">Reproducción</button>
+        <button class="chip" data-action="settings-jump" data-target="settings-security">Seguridad</button>
+        <button class="chip" data-action="settings-jump" data-target="settings-scheduler">Tareas</button>
+      </nav>
     </div>
 
-    <div class="section">
+    <div class="section" id="settings-integrations">
       <div class="panel-head"><h2>Integraciones</h2><span class="right tiny faint settings-hint">Prowlarr, Jackett, qBittorrent, Jellyfin, Radarr/Sonarr</span></div>
       <div class="settings-grid">
         ${INTEGRATIONS.map((meta) => integrationCard(
@@ -143,7 +150,7 @@ export async function renderSettings({ signal } = {}) {
       </div>
     </div>
 
-    <div class="grid grid-2 section">
+    <div class="grid grid-2 section" id="settings-directories">
       <div class="panel">
         <div class="panel-head"><h2>Directorios</h2>
           <button class="btn btn-sm btn-ghost" data-action="settings-test" data-name="directories">Comprobar todo</button>
@@ -153,18 +160,18 @@ export async function renderSettings({ signal } = {}) {
           <span class="tiny faint" data-integration-result="directories"></span>
         </div>
       </div>
-      <div class="panel">
+      <div class="panel" id="settings-playback">
         <div class="panel-head"><h2>Reproducción</h2></div>
         <div class="panel-body">${playback.map(field).join('')}</div>
       </div>
     </div>
 
-    <div class="panel section">
+    <div class="panel section" id="settings-security">
       <div class="panel-head"><h2>Seguridad</h2></div>
       <div class="panel-body">${security.map(field).join('')}</div>
     </div>
 
-    <div class="panel flush section">
+    <div class="panel flush section" id="settings-scheduler">
       <div class="panel-head"><h2>Tareas programadas</h2><span class="right tiny faint">${schedule.items?.length || 0} tareas</span></div>
       <div class="table-wrap">
         <table class="table--stack">

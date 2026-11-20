@@ -926,10 +926,28 @@ document.addEventListener('click', async (event) => {
       navigate('add', [], { kind: state.tmdb.kind, q, year });
       return;
     }
+    if (action === 'add-page') {
+      const current = parseRoute().query;
+      navigate('add', [], {
+        kind: state.tmdb.kind,
+        q: current.get('q') || '',
+        year: current.get('year') || '',
+        page: element.dataset.page,
+      });
+      return;
+    }
     if (action === 'save-limit') {
       const value = Number($('input[name="max_active"]')?.value || 0);
       const result = await apiPost('/api/ondemand/settings', { max_active: value });
       toast(`Límite on-demand actualizado a ${result.max_active}`, 'ok');
+      return;
+    }
+    if (action === 'settings-jump') {
+      const target = document.getElementById(element.dataset.target);
+      if (target) {
+        const smooth = !window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+        target.scrollIntoView({ behavior: smooth ? 'smooth' : 'auto', block: 'start' });
+      }
       return;
     }
     if (action === 'settings-save') {

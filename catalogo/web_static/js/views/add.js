@@ -8,12 +8,13 @@ export async function renderAdd({ query, signal }) {
   const kind = query.get('kind') === 'series' ? 'series' : 'movie';
   const text = query.get('q') || '';
   const year = query.get('year') || '';
+  const page = Math.max(1, Number(query.get('page')) || 1);
   state.tmdb.kind = kind;
   state.tmdb.query = text;
   state.tmdb.year = year;
   setHeader('Añadir contenido', 'Biblioteca');
 
-  const params = new URLSearchParams({ kind, q: text, year });
+  const params = new URLSearchParams({ kind, q: text, year, page: String(page) });
   const data = await api(`/api/tmdb/search?${params}`, { signal });
   const results = data.results || [];
   state.tmdb.results = results;
@@ -67,7 +68,11 @@ export async function renderAdd({ query, signal }) {
 
     <div class="row between section" style="margin-bottom:10px">
       <div class="tiny faint">${text ? `${fmtInt(data.results?.length || 0)} resultados para «${esc(text)}»` : 'Tendencias en TMDB'}</div>
-      ${data.total_pages > 1 ? `<span class="tiny faint">página 1 de ${data.total_pages}</span>` : ''}
+      ${data.total_pages > 1 ? `<div class="row">
+        <button class="btn btn-sm btn-ghost" data-action="add-page" data-page="${page - 1}" ${page <= 1 ? 'disabled' : ''}>Anterior</button>
+        <span class="tiny faint">Página ${page} de ${fmtInt(data.total_pages)}</span>
+        <button class="btn btn-sm btn-ghost" data-action="add-page" data-page="${page + 1}" ${page >= data.total_pages ? 'disabled' : ''}>Siguiente</button>
+      </div>` : ''}
     </div>
 
     ${results.length

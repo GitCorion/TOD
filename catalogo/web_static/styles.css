@@ -937,3 +937,5 @@ details.fold[open] > summary::before { content: "▾"; }
 }
 
 .settings-footer { padding: 14px 0 24px; border-top: 1px solid var(--rule); }
+
+.settings-nav { margin-top: 10px; }
