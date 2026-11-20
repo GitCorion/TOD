@@ -8,7 +8,7 @@ export async function renderDashboard({ signal }) {
   const data = await api('/api/ondemand/overview', { signal });
   const activity = state.activity || await api('/api/activity', { signal }).catch(() => null);
   const jobsData = await api('/api/jobs?limit=6', { signal }).catch(() => ({ items: [] }));
-  const preview = await api('/api/ondemand/catalog?publication=publicado&group=series&per_page=6&facets=0', { signal }).catch(() => ({ items: [] }));
+  const preview = await api('/api/ondemand/catalog?publication=publicado&group=series&per_page=6&facets=0&sort=recent', { signal }).catch(() => ({ items: [] }));
   const setup = await api('/api/setup', { signal }).catch(() => null);
   const recentJobs = jobsData.items || [];
   const catalog = data.catalog || {};

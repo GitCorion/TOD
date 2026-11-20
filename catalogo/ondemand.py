@@ -296,8 +296,9 @@ def catalog(
         rows = conn.execute(
             """
             SELECT m.id, m.key, m.kind, m.tmdb, m.title, m.year, m.season,
-                   m.episode, m.status, m.updated_at,
-                   m.poster_path, m.overview, m.vote_average, m.library_added,
+                   m.episode, m.status, m.updated_at, m.created_at,
+                   m.library_added_at, m.poster_path, m.overview,
+                   m.vote_average, m.library_added,
                    COALESCE(m.popularity,0) AS popularity,
                    (SELECT COUNT(*) FROM releases r WHERE r.asset_id=m.id)
                        AS releases,
@@ -345,6 +346,12 @@ def catalog(
                 "progress": progress,
                 "in_library": bool(lib.get("in_library")),
                 "has_file": bool(lib.get("has_file")),
+                "recent_at": (
+                    item.get("library_added_at")
+                    or item.get("created_at")
+                    or item.get("updated_at")
+                    or ""
+                ),
             }
         )
         if item["kind"] == "series" and item.get("tmdb"):
@@ -449,7 +456,7 @@ def catalog(
         )
     elif sort == "recent":
         filtered.sort(
-            key=lambda item: str(item.get("updated_at") or ""), reverse=True
+            key=lambda item: str(item.get("recent_at") or ""), reverse=True
         )
 
     total = len(filtered)
@@ -511,6 +518,10 @@ def _group_series(items, series_library) -> list[dict[str, Any]]:
             )
         )
         first = rows[0]
+        first["recent_at"] = max(
+            (str(row.get("recent_at") or "") for row in rows),
+            default="",
+        )
         counts = {
             "descargado": 0,
             "descargando": 0,
