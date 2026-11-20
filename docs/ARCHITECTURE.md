@@ -17,7 +17,7 @@ catalogo/
 ├── integrations.py   pruebas de conexión
 ├── arr.py            clientes Radarr/Sonarr (solo API)
 ├── qbit_sync.py      inventario de qBittorrent en solo lectura
-├── strm.py           generación de .strm multi-versión
+├── strm.py           generación de .strm multiversión
 └── web_static/       SPA sin dependencias
 ```
 
@@ -55,7 +55,8 @@ Los clientes están en `catalogo/arr.py`; los índices de biblioteca en
 
 ## Base de datos
 
-SQLite en `var/tod.db` (`0600`, WAL). Tablas principales:
+SQLite en `var/tod.db` (`0600`, WAL; en Docker, `/config/tod.db`). Tablas
+principales:
 
 | Tabla | Contenido |
 |---|---|

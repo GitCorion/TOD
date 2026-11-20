@@ -77,7 +77,7 @@ SETTINGS: tuple[Setting, ...] = (
     Setting(
         "qbittorrent_url", "qbittorrent_url", "integraciones",
         "qBittorrent · URL", kind="url", env="QBIT_URL",
-        default="http://127.0.0.1:1340",
+        default="http://127.0.0.1:8080",
     ),
     Setting(
         "qbittorrent_user", "qbittorrent_user", "integraciones",
@@ -92,7 +92,7 @@ SETTINGS: tuple[Setting, ...] = (
     Setting(
         "jellyfin_url", "jellyfin_url", "integraciones", "Jellyfin · URL",
         kind="url", env="JELLYFIN_URL",
-        default="http://127.0.0.1:8086",
+        default="http://127.0.0.1:8096",
     ),
     Setting(
         "jellyfin_api_key", "jellyfin_api_key", "integraciones",

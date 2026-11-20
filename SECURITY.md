@@ -8,7 +8,10 @@ directamente a Internet.
 - Define `TOD_WEB_TOKEN` si el panel queda accesible desde la LAN.
 - Los secretos (qBittorrent, Prowlarr, Jackett, Jellyfin, TMDB) se guardan en
   `var/tod.db` con permisos `0600`; el `.env` y `var/` están ignorados por
-  git.
-- `/prepare`, `/lease` y `/play?...&download=1` están restringidos a loopback.
+  git. En Docker, la base está en `/config/tod.db`.
+- `/prepare` y `/lease` solo aceptan peticiones desde loopback.
+- `download=1` en `/play` inicia una descarga explícita. Las rutas de
+  reproducción (`/play`, `/resolve`, `/sources`, `/status`) no usan el token
+  del panel: no expongas el puerto fuera de la LAN o WireGuard.
 - Si encuentras una vulnerabilidad, no abras un issue público con credenciales
   ni rutas privadas. Contacta con el mantenedor del repositorio.

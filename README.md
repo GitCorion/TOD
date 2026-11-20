@@ -11,20 +11,22 @@ con qBittorrent, Jellyfin, Prowlarr, Jackett y, opcionalmente, Radarr/Sonarr.
 Esos servicios siguen siendo independientes: el `docker-compose.yml` incluido
 los levanta juntos para que la instalación sea de un solo comando.
 
-No hace falta editar bases de datos, ni archivos de configuración de Prowlarr,
-ni variables de entorno para empezar. Las URLs y API keys se introducen en la
-web y TOD aplica el resto.
+No hace falta editar bases de datos ni archivos de configuración de Prowlarr.
+Las URLs y API keys se introducen en la web y TOD aplica el resto. En Docker,
+`.env` solo aporta valores iniciales como UID/GID, IP permitida y claves.
 
 ## Qué puedes hacer
 
 - **Buscar y añadir** películas y series desde TMDB.
-- **Publicar `.strm`** en la biblioteca de Jellyfin, con una versión por fuente.
+- **Publicar `.strm` multiversión** para Jellyfin: un `.strm` principal y una
+  variante por versión reproducible.
 - **Reproducir bajo demanda** desde qBittorrent con rangos HTTP reales (206).
 - **Sembrar con reglas** por tracker: tiempo mínimo, ratio, abandono y reseed.
 - **Descubrir fuentes** en Prowlarr y Jackett, sin listas de trackers escritas a mano.
 - **Leer Radarr/Sonarr por API**, nunca tocando sus bases de datos.
 - **Automatizar** RSS, seguimiento, backfill, puente, restauración y límites de qBittorrent.
-- **Configurarlo todo** desde **Sistema → Configuración**, con pruebas de conexión.
+- **Configurar integraciones, directorios y tareas** desde
+  **Sistema → Configuración**, con pruebas de conexión.
 
 ## Cómo funciona
 
@@ -44,6 +46,33 @@ Un único proceso sirve:
   `/catalog/lookup`, `/prepare`, `/lease`),
 - el scheduler interno de tareas periódicas.
 
+## Versiones y `.strm`
+
+Cada película o episodio publicado tiene un `.strm` principal. Películas y
+episodios van en rutas distintas:
+
+```text
+movies/Título (Año)/Título (Año).strm
+series/Título (Año)/Season 01/Título S01E01.strm
+```
+
+Si hay **más de una versión reproducible**, se añade una variante por versión:
+
+```text
+movies/Título (Año)/Título (Año) - 1080p Cast.strm
+movies/Título (Año)/Título (Año) - 4K VO - Tracker.strm
+series/Título (Año)/Season 01/Título S01E01 - 1080p Cast.strm
+```
+
+- El principal resuelve la mejor fuente disponible al reproducir.
+- Cada variante apunta a una versión concreta y aparece como versión distinta
+  en Jellyfin, para elegir calidad o audio.
+- El nombre usa calidad y audio; si se repiten, añade tracker o id.
+- Por defecto solo se publican versiones reproducibles: fichero local, copia en
+  archivo o debrid cacheado.
+- Si el título solo está en Radarr/Sonarr, se publica el principal aunque el
+  catálogo no tenga releases. En series, cada episodio recibe su `.strm`.
+
 ## Instalación con Docker Compose
 
 Es la opción recomendada para una instalación completa: TOD, qBittorrent,
@@ -57,6 +86,9 @@ cp .env.docker.example .env
 docker compose up -d --build
 ```
 
+Si abres el panel por IP, añade esa IP a `TOD_WEB_ALLOWED_HOSTS` en `.env`. Por
+defecto solo se aceptan `localhost` y `127.0.0.1`.
+
 Servicios y puertos:
 
 | Servicio | URL | Para qué |
@@ -67,13 +99,16 @@ Servicios y puertos:
 | Prowlarr | `http://IP_DEL_SERVIDOR:9696` | indexers |
 | Jackett | `http://IP_DEL_SERVIDOR:9117` | fallback público |
 
+Radarr y Sonarr no están en el compose: si los usas, conéctalos por URL y API
+key desde **Configuración → Integraciones**.
+
 Primera puesta en marcha:
 
 1. Abre TOD en `8773`.
 2. Configura qBittorrent con `http://qbittorrent:8080` y sus credenciales.
 3. Pega la API key de Prowlarr, Jackett y Jellyfin.
-4. En Jellyfin, añade la biblioteca `/media/catalogo` como **Películas** y
-   **Series** (o una biblioteca mixta).
+4. En Jellyfin, añade `/media/catalogo/movies` como **Películas** y
+   `/media/catalogo/series` como **Series**.
 5. En TOD, revisa **Configuración → Directorios**.
 
 Los detalles de volúmenes, claves y primer arranque están en
@@ -101,9 +136,9 @@ Después, abre `http://IP_DEL_SERVIDOR:8773` y configura:
 5. **Directorios**: biblioteca del catálogo, descargas, semillas y biblioteca existente.
 6. **Radarr/Sonarr** (opcional): URL y API key. TOD solo usa su API.
 
-Cada bloque tiene **Probar** para validar antes de guardar. Los secretos se
-guardan en `var/tod.db` con permisos `0600` y nunca se devuelven al
-navegador.
+Cada integración tiene **Probar** para validar antes de guardar; cada directorio
+tiene **Comprobar**. Los secretos se guardan en `var/tod.db` con permisos
+`0600` (en Docker, `/config/tod.db`) y nunca se devuelven al navegador.
 
 ## Integraciones
 
@@ -112,7 +147,7 @@ navegador.
 | qBittorrent | Descargar, sembrar y servir torrents | Sí, para reproducir bajo demanda |
 | Prowlarr | Descubrir releases y comprobar salud | Recomendado |
 | Jackett | Fallback público | Opcional |
-| Jellyfin | Consumir los `.strm` y renovar leases | Recomendado |
+| Jellyfin | Reproducir los `.strm`; TOD le avisa de rutas nuevas | Recomendado |
 | Radarr | Biblioteca y cola, solo API | Opcional |
 | Sonarr | Biblioteca y cola, solo API | Opcional |
 | TMDB | Metadatos, pósters y sinopsis | Recomendado |
@@ -133,16 +168,18 @@ repositorio.
 - **Seguridad**: token web y hosts permitidos.
 - **Tareas programadas**: activar, cambiar cadencia, ver la próxima ejecución y lanzar ahora.
 
-Los valores se guardan en SQLite y mandan sobre `/etc/tod.env`. Los
-cambios se aplican en caliente, salvo el puerto y la URL base de reproducción.
+Los valores se guardan en SQLite y mandan sobre `/etc/tod.env`. Los cambios se
+aplican en caliente, salvo la URL base de reproducción, que requiere reinicio.
+El puerto se fija al arrancar el servicio.
 
 ## Seguridad
 
 - Pensado para LAN o WireGuard. No publiques el puerto en Internet.
-- `/prepare`, `/lease` y `/play?...&download=1` están restringidos a loopback.
-- Define `TOD_WEB_TOKEN` si el panel queda accesible desde la LAN.
-- Los secretos viven en `var/tod.db` (`0600`); `.env` y `var/` están
-  ignorados por git.
+- `/prepare` y `/lease` solo aceptan peticiones desde loopback.
+- `download=1` en `/play` inicia una descarga explícita. Las rutas de
+  reproducción no usan el token del panel: restringe el puerto a LAN/WireGuard.
+- Los secretos viven en `var/tod.db` (`0600`, en Docker `/config/tod.db`);
+  `.env` y `var/` están ignorados por git.
 - Lee [SECURITY.md](SECURITY.md) antes de exponer el servicio.
 
 ## Desarrollo

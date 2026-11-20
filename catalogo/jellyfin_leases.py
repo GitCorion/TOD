@@ -70,7 +70,7 @@ def _get_sessions(
 def touch_active_leases(
     db_path,
     *,
-    base_url: str = "http://127.0.0.1:8086",
+    base_url: str = "http://127.0.0.1:8096",
     api_key: str,
     timeout: float = 10.0,
     now: datetime | None = None,

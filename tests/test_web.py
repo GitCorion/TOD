@@ -254,6 +254,31 @@ def test_web_endpoints_local_and_csrf(tmp_path):
         server.app.runner.stop()
 
 
+def test_web_allows_docker_internal_host(tmp_path):
+    """Jellyfin llama a TOD como http://tod:8773 dentro de Compose."""
+    from dataclasses import replace
+
+    from catalogo.web import make_server
+
+    db, _, _ = seed(tmp_path)
+    config = replace(config_for(tmp_path, db), web_allowed_hosts="tod")
+    server = make_server("127.0.0.1", 0, config)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    port = server.server_address[1]
+    base = f"http://127.0.0.1:{port}"
+    try:
+        status, payload = _request(
+            base, "/api/overview", headers={"Host": f"tod:{port}"}
+        )
+        assert status == 200
+        assert payload["media"]["total"] == 3
+    finally:
+        server.shutdown()
+        server.server_close()
+        server.app.runner.stop()
+
+
 def test_web_token_required(tmp_path):
     from catalogo.web import _make_cookie, _valid_cookie, make_server
 

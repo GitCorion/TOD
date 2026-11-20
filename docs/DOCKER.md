@@ -24,6 +24,7 @@ Edita `.env` antes de arrancar:
 - `PUID` y `PGID`: propietario de los ficheros en el host.
 - `TZ`.
 - `TOD_WEB_ALLOWED_HOSTS`: IP LAN/WireGuard. Sin ella, el panel rechaza la IP.
+  La red interna (`tod`) se añade automáticamente.
 - `QBIT_USER` y, si ya la tienes, `QBIT_PASS`.
 - `PROWLARR_API_KEY`, `JACKETT_API_KEY`, `JELLYFIN_API_KEY`, `TMDB_API_KEY`.
 
@@ -35,11 +36,13 @@ Edita `.env` antes de arrancar:
 3. **Jackett** (`:9117`): añade indexers y copia su API key.
 4. **Jellyfin** (`:8096`): completa el asistente y crea una API key.
 5. **TOD** (`:8773`): en Configuración, conecta los servicios y prueba cada uno.
-6. **Jellyfin**: añade `/media/catalogo` como biblioteca de películas/series.
+6. **Jellyfin**: añade `/media/catalogo/movies` como biblioteca de películas
+   y `/media/catalogo/series` como biblioteca de series.
 
 TOD ya conoce las URLs internas (`http://qbittorrent:8080`,
-`http://jellyfin:8096`, etc.) mediante variables de entorno. Las claves se
-pueden poner en `.env` o en la web.
+`http://jellyfin:8096`, etc.) mediante variables de entorno. El compose añade
+además `tod` a los hosts permitidos, para que Jellyfin pueda resolver y llamar
+a `http://tod:8773`. Las claves se pueden poner en `.env` o en la web.
 
 ## Directorios
 
@@ -54,9 +57,9 @@ pueden poner en `.env` o en la web.
 | `./data/prowlarr` | `/config` | configuración de Prowlarr |
 | `./data/jackett` | `/config` | configuración de Jackett |
 
-TOD escribe los `.strm` en `/media/catalogo`; Jellyfin ve la misma ruta. Los
-`.strm` nuevos apuntan a `http://tod:8773`, que Jellyfin resuelve dentro de la
-red de Compose.
+TOD escribe los `.strm` bajo `/media/catalogo/movies` y
+`/media/catalogo/series`; Jellyfin ve las mismas rutas. Los `.strm` nuevos
+apuntan a `http://tod:8773`, que Jellyfin resuelve dentro de la red de Compose.
 
 ## Copias
 

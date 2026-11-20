@@ -120,7 +120,7 @@ class Config:
     sonarr_url: str = "http://127.0.0.1:8989/api/v3"
     sonarr_api_key: str | None = None
     web_token: str | None = None
-    jellyfin_url: str = "http://127.0.0.1:8086"
+    jellyfin_url: str = "http://127.0.0.1:8096"
     jellyfin_api_key: str | None = None
     web_allowed_hosts: str = ""
     downloads_root: Path = Path("/mnt/descargas")
@@ -151,7 +151,7 @@ class Config:
             ),
             prowlarr_api_key=os.environ.get("PROWLARR_API_KEY") or None,
             qbittorrent_url=os.environ.get(
-                "QBIT_URL", "http://127.0.0.1:1340"
+                "QBIT_URL", "http://127.0.0.1:8080"
             ),
             qbittorrent_user=os.environ.get("QBIT_USER", "qbittorrent"),
             qbittorrent_pass=os.environ.get("QBIT_PASS") or None,
@@ -183,7 +183,7 @@ class Config:
             or _secret("TOD_WEB_TOKEN")
             or _secret("CATALOGO_WEB_TOKEN"),
             jellyfin_url=os.environ.get(
-                "JELLYFIN_URL", "http://127.0.0.1:8086"
+                "JELLYFIN_URL", "http://127.0.0.1:8096"
             ),
             jellyfin_api_key=_secret("JELLYFIN_API_KEY"),
             web_allowed_hosts=_env_value(

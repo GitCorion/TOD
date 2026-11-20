@@ -15,7 +15,7 @@ services:
       TOD_SEED_ROOT: /downloads/catalogo
       TOD_STRM_ROOTS: /media/catalogo
       TOD_PLAYBACK_BASE_URL: http://tod:8773
-      TOD_WEB_ALLOWED_HOSTS: ${TOD_WEB_ALLOWED_HOSTS:-localhost,127.0.0.1}
+      TOD_WEB_ALLOWED_HOSTS: ${TOD_WEB_ALLOWED_HOSTS:-localhost,127.0.0.1},tod
       TOD_WEB_TOKEN: ${TOD_WEB_TOKEN:-}
       QBIT_URL: http://qbittorrent:8080
       QBIT_USER: ${QBIT_USER:-admin}

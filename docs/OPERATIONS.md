@@ -8,6 +8,14 @@ sudo systemctl restart tod.service
 sudo journalctl -u tod.service -f
 ```
 
+En Docker:
+
+```bash
+docker compose ps
+docker compose logs -f tod
+docker compose restart tod
+```
+
 Comprobación rápida:
 
 ```bash
@@ -96,18 +104,25 @@ tod evict --limit 10 --execute
 
 ## Almacenamiento
 
+Valores por defecto en una instalación systemd:
+
 ```text
-temp:  /mnt/cache/tmp
-save:  /mnt/descargas/ondemand
-final: /mnt/library/archive
+descargas:        /mnt/descargas
+on-demand:        /mnt/descargas/ondemand
+archivo:          /mnt/library/archive
+biblioteca .strm: /mnt/catalogo
 ```
+
+En Docker se usan `/downloads`, `/library` y `/media/catalogo` dentro del
+contenedor, montados desde `./data/`.
 
 Las rutas se cambian en **Configuración → Directorios**. TOD valida que
 existan y sean escribibles; no mueve datos por su cuenta.
 
 ## Copias
 
-La base y las claves están en `var/tod.db`. Con el servicio parado:
+La base y las claves están en `var/tod.db` (en Docker, `/config/tod.db`). Con
+el servicio parado:
 
 ```bash
 sqlite3 var/tod.db ".backup '/ruta/segura/tod-$(date +%F).db'"
@@ -125,6 +140,6 @@ No copies `*.db-wal` por separado. Para restaurar, para el servicio, sustituye
 | Prowlarr vacío | API key en Configuración; debe listar indexers |
 | Jackett falla | API key y que Jackett tenga indexers configurados |
 | Jellyfin 401 | API key de Jellyfin |
-| Reproducción 403 | `.strm` con `download=0` y torrent frío; usa `/prepare` o `download=1` |
+| Reproducción 403 | `.strm` con `download=0` y torrent frío; usa `download=1` desde la app (`/prepare` solo acepta loopback) |
 | Sin espacio | `df -h`, límite on-demand y `evictable` |
 | Tarea atascada | `Tareas` en la web; `jobs` guarda estado y error |

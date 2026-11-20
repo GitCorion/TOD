@@ -7,8 +7,8 @@ tiene un botón **Probar** que no guarda nada.
 
 | Campo | Ejemplo |
 |---|---|
-| URL | `http://127.0.0.1:1340` |
-| Usuario | `qbittorrent` |
+| URL | `http://127.0.0.1:8080` (Docker: `http://qbittorrent:8080`) |
+| Usuario | el de la Web UI (Docker: `admin`) |
 | Contraseña | la de la Web UI del servicio |
 
 TOD usa qBittorrent para descargar, sembrar y servir. El cliente de lectura no
@@ -39,11 +39,13 @@ TOD consulta el indexer `all`. Cada resultado trae su indexer real y su tipo
 
 | Campo | Ejemplo |
 |---|---|
-| URL | `http://127.0.0.1:8086` |
+| URL | `http://127.0.0.1:8096` (Docker: `http://jellyfin:8096`) |
 | API key | Dashboard → API Keys |
 
-Jellyfin consume los `.strm` de la biblioteca del catálogo. TOD renueva leases
-cuando Jellyfin informa de una reproducción activa.
+TOD escribe los `.strm` en la biblioteca del catálogo y avisa a Jellyfin de las
+rutas nuevas. Durante la reproducción, cada petición a `/play` renueva el
+lease; el comando `tod jellyfin-leases` también lo hace a partir de las
+sesiones activas de Jellyfin.
 
 ## Radarr y Sonarr
 
