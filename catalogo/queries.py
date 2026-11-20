@@ -791,6 +791,28 @@ def list_events(db_path: str | Path, *, limit: int = 100) -> list[dict[str, Any]
     return [dict(row) for row in rows]
 
 
+def calendar(
+    db_path: str | Path, *, days: int = 90, limit: int = 200
+) -> list[dict[str, Any]]:
+    """Próximos estrenos y emisiones ya fechados en TMDB."""
+    days = max(1, min(int(days), 365))
+    with closing(connect(db_path)) as conn:
+        rows = conn.execute(
+            """
+            SELECT id, key, title, kind, tmdb, season, episode, poster_path,
+                   release_date, air_date, monitored, library_added
+            FROM media_items
+            WHERE COALESCE(release_date, air_date) IS NOT NULL
+              AND date(COALESCE(release_date, air_date)) >= date('now', '-1 day')
+              AND date(COALESCE(release_date, air_date)) <= date('now', ?)
+            ORDER BY date(COALESCE(release_date, air_date)), title
+            LIMIT ?
+            """,
+            (f"+{days} days", max(1, min(int(limit), 500))),
+        ).fetchall()
+    return [dict(row) for row in rows]
+
+
 def list_trackers(db_path: str | Path) -> list[dict[str, Any]]:
     with closing(connect(db_path)) as conn:
         rows = conn.execute(

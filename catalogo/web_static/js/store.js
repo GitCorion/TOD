@@ -15,6 +15,7 @@ export const state = {
   detailTab: 'resumen',
   season: null,
   filtersOpen: false,
+  settingsDirty: false,
   downloadsExpanded: new Set(),
   filters: { q: '', kind: '', publication: 'publicado', download: '', sort: 'popularity', view: 'grid', page: 1 },
 };

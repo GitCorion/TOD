@@ -877,6 +877,10 @@ document.addEventListener('click', async (event) => {
       updateQuery({ [element.dataset.key]: element.dataset.value });
       return;
     }
+    if (action === 'calendar-days') {
+      updateQuery({ days: element.dataset.days }, { resetPage: false });
+      return;
+    }
     if (action === 'catalog-view') {
       updateQuery({ view: element.dataset.view });
       return;
@@ -959,11 +963,13 @@ document.addEventListener('click', async (event) => {
         values[key] = input.value;
       });
       const result = await apiPost('/api/settings', { values });
+      state.settingsDirty = false;
+      $('#settingsDirty')?.classList.add('hidden');
       const restart = result.restart_labels || [];
       toast(
         restart.length
           ? `Guardado. Requiere reinicio: ${restart.join(', ')}`
-          : `Configuración guardada (${result.saved?.length || 0} ajustes)`,
+          : 'Cambios guardados',
         restart.length ? 'warn' : 'ok',
       );
       await route();
@@ -1025,7 +1031,16 @@ document.addEventListener('click', async (event) => {
         else if (field === 'interval') body.interval = Number(input.value);
         else body[field] = input.value;
       });
+      const params = {};
+      $$(`[data-task="${CSS.escape(task)}"][data-param]`).forEach((input) => {
+        const key = input.dataset.param;
+        params[key] = input.type === 'checkbox'
+          ? input.checked
+          : input.type === 'number' ? Number(input.value) : input.value;
+      });
+      if (Object.keys(params).length) body.params = params;
       await apiPost(`/api/scheduler/${task}`, body);
+      state.settingsDirty = false;
       toast('Tarea actualizada', 'ok');
       await route();
       return;
@@ -1584,6 +1599,8 @@ document.addEventListener('change', (event) => {
     updateQuery({ sort: target.value });
   } else if (target.dataset.change === 'monitor-kind') {
     updateQuery({ kind: target.value }, { resetPage: false });
+  } else if (target.dataset.change === 'downloads-sort') {
+    updateQuery({ sort: target.value });
   }
 });
 
@@ -1692,5 +1709,10 @@ window.addEventListener('hashchange', () => {
 onLiveChange(setLive);
 onAuthRequired(showLogin);
 window.addEventListener('route:rendered', renderSelectionBar);
+window.addEventListener('beforeunload', (event) => {
+  if (!state.settingsDirty) return;
+  event.preventDefault();
+  event.returnValue = '';
+});
 startActivityPolling();
 boot();

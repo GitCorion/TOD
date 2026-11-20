@@ -81,6 +81,7 @@ function torrentRow(item) {
 export async function renderDownloads({ query, signal }) {
   const text = query.get('q') || '';
   const filter = query.get('state') || '';
+  const sort = query.get('sort') || 'recent';
   const [data, settings] = await Promise.all([
     api('/api/downloads?category=ondemand', { signal }),
     api('/api/ondemand/settings', { signal }).catch(() => ({ max_active: 4, min: 1, max: 10 })),
@@ -100,6 +101,16 @@ export async function renderDownloads({ query, signal }) {
     pausado: groupItems(data.items || []).filter((group) => group.groupState === 'pausado').length,
     error: groupItems(data.items || []).filter((group) => group.groupState === 'error').length,
   };
+  if (sort === 'title') {
+    allGroups.sort((a, b) => String(a.title).localeCompare(String(b.title), 'es'));
+  } else if (sort === 'size') {
+    allGroups.sort((a, b) => b.size - a.size);
+  } else if (sort === 'progress') {
+    allGroups.sort((a, b) => a.progress - b.progress);
+  } else if (sort === 'tracker') {
+    const tracker = (group) => String(group.items[0]?.tracker || '');
+    allGroups.sort((a, b) => tracker(a).localeCompare(tracker(b), 'es'));
+  }
 
   const groups = allGroups.map((group) => {
     const tag = group.kind === 'series' && group.season
@@ -126,6 +137,16 @@ export async function renderDownloads({ query, signal }) {
       <label class="field grow">
         <span>Buscar</span>
         <input data-input="downloads-q" value="${esc(text)}" placeholder="Título o release" autocomplete="off" aria-label="Buscar descargas">
+      </label>
+      <label class="field" style="width:150px">
+        <span>Orden</span>
+        <select data-change="downloads-sort" aria-label="Ordenar descargas">
+          <option value="recent" ${sort === 'recent' ? 'selected' : ''}>Recientes</option>
+          <option value="title" ${sort === 'title' ? 'selected' : ''}>Título</option>
+          <option value="size" ${sort === 'size' ? 'selected' : ''}>Tamaño</option>
+          <option value="progress" ${sort === 'progress' ? 'selected' : ''}>Progreso</option>
+          <option value="tracker" ${sort === 'tracker' ? 'selected' : ''}>Tracker</option>
+        </select>
       </label>
       <label class="field" style="width:160px">
         <span>Límite on-demand</span>

@@ -191,6 +191,36 @@ def test_settings_validation_paths_and_integration(tmp_path):
         server.app.runner.stop()
 
 
+def test_calendar_and_scheduler_params(tmp_path):
+    server, base = _server(tmp_path)
+    try:
+        with sqlite3.connect(server.app.db_path) as conn:
+            conn.execute(
+                "UPDATE media_items SET release_date = date('now', '+7 days') "
+                "WHERE key = 'movie:tmdb:1'"
+            )
+            conn.commit()
+
+        status, payload = _request(base, "/api/calendar?days=30")
+        assert status == 200
+        assert [item["key"] for item in payload["items"]] == ["movie:tmdb:1"]
+
+        status, payload = _request(
+            base,
+            "/api/scheduler/rss-sync",
+            method="POST",
+            body={"params": {"limit": 42, "delay": 0.5}},
+            headers={"X-Catalogo": "web"},
+        )
+        assert status == 200
+        assert payload["params"]["limit"] == 42
+        assert payload["params"]["delay"] == 0.5
+    finally:
+        server.shutdown()
+        server.server_close()
+        server.app.runner.stop()
+
+
 def test_scheduler_api(tmp_path):
     server, base = _server(tmp_path)
     try:

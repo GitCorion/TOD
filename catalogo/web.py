@@ -622,6 +622,17 @@ class Handler(PlaybackHandler):
             limit = self._int(params.get("limit"), 100)
             return self._json(200, {"items": queries.list_events(db, limit=limit)}, head=head)
 
+        if parts == ["calendar"] and not mutate:
+            days = self._int(params.get("days"), 90)
+            return self._json(
+                200,
+                {
+                    "days": days,
+                    "items": queries.calendar(db, days=days),
+                },
+                head=head,
+            )
+
         if parts == ["activity"] and not mutate:
             recent = jobs.list_jobs(db, limit=30)
             active = [

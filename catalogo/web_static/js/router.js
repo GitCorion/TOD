@@ -1,6 +1,8 @@
 import { beginRequest, state, clearSelection } from './store.js';
 import { $, setActiveNav, setHeader, focusTitle, focusKey, restoreFocus, pageError } from './ui.js';
 import { renderDashboard } from './views/dashboard.js';
+import { renderCalendar } from './views/calendar.js';
+import { renderHistory } from './views/history.js';
 import { renderCatalog } from './views/catalog.js';
 import { renderMonitor } from './views/monitor.js';
 import { renderCollection } from './views/collection.js';
@@ -17,6 +19,7 @@ import { renderAdvanced } from './views/advanced.js';
 
 const ROUTES = {
   dashboard: { title: 'Inicio', kicker: 'Biblioteca', render: renderDashboard },
+  calendar: { title: 'Calendario', kicker: 'Biblioteca', render: renderCalendar },
   catalog: { title: 'Catálogo', kicker: 'Biblioteca', render: renderCatalog },
   monitor: { title: 'Seguimiento', kicker: 'Biblioteca', render: renderMonitor },
   collection: { title: 'Saga', kicker: 'Biblioteca', render: renderCollection },
@@ -25,6 +28,7 @@ const ROUTES = {
   add: { title: 'Añadir contenido', kicker: 'Biblioteca', render: renderAdd },
   downloads: { title: 'Descargas', kicker: 'Operación', render: renderDownloads },
   jobs: { title: 'Tareas', kicker: 'Operación', render: renderJobs },
+  history: { title: 'Historial', kicker: 'Operación', render: renderHistory },
   seeds: { title: 'Siembra', kicker: 'Operación', render: renderSeeds },
   settings: { title: 'Configuración', kicker: 'TOD', render: renderSettings },
   system: { title: 'Estado', kicker: 'Sistema', render: renderSystem },
@@ -85,6 +89,16 @@ let previousView = null;
 
 export async function route() {
   const parsed = parseRoute();
+  if (
+    state.settingsDirty
+    && state.view === 'settings'
+    && parsed.view !== 'settings'
+    && !window.confirm('Hay cambios sin guardar. ¿Salir sin guardar?')
+  ) {
+    history.replaceState(null, '', buildHash('settings'));
+    return;
+  }
+  if (parsed.view !== 'settings') state.settingsDirty = false;
   const definition = ROUTES[parsed.view] || ROUTES.dashboard;
   if (parsed.view !== previousView) {
     clearSelection();

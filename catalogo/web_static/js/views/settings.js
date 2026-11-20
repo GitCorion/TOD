@@ -1,5 +1,6 @@
 import { api } from '../api.js';
 import { esc, fmtBytes, fmtDate } from '../format.js';
+import { state } from '../store.js';
 import { $, badge, icon, setHeader, status } from '../ui.js';
 
 const INTEGRATIONS = [
@@ -71,6 +72,33 @@ function integrationCard(items, meta, paths) {
   </div>`;
 }
 
+const PARAM_LABELS = {
+  limit: 'Límite',
+  delay: 'Pausa (s)',
+  workers: 'Trabajadores',
+  execute: 'Ejecutar de verdad',
+  years: 'Años',
+  grace: 'Gracia (s)',
+};
+
+function paramsEditor(task) {
+  const entries = Object.entries(task.params || {});
+  if (!entries.length) return '';
+  return `<details class="scheduler-params">
+    <summary>Parámetros</summary>
+    <div class="form-grid">
+      ${entries.map(([key, value]) => {
+        const input = typeof value === 'boolean'
+          ? `<label class="inline check"><input type="checkbox" data-task="${esc(task.name)}" data-param="${esc(key)}" ${value ? 'checked' : ''}> ${esc(PARAM_LABELS[key] || key)}</label>`
+          : typeof value === 'number'
+            ? `<label class="field"><span>${esc(PARAM_LABELS[key] || key)}</span><input class="input" type="number" data-task="${esc(task.name)}" data-param="${esc(key)}" value="${esc(value)}"></label>`
+            : `<label class="field"><span>${esc(PARAM_LABELS[key] || key)}</span><input class="input" type="text" data-task="${esc(task.name)}" data-param="${esc(key)}" value="${esc(value)}"></label>`;
+        return input;
+      }).join('')}
+    </div>
+  </details>`;
+}
+
 function schedulerRow(task) {
   const cadence = task.schedule === 'interval'
     ? `<input class="input input-sm" type="number" min="10" step="10" data-task="${esc(task.name)}" data-field="interval" value="${esc(task.interval)}"> s`
@@ -87,7 +115,7 @@ function schedulerRow(task) {
     ? status(last.state === 'ok' ? 'OK' : last.state, last.state === 'ok' ? 'ok' : last.state === 'error' ? 'bad' : 'muted')
     : status('Sin ejecutar', 'muted');
   return `<tr>
-    <td data-label="Tarea"><strong>${esc(task.label)}</strong><div class="tiny faint">${esc(task.description)}</div></td>
+    <td data-label="Tarea"><strong>${esc(task.label)}</strong><div class="tiny faint">${esc(task.description)}</div>${paramsEditor(task)}</td>
     <td data-label="Activa"><input type="checkbox" aria-label="Activar ${esc(task.label)}" data-task="${esc(task.name)}" data-field="enabled" ${task.enabled ? 'checked' : ''}></td>
     <td data-label="Cadencia">${cadence}</td>
     <td data-label="Próxima">${task.next_run ? fmtDate(task.next_run) : '—'}</td>
@@ -128,7 +156,10 @@ export async function renderSettings({ signal } = {}) {
           <strong>Servicio único</strong>
           <p class="muted tiny" style="margin:4px 0 0">Web, API, reproducción y scheduler comparten proceso, base de datos y configuración. Los cambios se aplican sin reiniciar salvo los marcados como reinicio.</p>
         </div>
-        <button class="btn btn-primary" data-action="settings-save">${icon('check', 'sm')} Guardar configuración</button>
+        <div class="row">
+          <span id="settingsDirty" class="status warn ${state.settingsDirty ? '' : 'hidden'}">Cambios sin guardar</span>
+          <button class="btn btn-primary" data-action="settings-save">${icon('check', 'sm')} Guardar configuración</button>
+        </div>
       </div>
       ${data.restart_required?.length ? `<div class="notice">Requieren reinicio: ${data.restart_required.map((key) => esc(items.find((item) => item.key === key)?.label || key)).join(', ')}</div>` : ''}
       <nav class="chips settings-nav" aria-label="Secciones de configuración">
@@ -186,4 +217,15 @@ export async function renderSettings({ signal } = {}) {
       <button class="btn btn-primary" data-action="settings-save">${icon('check', 'sm')} Guardar configuración</button>
     </div>
   `;
+
+  if (!state.settingsDirtyHandler) {
+    state.settingsDirtyHandler = (event) => {
+      if (state.view !== 'settings') return;
+      if (!event.target.closest('[data-setting], [data-task]')) return;
+      state.settingsDirty = true;
+      $('#settingsDirty')?.classList.remove('hidden');
+    };
+    document.addEventListener('input', state.settingsDirtyHandler);
+    document.addEventListener('change', state.settingsDirtyHandler);
+  }
 }
