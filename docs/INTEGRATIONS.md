@@ -3,8 +3,9 @@
 TOD configura cada servicio desde **Sistema → Configuración**. Cada bloque
 tiene un botón **Probar** que no guarda nada.
 
-Prowlarr y Jackett son dos formas de descubrir indexers. TOD puede usar uno o
-ambos; configura solo el que tengas.
+Prowlarr y Jackett son dos fuentes válidas de indexers. TOD puede consultar
+ambas; Jackett no es un fallback público. La comprobación de salud, el RSS y el
+backfill usan la API de Prowlarr.
 
 ## qBittorrent
 

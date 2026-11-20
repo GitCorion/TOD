@@ -101,7 +101,7 @@ Servicios y puertos:
 
 Radarr y Sonarr no están en el compose: si los usas, conéctalos por URL y API
 key desde **Configuración → Integraciones**. Prowlarr y Jackett sí están, pero
-son alternativas: TOD funciona con uno o con los dos.
+no es necesario usar los dos: TOD consulta las fuentes que configures.
 
 Primera puesta en marcha:
 
