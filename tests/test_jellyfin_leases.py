@@ -17,11 +17,11 @@ def test_key_from_strm(tmp_path):
     )
     assert key_from_strm(str(path)) == "series:tmdb:1:2:3"
     assert key_from_strm(str(tmp_path / "movie.mkv")) is None
-    palantir = tmp_path / "P.strm"
-    palantir.write_text(
+    strm_path = tmp_path / "P.strm"
+    strm_path.write_text(
         "http://127.0.0.1:8766/play?ids=abc\n", encoding="utf-8"
     )
-    assert key_from_strm(str(palantir)) is None
+    assert key_from_strm(str(strm_path)) is None
 
 
 def test_touch_active_leases_for_playing_strm(tmp_path):
