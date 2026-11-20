@@ -11,7 +11,7 @@ const STATE_LABELS = {
   DOWNLOADING_LOCAL: ['Descargando', 'info'],
   SEEDING_LOCAL: ['Sembrando', 'ok'],
   MOVING_TO_1FICHIER: ['Moviendo', 'warn'],
-  ON_1FICHIER: ['En 1fichier', 'info'],
+  ON_1FICHIER: ['En archivo', 'info'],
 };
 
 export async function renderTechnical({ query, signal }) {
@@ -65,7 +65,7 @@ export async function renderTechnical({ query, signal }) {
       </select></label>
       <label class="field"><span>Disponibilidad</span><select name="availability">
         <option value="">Todo</option>
-        ${[['live', 'Con fuente viva'], ['none', 'Sin release'], ['unverified', 'Sin verificar'], ['local', 'Local'], ['cloud', '1fichier'], ['debrid', 'Debrid'], ['library', 'Biblioteca'], ['downloading', 'Descargando']].map(([value, label]) => `<option value="${value}" ${filters.availability === value ? 'selected' : ''}>${label}</option>`).join('')}
+        ${[['live', 'Con fuente viva'], ['none', 'Sin release'], ['unverified', 'Sin verificar'], ['local', 'Local'], ['cloud', 'archivo'], ['debrid', 'Debrid'], ['library', 'Biblioteca'], ['downloading', 'Descargando']].map(([value, label]) => `<option value="${value}" ${filters.availability === value ? 'selected' : ''}>${label}</option>`).join('')}
       </select></label>
       <label class="field"><span>Estado</span><select name="status">
         <option value="">Todo</option>

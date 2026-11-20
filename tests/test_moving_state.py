@@ -8,7 +8,7 @@ MIGRATIONS = Path(__file__).resolve().parents[1] / "migrations"
 
 
 class MovingQbit:
-    def __init__(self, state="moving", save_path="/mnt/fichier/descargas"):
+    def __init__(self, state="moving", save_path="/mnt/library/archive"):
         self.state = state
         self.save_path = save_path
         self.files_calls = []
@@ -47,7 +47,7 @@ class FakeRadarr:
         return [{"downloadId": "MOV1", "movieId": 1}]
 
 
-def test_moving_is_not_missing_and_transitions_to_1fichier(tmp_path):
+def test_moving_is_not_missing_and_transitions_to_archive(tmp_path):
     db = tmp_path / "catalogo.db"
     init_db(db, MIGRATIONS)
     radarr = FakeRadarr()
@@ -76,7 +76,7 @@ def test_moving_is_not_missing_and_transitions_to_1fichier(tmp_path):
     assert file_row["cloud_uploaded_at"] is None
     conn.close()
 
-    # Simula que el move termina: qBittorrent ya ve el fichero en 1fichier.
+    # Simula que el move termina: qBittorrent ya ve el fichero en archivo.
     client.state = "stalledUP"
     report = sync(
         db, client, radarr=radarr,

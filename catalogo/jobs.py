@@ -2,7 +2,7 @@
 
 Las tareas se guardan en la tabla `jobs` para poder supervisarlas y para que
 un reinicio no deje estados mentirosos. Solo se ejecuta un trabajo a la vez:
-Prowlarr, qBittorrent y 1fichier no están para recibir ráfagas.
+Prowlarr, qBittorrent y archivo no están para recibir ráfagas.
 """
 
 from __future__ import annotations

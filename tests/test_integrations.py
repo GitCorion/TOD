@@ -10,14 +10,14 @@ MIGRATIONS = Path(__file__).resolve().parents[1] / "migrations"
 
 def _config(tmp_path, **overrides):
     dirs = {}
-    for name in ("catalogo", "fichier", "descargas", "descargas/ondemand"):
+    for name in ("catalogo", "library", "descargas", "descargas/ondemand"):
         path = tmp_path / name
         path.mkdir(parents=True, exist_ok=True)
         dirs[name] = path
     values = dict(
         db_path=tmp_path / "catalogo.db",
         legacy_db=tmp_path / "assets.db",
-        library_root=dirs["fichier"],
+        library_root=dirs["library"],
         seed_root=dirs["descargas"],
         migrations_dir=MIGRATIONS,
         prowlarr_url="http://127.0.0.1:9696/api/v1",

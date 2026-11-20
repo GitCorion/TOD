@@ -132,7 +132,7 @@ SETTINGS: tuple[Setting, ...] = (
     Setting(
         "library_root", "library_root", "directorios",
         "Biblioteca existente (Radarr/Sonarr)", kind="path",
-        env="CATALOGO_LIBRARY_ROOT", default="/mnt/fichier",
+        env="CATALOGO_LIBRARY_ROOT", default="/mnt/library",
     ),
     Setting(
         "seed_root", "seed_root", "directorios", "Raíz de semillas",

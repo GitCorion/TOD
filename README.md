@@ -29,7 +29,7 @@ hace el resto.
 ## Cómo funciona
 
 ```text
-Jellyfin ──.strm──▶ TOD :8773 ──▶ fichero local / 1fichier
+Jellyfin ──.strm──▶ TOD :8773 ──▶ fichero local / archivo
                          │
                          ├──▶ qBittorrent (descarga y seed)
                          ├──▶ Prowlarr    (indexers privados)

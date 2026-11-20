@@ -1,4 +1,4 @@
-"""Mueve torrents privados completos a 1fichier solo si no hay stream activo."""
+"""Mueve torrents privados completos a archivo solo si no hay stream activo."""
 
 from __future__ import annotations
 
@@ -10,7 +10,7 @@ from typing import Any, Protocol
 from .db import connect
 from .stream_leases import active as stream_active
 
-DEFAULT_TARGET = "/mnt/fichier/descargas"
+DEFAULT_TARGET = "/mnt/library/archive"
 DEFAULT_SOURCE = "/mnt/descargas/ondemand"
 DEFAULT_GRACE_SECONDS = 300
 

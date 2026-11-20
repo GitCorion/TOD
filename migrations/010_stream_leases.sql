@@ -1,4 +1,4 @@
--- Leases de reproducción: permiten mover a 1fichier solo si no hay stream.
+-- Leases de reproducción: permiten mover a archivo solo si no hay stream.
 CREATE TABLE IF NOT EXISTS stream_leases (
     media_id TEXT NOT NULL,
     session_id TEXT NOT NULL,

@@ -115,9 +115,9 @@ export async function renderTitle({ params, query, signal }) {
             <td data-label="#">${file.file_index ?? '—'}</td>
             <td data-label="Ruta"><span class="mono tiny">${esc(file.rel_path || file.library_path || file.local_path || '—')}</span></td>
             <td data-label="Tamaño">${fmtBytes(file.size_bytes)}</td>
-            <td data-label="Ubicación">${badge(file.storage_location === 'LOCAL_DISK' ? 'local' : file.storage_location === '1FICHIER' ? '1fichier' : '—', 'mono')} ${badge(file.state, file.state === 'missing' ? 'mono' : 'mono')}</td>
+            <td data-label="Ubicación">${badge(file.storage_location === 'LOCAL_DISK' ? 'local' : file.storage_location === '1FICHIER' ? 'archivo' : '—', 'mono')} ${badge(file.state, file.state === 'missing' ? 'mono' : 'mono')}</td>
           </tr>`).join('')}</tbody>
-        </table></div>` : empty('Sin ficheros', 'No hay copias locales ni en la nube indexadas.')}
+        </table></div>` : empty('Sin ficheros', 'No hay copias locales ni de archivo indexadas.')}
       </div>
       <div class="panel flush">
         <div class="panel-head"><h2>Compromisos de siembra</h2></div>

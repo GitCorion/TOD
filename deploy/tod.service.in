@@ -18,7 +18,7 @@ NoNewPrivileges=yes
 PrivateTmp=yes
 ProtectSystem=strict
 ProtectHome=read-only
-ReadWritePaths=@ROOT@/var -/mnt/catalogo -/mnt/fichier -/mnt/descargas -/mnt/cache
+ReadWritePaths=@ROOT@/var -/mnt/catalogo -/mnt/library -/mnt/descargas -/mnt/cache
 
 [Install]
 WantedBy=multi-user.target

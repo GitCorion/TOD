@@ -97,7 +97,7 @@ def overview(
             "seeding": _scalar(
                 conn, "SELECT COUNT(*) FROM media_items WHERE status='SEEDING_LOCAL'"
             ),
-            "on_1fichier": _scalar(
+            "en_archivo": _scalar(
                 conn, "SELECT COUNT(*) FROM media_items WHERE status='ON_1FICHIER'"
             ),
             "with_releases": _scalar(

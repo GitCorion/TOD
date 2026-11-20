@@ -34,8 +34,8 @@ class FakeQbit:
             },
             {
                 "hash": "comp1", "category": "completo", "state": "stalledUP",
-                "progress": 1, "save_path": "/mnt/fichier/descargas",
-                "content_path": "/mnt/fichier/descargas/Comp.mkv",
+                "progress": 1, "save_path": "/mnt/library/archive",
+                "content_path": "/mnt/library/archive/Comp.mkv",
                 "download_path": "/mnt/cache/tmp/completo",
                 "completion_on": EPOCH, "seeding_time": 5000,
                 "added_on": EPOCH - 5000, "uploaded": 0, "downloaded": 3000,
@@ -337,7 +337,7 @@ def test_choose_active_prefers_healthy_spanish_over_larger_blocked(tmp_path):
         "INSERT INTO torrent_files(asset_id,release_id,file_index,rel_path,"
         "size_bytes,state,library_path) VALUES(?,?,?,?,?,?,?)",
         (asset_id, blocked, 0, "ep.mkv", 5000, "archived",
-         "/mnt/fichier/descargas/ep.mkv"),
+         "/mnt/library/archive/ep.mkv"),
     )
     conn.execute(
         "INSERT INTO torrent_files(asset_id,release_id,file_index,rel_path,"

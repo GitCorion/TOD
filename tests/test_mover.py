@@ -70,7 +70,7 @@ def test_move_planned_and_executed_when_idle(tmp_path):
 
     report = move_completed(str(db), client, dry_run=False, now=NOW)
     assert report["moved"][0]["info_hash"] == hash_
-    assert client.calls == [(hash_, "/mnt/fichier/descargas")]
+    assert client.calls == [(hash_, "/mnt/library/archive")]
     conn = sqlite3.connect(db)
     assert conn.execute(
         "SELECT status FROM media_items WHERE id=?", (media_id,)

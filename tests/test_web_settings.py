@@ -26,12 +26,12 @@ def _seed(tmp_path):
 
 
 def _config(tmp_path, db):
-    for name in ("catalogo", "fichier", "descargas", "descargas/ondemand"):
+    for name in ("catalogo", "library", "descargas", "descargas/ondemand"):
         (tmp_path / name).mkdir(parents=True, exist_ok=True)
     return Config(
         db_path=db,
         legacy_db=db,
-        library_root=tmp_path / "fichier",
+        library_root=tmp_path / "library",
         seed_root=tmp_path / "descargas",
         migrations_dir=MIGRATIONS,
         prowlarr_url="http://127.0.0.1:1/api/v1",

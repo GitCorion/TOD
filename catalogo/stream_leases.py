@@ -1,7 +1,7 @@
 """Leases de reproducción.
 
 Cada petición de streaming renueva un lease. El worker de movimiento a
-1fichier no mueve un activo si tiene un lease reciente.
+archivo no mueve un activo si tiene un lease reciente.
 """
 
 from __future__ import annotations

@@ -19,7 +19,7 @@ from typing import Any
 from .config import Config
 from .db import connect
 
-DEFAULT_PATHS = ("/mnt/descargas", "/mnt/fichier", "/mnt/cache")
+DEFAULT_PATHS = ("/mnt/descargas", "/mnt/library", "/mnt/cache")
 
 
 def _now() -> datetime:

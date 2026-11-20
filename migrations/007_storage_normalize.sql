@@ -1,10 +1,10 @@
 -- Normaliza storage_location por prefijo real de ruta.
 -- La migración 004 marcaba como 1FICHIER cualquier library_path; no todas
--- las rutas de biblioteca están en el mount de 1fichier.
+-- las rutas de biblioteca están en el mount de archivo.
 
 UPDATE torrent_files
 SET storage_location = CASE
-    WHEN library_path LIKE '/mnt/fichier/%' THEN '1FICHIER'
+    WHEN library_path LIKE '/mnt/archivo/%' THEN '1FICHIER'
     WHEN local_path IS NOT NULL AND local_path <> '' THEN 'LOCAL_DISK'
     WHEN library_path IS NOT NULL AND library_path <> '' THEN 'LOCAL_DISK'
     ELSE 'NONE'

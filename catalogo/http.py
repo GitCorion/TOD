@@ -234,7 +234,7 @@ class CatalogHandler(BaseHTTPRequestHandler):
                 )
                 return self._json(status, payload, head=head, **kwargs)
 
-            # Camino rápido: si ya está en local/1fichier/debrid no hay que
+            # Camino rápido: si ya está en local/archivo/debrid no hay que
             # admitir, descargar ni consultar qBittorrent. La app recibe 202
             # al instante y luego consulta /status.
             if release_id is None:

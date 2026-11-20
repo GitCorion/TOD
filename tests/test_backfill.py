@@ -30,7 +30,7 @@ def seed(tmp_path, *, with_release_2019=True, library_2018=False):
             conn.execute(
                 "INSERT INTO library_files(kind,tmdb,season,episode,path,"
                 "size_bytes,source) VALUES(?,?,?,?,?,?,?)",
-                ("movie", tmdb, 0, 0, "/mnt/fichier/Peliculas/x.mkv",
+                ("movie", tmdb, 0, 0, "/mnt/library/Peliculas/x.mkv",
                  1, "radarr"),
             )
     conn.commit()

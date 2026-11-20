@@ -15,8 +15,8 @@ class PackQbit:
         return [
             {
                 "hash": "ser1", "category": "completo", "state": "stalledUP",
-                "progress": 1, "save_path": "/mnt/fichier/descargas",
-                "content_path": "/mnt/fichier/descargas/Test Show S01",
+                "progress": 1, "save_path": "/mnt/library/archive",
+                "content_path": "/mnt/library/archive/Test Show S01",
                 "download_path": "/mnt/cache/tmp/completo",
                 "completion_on": 1794000000, "seeding_time": 100,
                 "added_on": 1794000000, "uploaded": 0, "downloaded": 3000,

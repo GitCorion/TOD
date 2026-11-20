@@ -2,7 +2,7 @@
 
 El proxy renueva el lease cuando recibe un Range de `/play`, pero si el
 cliente acumula búfer o pausa la red, el lease puede caducar. El mover de
-1fichier podría mover un pack mientras se está viendo otro episodio.
+archivo podría mover un pack mientras se está viendo otro episodio.
 
 Este vigilante consulta `/Sessions` y, para cada `.strm` de catálogo en
 reproducción, renueva el lease de esa clave. Así el mover ve actividad

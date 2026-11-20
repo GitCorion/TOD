@@ -15,7 +15,7 @@ def _config(tmp_path, db=None):
     return Config(
         db_path=db or (tmp_path / "catalogo.db"),
         legacy_db=tmp_path / "assets.db",
-        library_root=tmp_path / "fichier",
+        library_root=tmp_path / "library",
         seed_root=tmp_path / "descargas",
         migrations_dir=MIGRATIONS,
         prowlarr_url="http://127.0.0.1:9696/api/v1",

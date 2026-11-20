@@ -1381,6 +1381,7 @@ def job_qbit_sync(ctx: JobContext) -> dict[str, Any]:
         _qb_read(ctx.config),
         radarr=radarr,
         sonarr=sonarr,
+        archive_root=str(ctx.config.library_root),
         dry_run=_bool(ctx.params.get("dry_run"), False),
         check_exists=_bool(ctx.params.get("check_exists"), True),
     )
@@ -1411,7 +1412,7 @@ def job_clean_broken(ctx: JobContext) -> dict[str, Any]:
 
 
 def job_move(ctx: JobContext) -> dict[str, Any]:
-    ctx.report("moviendo completados a 1fichier", progress=0.1)
+    ctx.report("moviendo completados a archivo", progress=0.1)
     return move_completed(
         str(ctx.config.db_path),
         _qb_write(ctx.config),
@@ -1600,6 +1601,7 @@ def job_worker_cycle(ctx: JobContext) -> dict[str, Any]:
             qbit_read,
             radarr=radarr,
             sonarr=sonarr,
+            archive_root=str(config.library_root),
             check_exists=True,
         ).public()
 

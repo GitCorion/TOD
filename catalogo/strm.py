@@ -99,7 +99,7 @@ def _audio(value: str | None) -> str:
 
 
 def _available_release_ids(conn) -> set[int]:
-    """Releases con un fichero local/1fichier que existe de verdad."""
+    """Releases con un fichero local/archivo que existe de verdad."""
     rows = conn.execute(
         """
         SELECT release_id, local_path, library_path
@@ -129,7 +129,7 @@ def _versions(
     """Devuelve las versiones que deben tener fichero `.strm` propio.
 
     ``available`` (por defecto) solo exporta versiones que ya se pueden
-    reproducir: fichero local/1fichier presente o release cacheado en
+    reproducir: fichero local/archivo presente o release cacheado en
     Real-Debrid. Así Jellyfin no sondea `.strm` que devolverían 403.
     ``alive`` exporta también releases vivos con seeds; ``all`` mantiene el
     comportamiento antiguo.

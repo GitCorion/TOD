@@ -115,7 +115,7 @@ class Config:
             legacy_db=_path(
                 "CATALOGO_LEGACY_DB", BASE_DIR / "assets.db"
             ),
-            library_root=_path("CATALOGO_LIBRARY_ROOT", Path("/mnt/fichier")),
+            library_root=_path("CATALOGO_LIBRARY_ROOT", Path("/mnt/library")),
             seed_root=_path(
                 "CATALOGO_SEED_ROOT", Path("/mnt/descargas/catalogo")
             ),

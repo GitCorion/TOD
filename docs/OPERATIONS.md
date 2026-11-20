@@ -72,7 +72,7 @@ curl -s -r 0-1048575 'http://127.0.0.1:8773/play?key=movie%3Atmdb%3A9737' -o /tm
 - `qbit-sync` es solo lectura.
 - La escritura (añadir, pausar, mover) está aislada en `qbit_write.py`.
 - Límites por categoría: `radarr`, `tv-sonarr` y `ondemand`.
-- El worker mueve privados completos a `/mnt/fichier/descargas` si no hay stream activo.
+- El worker mueve privados completos a `/mnt/library/archive` si no hay stream activo.
 
 ```bash
 tod qbit-version
@@ -99,7 +99,7 @@ tod evict --limit 10 --execute
 ```text
 temp:  /mnt/cache/tmp
 save:  /mnt/descargas/ondemand
-final: /mnt/fichier/descargas
+final: /mnt/library/archive
 ```
 
 Las rutas se cambian en **Configuración → Directorios**. TOD valida que

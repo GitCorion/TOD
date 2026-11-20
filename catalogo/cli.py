@@ -569,6 +569,7 @@ def cmd_qbit_sync(args, config: Config) -> int:
         client,
         radarr=radarr,
         sonarr=sonarr,
+        archive_root=str(config.library_root),
         dry_run=args.dry_run,
         check_exists=not args.no_check_paths,
     )
@@ -599,7 +600,7 @@ def cmd_move_completed(args, config: Config) -> int:
     report = move_completed(
         str(config.db_path),
         client,
-        target=args.target,
+        target=args.target or str(config.library_root / "descargas"),
         source_root=str(config.ondemand_save_path),
         grace_seconds=args.grace,
         limit=args.limit,
@@ -1004,6 +1005,7 @@ def cmd_worker(args, config: Config) -> int:
         return qbit_sync(
             str(config.db_path), qbit_read,
             radarr=arr_radarr, sonarr=arr_sonarr,
+            archive_root=str(config.library_root),
             check_exists=True,
         ).public()
 
@@ -1469,8 +1471,8 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--limit", type=int, default=50)
     p.add_argument("--execute", action="store_true")
 
-    p = sub.add_parser("move-completed", help="mueve privados completos a 1fichier si están idle")
-    p.add_argument("--target", default="/mnt/fichier/descargas")
+    p = sub.add_parser("move-completed", help="mueve privados completos a archivo si están idle")
+    p.add_argument("--target")
     p.add_argument("--grace", type=int, default=300)
     p.add_argument("--limit", type=int, default=10)
     p.add_argument("--execute", action="store_true")

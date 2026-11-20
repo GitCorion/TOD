@@ -2,7 +2,7 @@
 
 - Comprueba piezas globales del torrent (incluye offset de packs).
 - Seek corto: espera piezas hasta timeout; seek lejano: 503 antes de headers.
-- Busca el fichero en temp, save y 1fichier.
+- Busca el fichero en temp, save y archivo.
 """
 
 from __future__ import annotations
@@ -26,7 +26,7 @@ STREAM_ROOTS = [
     "/mnt/descargas/catalogo",
     "/mnt/descargas/radarr",
     "/mnt/descargas/tv-sonarr",
-    "/mnt/fichier/descargas",
+    "/mnt/library/archive",
 ]
 
 

@@ -72,7 +72,7 @@ def make_legacy(path: Path) -> None:
         "INSERT INTO files(id,asset_id,release_id,tier,path,qbit_hash,qbit_file_index,"
         "size_bytes,quality,audio,state,last_seen) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",
         [
-            (1, 1, 1, "library", "/mnt/fichier/Bad Boys.mkv", None, None, 1000, "1080p", "castellano", "archived", None),
+            (1, 1, 1, "library", "/mnt/library/Bad Boys.mkv", None, None, 1000, "1080p", "castellano", "archived", None),
             (2, 3, 3, "local_seed", "/mnt/descargas/South.Park.S29E04.mkv", "abc", 2, 3000, "1080p", "spanish_unverified", "seeding", None),
             (3, 2, 2, "downloading", None, None, None, 2000, "4K", "unknown", "downloading", None),
         ],

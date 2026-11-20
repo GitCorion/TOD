@@ -3,7 +3,7 @@
 No busca en Prowlarr, no habla con qBittorrent y no descarga nada.
 Solo lee assets.db y decide de dónde saldría el vídeo:
 
-    local_seed -> library (1fichier) -> torrent -> unavailable
+    local_seed -> library (archivo) -> torrent -> unavailable
 
 play_targets puede forzar cualquiera de esos orígenes. Cambiarlo no cambia
 la clave ni el .strm.
@@ -556,7 +556,7 @@ class Resolver:
         else:
             reason_prefix = "auto"
 
-        # auto: local_seed primero (disco local, sin 1fichier), luego library.
+        # auto: local_seed primero (disco local, sin archivo), luego library.
         for source, column in (("local_seed", "local_path"), ("library", "library_path")):
             for row in files:
                 if row["state"] in ("evicted", "missing"):

@@ -65,8 +65,8 @@ class FakeSonarr:
 def test_sync_library_rebuilds_paths(tmp_path):
     db = tmp_path / "catalogo.db"
     init_db(db, MIGRATIONS)
-    radarr = FakeRadarr("/mnt/fichier/Peliculas")
-    sonarr = FakeSonarr("/mnt/fichier/Series")
+    radarr = FakeRadarr("/mnt/library/Peliculas")
+    sonarr = FakeSonarr("/mnt/library/Series")
 
     report = sync_library(db, radarr=radarr, sonarr=sonarr)
     assert report["ok"] is True
@@ -80,10 +80,10 @@ def test_sync_library_rebuilds_paths(tmp_path):
         for row in conn.execute("SELECT * FROM library_files")
     }
     assert rows[("movie", 100, 0, 0)]["path"] == (
-        "/mnt/fichier/Peliculas/Peli (2024)/Peli (2024) WEBDL-1080p.mkv"
+        "/mnt/library/Peliculas/Peli (2024)/Peli (2024) WEBDL-1080p.mkv"
     )
     assert rows[("series", 200, 1, 2)]["path"] == (
-        "/mnt/fichier/Series/Serie (2024)/Season 1/"
+        "/mnt/library/Series/Serie (2024)/Season 1/"
         "Serie - S01E02 - Piloto.mkv"
     )
     conn.close()

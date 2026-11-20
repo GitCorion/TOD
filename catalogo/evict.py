@@ -1,7 +1,7 @@
 """Borrado manual de la copia del catálogo para liberar espacio.
 
 No forma parte del ciclo automático: la política es sembrar hasta que
-1fichier borre el fichero. Este módulo solo se usa cuando se pide a mano y
+archivo borre el fichero. Este módulo solo se usa cuando se pide a mano y
 el compromiso ya cumplió el mínimo de seed.
 """
 
@@ -18,7 +18,7 @@ from .stream_leases import active as stream_active
 
 CATALOG_ROOTS = (
     "/mnt/descargas/ondemand",
-    "/mnt/fichier/descargas",
+    "/mnt/library/archive",
     "/mnt/cache/tmp/ondemand",
 )
 

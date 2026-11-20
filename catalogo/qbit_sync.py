@@ -71,10 +71,11 @@ def _iso_from_epoch(value: Any) -> str | None:
     return datetime.fromtimestamp(number, tz=timezone.utc).isoformat()
 
 
-def _storage_for(path: str | None) -> str:
+def _storage_for(path: str | None, archive_root: str | None = None) -> str:
     if not path:
         return "NONE"
-    if path.startswith("/mnt/fichier"):
+    archive = str(archive_root or "/mnt/library")
+    if path.startswith(archive):
         return "1FICHIER"
     if path.startswith(("/mnt/multimedia", "/mnt/descargas", "/mnt/cache")):
         return "LOCAL_DISK"
@@ -339,6 +340,7 @@ def _path_candidates(
     base_path: str | None,
     content_path: str | None,
     category: str,
+    archive_root: str | None = None,
 ) -> list[str]:
     candidates: list[str] = []
     if content_path:
@@ -346,7 +348,10 @@ def _path_candidates(
     for base in (save_path, base_path):
         if base:
             candidates.append(str(Path(base) / rel_path))
+    archive = str(archive_root or "/mnt/library")
     roots = [
+        archive,
+        str(Path(archive) / "descargas"),
         "/mnt/descargas/ondemand",
         "/mnt/descargas/radarr",
         "/mnt/descargas/tv-sonarr",
@@ -376,6 +381,7 @@ def _upsert_file(
     moving: bool = False,
     content_path: str | None = None,
     category: str = "",
+    archive_root: str | None = None,
 ) -> int:
     file_index = int(item.get("index") or 0)
     rel_path = item.get("name") or ""
@@ -390,6 +396,7 @@ def _upsert_file(
             base_path=base_path,
             content_path=content_path,
             category=category,
+            archive_root=archive_root,
         )
         path = next(
             (candidate for candidate in candidates if Path(candidate).is_file()),
@@ -400,7 +407,7 @@ def _upsert_file(
         # Mientras se mueve, la ruta de destino puede no existir todavía.
         if path is None and save_path:
             path = str(Path(save_path) / rel_path)
-        storage = _storage_for(path)
+        storage = _storage_for(path, archive_root)
         exists = bool(path) if not check_exists else bool(path and Path(path).is_file())
         if storage == "1FICHIER" and exists:
             local_path = None
@@ -411,12 +418,12 @@ def _upsert_file(
         state = "archived" if storage == "1FICHIER" and exists else (
             "ready" if exists else "downloading"
         )
-        # El TTL de 1fichier empieza cuando el move termina, no ahora.
+        # El TTL de archivo empieza cuando el move termina, no ahora.
         cloud_uploaded_at = None
     else:
         base = save_path if complete else base_path
         path = str(Path(base) / rel_path) if base else None
-        storage = _storage_for(base)
+        storage = _storage_for(base, archive_root)
         exists = bool(path) if not check_exists else bool(path and Path(path).is_file())
         if complete and not exists and check_exists:
             report.missing_files += 1
@@ -481,7 +488,9 @@ def _upsert_file(
     return int(cur.lastrowid)
 
 
-def _choose_active(conn, asset_id: int) -> tuple[str, int | None]:
+def _choose_active(
+    conn, asset_id: int, archive_root: str | None = None
+) -> tuple[str, int | None]:
     rows = conn.execute(
         """
         SELECT f.*, r.health AS release_health, r.audio AS release_audio
@@ -516,7 +525,8 @@ def _choose_active(conn, asset_id: int) -> tuple[str, int | None]:
             (active["torrent_id"],),
         ).fetchone()
         if torrent and (torrent["qbit_state"] or "").lower() == "moving":
-            if (torrent["save_path"] or "").startswith("/mnt/fichier"):
+            archive = str(archive_root or "/mnt/library")
+            if (torrent["save_path"] or "").startswith(archive):
                 return "MOVING_TO_1FICHIER", int(active["id"])
             return "SEEDING_LOCAL", int(active["id"])
     if active["storage_location"] == "1FICHIER" and active["library_path"]:
@@ -533,6 +543,7 @@ def sync(
     *,
     radarr=None,
     sonarr=None,
+    archive_root: str | None = None,
     dry_run: bool = False,
     check_exists: bool = True,
     now: datetime | None = None,
@@ -589,7 +600,11 @@ def sync(
                         else (
                             _iso_from_epoch(torrent.get("completion_on"))
                             or current.isoformat()
-                            if complete and _storage_for(torrent.get("save_path")) == "1FICHIER"
+                            if complete
+                            and _storage_for(
+                                torrent.get("save_path"), archive_root
+                            )
+                            == "1FICHIER"
                             else None
                         )
                     )
@@ -662,6 +677,7 @@ def sync(
                             moving=moving,
                             content_path=torrent.get("content_path"),
                             category=category,
+                            archive_root=archive_root,
                         )
                         report.files_written += 1
                 except Exception as exc:
@@ -702,7 +718,7 @@ def sync(
                     ]
                     if paths:
                         # El torrent desapareció, pero el fichero sigue en
-                        # 1fichier/disco: se conserva para reproducir.
+                        # archivo/disco: se conserva para reproducir.
                         keep = paths[0]
                         created = "archived" if (
                             file_row["storage_location"] == "1FICHIER"
@@ -773,7 +789,9 @@ def sync(
             for row in conn.execute(
                 "SELECT DISTINCT asset_id FROM torrent_files WHERE asset_id IS NOT NULL"
             ).fetchall():
-                status, active = _choose_active(conn, int(row["asset_id"]))
+                status, active = _choose_active(
+                    conn, int(row["asset_id"]), archive_root
+                )
                 conn.execute(
                     "UPDATE media_items SET status = ?, active_file_id = ?, "
                     "updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now') "
