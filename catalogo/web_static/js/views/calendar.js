@@ -1,6 +1,5 @@
 import { api } from '../api.js';
 import { esc, fmtShortDate } from '../format.js';
-import { updateQuery } from '../router.js';
 import { $, empty, icon, poster, setHeader, status } from '../ui.js';
 
 function tag(item) {
@@ -53,8 +52,4 @@ export async function renderCalendar({ query, signal }) {
     </div>
     ${sections || `<div class="panel pad">${empty('Sin fechas próximas', 'No hay estrenos ni emisiones fechados en este rango.')}</div>`}
   `;
-}
-
-export function calendarDays(value) {
-  updateQuery({ days: value }, { resetPage: false });
 }

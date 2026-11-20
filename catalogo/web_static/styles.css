@@ -948,3 +948,103 @@ details.fold[open] > summary::before { content: "▾"; }
   .tabs { gap: 2px; }
   .tabs button { padding: 6px 5px; font-size: 12px; }
 }
+
+/* ================================================================ TOD · sala
+   Identidad: archivo personal y sala de proyección. Fondo cálido, tinta
+   hueso, rojo de safelight y ámbar de proyector. Newsreader para la voz
+   editorial; IBM Plex para la operación diaria.
+   ========================================================================= */
+
+:root,
+html[data-theme="dark"] {
+  --paper: #14120f;
+  --paper-soft: #1b1814;
+  --paper-deep: #252019;
+  --ink: #f2ece0;
+  --graphite: #c0b6a6;
+  --faint: #8d8478;
+  --rule: #332d25;
+  --rule-dark: #4b4338;
+  --carmine: #d96b57;
+  --carmine-soft: rgba(217, 107, 87, .13);
+  --green: #93c7a1;
+  --green-soft: rgba(147, 199, 161, .11);
+  --amber: #e3b341;
+  --amber-soft: rgba(227, 179, 65, .11);
+  --red: #f08b80;
+  --red-soft: rgba(240, 139, 128, .11);
+  --blue: #9bb9c9;
+  --radius: 3px;
+  --sans: 'IBM Plex Sans', ui-sans-serif, system-ui, sans-serif;
+  --serif: 'Newsreader', ui-serif, Georgia, serif;
+}
+
+html[data-theme="light"] {
+  --paper: #f2f0ea;
+  --paper-soft: #fbf9f4;
+  --paper-deep: #e8e4da;
+  --ink: #1d1a16;
+  --graphite: #5c554b;
+  --faint: #7c7468;
+  --rule: #d6d0c4;
+  --rule-dark: #bdb5a7;
+  --carmine: #a94335;
+  --carmine-soft: rgba(169, 67, 53, .10);
+  --green: #3f6b4f;
+  --green-soft: rgba(63, 107, 79, .09);
+  --amber: #8a5b00;
+  --amber-soft: rgba(138, 91, 0, .09);
+  --red: #a52a22;
+  --red-soft: rgba(165, 42, 34, .08);
+  --blue: #2f5f9e;
+  --serif: 'Newsreader', ui-serif, Georgia, serif;
+}
+
+.page-head h1 {
+  font-family: var(--serif);
+  font-size: 28px;
+  font-weight: 500;
+  letter-spacing: -.02em;
+}
+.panel-head h2,
+.section-head h2 {
+  font-family: var(--serif);
+  font-size: 19px;
+  font-weight: 500;
+  letter-spacing: -.01em;
+}
+.detail-hero h2 {
+  font-family: var(--serif);
+  font-size: 32px;
+  font-weight: 500;
+}
+.stat .value {
+  font-family: var(--serif);
+  font-weight: 500;
+}
+.btn-primary {
+  background: var(--ink);
+  border-color: var(--ink);
+  color: var(--paper);
+}
+.btn-primary:hover {
+  background: var(--amber);
+  border-color: var(--amber);
+  color: var(--paper);
+  filter: none;
+}
+::selection { color: var(--paper); }
+.sidebar { border-right-color: var(--rule); }
+.topbar { border-bottom-color: var(--rule); }
+
+.mobile-nav { padding-bottom: env(safe-area-inset-bottom); }
+@media (max-width: 900px) {
+  .view { padding-bottom: calc(88px + env(safe-area-inset-bottom)); }
+}
+
+@media (max-width: 680px) {
+  .activity-bar .activity-message,
+  .activity-bar .bar { display: none; }
+  .activity-bar { gap: 8px; }
+  .activity-bar .btn { margin-left: auto; }
+}

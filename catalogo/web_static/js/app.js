@@ -131,7 +131,7 @@ function setActivity(data) {
     if (bar) {
       bar.innerHTML = `<span class="spinner" aria-hidden="true"></span>
         <strong>${esc(jobLabel(running.kind))}</strong>
-        <span>${esc(running.message || label)}</span>
+        <span class="activity-message">${esc(running.message || label)}</span>
         <div class="bar"><i style="width:${pct(running.progress || 0)}%"></i></div>
         <span class="tiny faint">${Math.round((running.progress || 0) * 100)} %</span>
         <a class="btn btn-sm btn-ghost" href="#/jobs">Ver tarea</a>`;
@@ -231,6 +231,18 @@ async function searchPalette(text) {
   } catch (error) {
     $('#paletteResults').innerHTML = `<div class="palette-empty">${esc(error.message)}</div>`;
   }
+}
+
+function openShortcuts() {
+  openModal(
+    'Atajos de teclado',
+    `<div class="kv"><span>Buscar en el catálogo</span><kbd>Ctrl K</kbd></div>
+     <div class="kv"><span>Cerrar diálogo o menú</span><kbd>Esc</kbd></div>
+     <div class="kv"><span>Abrir esta ayuda</span><kbd>?</kbd></div>
+     <div class="kv"><span>Abrir ficha o resultado activo</span><kbd>Enter</kbd></div>`,
+    `<button class="btn btn-ghost" data-action="modal-close">Cerrar</button>`,
+    { slim: true },
+  );
 }
 
 function openPalette() {
@@ -854,6 +866,7 @@ document.addEventListener('click', async (event) => {
     }
     if (action === 'modal-close') { closeModal(); return; }
     if (action === 'modal-confirm') { closeModal(true); return; }
+    if (action === 'shortcuts') { openShortcuts(); return; }
     if (action === 'theme') { toggleTheme(); return; }
     if (action === 'refresh') { refreshActivity(); await route(); return; }
     if (action === 'logout') {
@@ -985,6 +998,9 @@ document.addEventListener('click', async (event) => {
     }
     if (action === 'settings-test') {
       const name = element.dataset.name;
+      const previous = element.innerHTML;
+      element.disabled = true;
+      element.textContent = 'Probando…';
       const values = {};
       $$('[data-setting]').forEach((input) => {
         const key = input.dataset.setting;
@@ -992,15 +1008,20 @@ document.addEventListener('click', async (event) => {
         if (input.type === 'password' && !input.value) return;
         values[key] = input.value;
       });
-      const result = await apiPost(`/api/integrations/${name}/test`, { values });
-      const target = $(`[data-integration-result="${CSS.escape(name)}"]`);
-      if (target) {
-        target.textContent = result.ok
-          ? `Correcto · ${result.detail || ''} (${result.latency_ms || 0} ms)`
-          : `Error · ${result.error || 'sin detalle'}`;
-        target.className = `tiny ${result.ok ? 'ok-text' : 'warn-text'}`;
+      try {
+        const result = await apiPost(`/api/integrations/${name}/test`, { values });
+        const target = $(`[data-integration-result="${CSS.escape(name)}"]`);
+        if (target) {
+          target.textContent = result.ok
+            ? `Correcto · ${result.detail || ''} (${result.latency_ms || 0} ms)`
+            : `Error · ${result.error || 'sin detalle'}`;
+          target.className = `tiny ${result.ok ? 'ok-text' : 'warn-text'}`;
+        }
+        toast(result.ok ? `${name}: conexión correcta` : `${name}: ${result.error || 'error'}`, result.ok ? 'ok' : 'error');
+      } finally {
+        element.disabled = false;
+        element.innerHTML = previous;
       }
-      toast(result.ok ? `${name}: conexión correcta` : `${name}: ${result.error || 'error'}`, result.ok ? 'ok' : 'error');
       return;
     }
     if (action === 'settings-path') {
@@ -1671,6 +1692,11 @@ document.addEventListener('keydown', (event) => {
   if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'k') {
     event.preventDefault();
     openPalette();
+    return;
+  }
+  if (event.key === '?' && !['INPUT', 'TEXTAREA', 'SELECT'].includes(document.activeElement?.tagName)) {
+    event.preventDefault();
+    openShortcuts();
     return;
   }
   if (event.key === 'Escape') {
