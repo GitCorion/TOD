@@ -28,8 +28,9 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any
 
-from . import app_settings, admin, integrations, jobs, ondemand, queries, settings
-from . import strm_inventory
+from . import app_settings, admin, integrations, jellyfin, jobs, ondemand, queries
+from . import settings, strm_inventory
+from . import strm as strm_module
 from .arr_data import ArrData
 from .config import Config
 from .db import connect, init_db
@@ -816,6 +817,7 @@ class Handler(PlaybackHandler):
                 )
                 job_id = None
                 exported = 0
+                jellyfin_scan: dict[str, Any] = {"ok": False, "reason": "sin_rutas"}
                 if result.get("member"):
                     # Publica ya lo que ya está en Radarr/Sonarr o tiene
                     # release; el monitor solo persigue lo que falta.
@@ -833,6 +835,25 @@ class Handler(PlaybackHandler):
                         except Exception:
                             continue
                     strm_inventory.invalidate(app.config.catalog_library)
+                    keys = result.get("keys", [])
+                    if keys:
+                        with closing(connect(db)) as conn:
+                            rows = conn.execute(
+                                "SELECT * FROM media_items WHERE key IN ("
+                                + ",".join("?" for _ in keys)
+                                + ")",
+                                keys,
+                            ).fetchall()
+                        paths = [
+                            strm_module.strm_path(
+                                app.config.catalog_library, dict(row)
+                            )
+                            for row in rows
+                        ]
+                        jellyfin_scan = jellyfin.notify_updated(
+                            app.config,
+                            [path for path in paths if path.exists()],
+                        )
                 if result.get("member") and body.get("monitored"):
                     published = strm_inventory.inventory(
                         app.config.catalog_library
@@ -874,11 +895,17 @@ class Handler(PlaybackHandler):
                         **result,
                         "job_id": job_id,
                         "exported": exported,
+                        "jellyfin_scan": jellyfin_scan,
                     },
                 )
                 return self._json(
                     200,
-                    {**result, "job_id": job_id, "exported": exported},
+                    {
+                        **result,
+                        "job_id": job_id,
+                        "exported": exported,
+                        "jellyfin_scan": jellyfin_scan,
+                    },
                     head=head,
                 )
             if len(parts) == 3 and parts[2] == "unpublish":
@@ -1426,7 +1453,7 @@ class Handler(PlaybackHandler):
                 raise WebError(405, "usa POST")
             with closing(connect(db)) as conn:
                 row = conn.execute(
-                    "SELECT key FROM media_items WHERE id=?", (asset_id,)
+                    "SELECT * FROM media_items WHERE id=?", (asset_id,)
                 ).fetchone()
             if row is None:
                 raise WebError(404, "título no encontrado")
@@ -1437,8 +1464,23 @@ class Handler(PlaybackHandler):
                 monitored=body.get("monitored") if "monitored" in body else None,
                 source="manual",
             )
-            app.audit("web.title_library", asset_id=asset_id, payload=result)
-            return self._json(200, result, head=head)
+            jellyfin_scan: dict[str, Any] = {"ok": False, "reason": "sin_rutas"}
+            if result.get("member"):
+                path = strm_module.strm_path(
+                    app.config.catalog_library, dict(row)
+                )
+                if path.exists():
+                    jellyfin_scan = jellyfin.notify_updated(
+                        app.config, [path]
+                    )
+            app.audit(
+                "web.title_library",
+                asset_id=asset_id,
+                payload={**result, "jellyfin_scan": jellyfin_scan},
+            )
+            return self._json(
+                200, {**result, "jellyfin_scan": jellyfin_scan}, head=head
+            )
 
         if len(parts) == 3 and parts[2] == "monitor":
             if not mutate:
