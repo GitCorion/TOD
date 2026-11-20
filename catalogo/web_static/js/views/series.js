@@ -48,6 +48,11 @@ export async function renderSeries({ params, query, signal }) {
     .filter((entry) => entry.season === 0)
     .flatMap((entry) => entry.episodes || [])
     .filter((episode) => !episode.in_catalog).length;
+  const libraryComplete = totals.catalog_episodes > 0
+    && totals.library >= totals.catalog_episodes
+    && totals.published >= totals.library;
+  const seasonLibrary = (seasonData?.library || 0) >= (seasonData?.catalog_episodes || 0)
+    && (seasonData?.catalog_episodes || 0) > 0;
   setHeader(series.title || 'Serie', 'Serie');
 
   const rows = (seasonData?.episodes || []).map((ep) => {
@@ -57,7 +62,7 @@ export async function renderSeries({ params, query, signal }) {
       ? `${!ep.library_added ? `<button class="btn btn-sm btn-ghost" data-action="library-title" data-id="${ep.id}" data-key="${esc(ep.key)}" data-title="${esc(name)}" data-releases="${ep.releases || 0}">Añadir a la biblioteca</button>` : ''}
          ${ep.library_added && !ep.published && !ep.monitored ? `<button class="btn btn-sm btn-ghost" data-action="monitor-title" data-id="${ep.id}">Monitorizar</button>` : ''}
          ${ep.library_added && !ep.published && ep.monitored ? `<button class="btn btn-sm btn-ghost" data-action="unmonitor-title" data-id="${ep.id}">Quitar seguimiento</button>` : ''}
-         ${!ep.downloaded ? `<button class="btn btn-sm" data-action="download-now" data-key="${esc(ep.key)}">Forzar descarga</button>` : ''}`
+         ${!ep.downloaded && !ep.published ? `<button class="btn btn-sm" data-action="download-now" data-key="${esc(ep.key)}">Forzar descarga</button>` : ''}`
       : '<span class="tiny faint">Sin importar</span>';
     return `<tr class="${ep.in_catalog ? '' : 'row-missing'}">
       <td data-label="Episodio">
@@ -102,7 +107,7 @@ export async function renderSeries({ params, query, signal }) {
           </div>
           ${series.overview ? `<p class="overview">${esc(series.overview)}</p>` : ''}
           <div class="detail-actions">
-            <button class="btn btn-primary" data-action="library-series" data-tmdb="${tmdb}" data-title="${esc(series.title || '')}">${icon('plus')} Añadir toda la serie a la biblioteca</button>
+            ${libraryComplete ? '' : `<button class="btn btn-primary" data-action="library-series" data-tmdb="${tmdb}" data-title="${esc(series.title || '')}">${icon('plus')} ${totals.library ? 'Actualizar biblioteca' : 'Añadir toda la serie a la biblioteca'}</button>`}
             <button class="btn" data-action="sync-series" data-tmdb="${tmdb}">${icon('search')} Buscar fuentes</button>
             ${totals.library ? `<button class="btn btn-danger" data-action="unpublish-series" data-tmdb="${tmdb}">Quitar de la biblioteca</button>` : ''}
             <a class="btn btn-ghost" href="${esc(data.tmdb_url || '#')}" target="_blank" rel="noreferrer">${icon('external')} TMDB</a>
@@ -127,7 +132,7 @@ export async function renderSeries({ params, query, signal }) {
       <div class="panel-head">
         <div class="chips">${seasonChips}</div>
         <div class="right row" style="gap:6px">
-          <button class="btn btn-sm btn-ghost" data-action="library-season" data-season="${currentSeason}" data-tmdb="${tmdb}" data-title="${esc(series.title || '')}">${icon('plus', 'sm')} Añadir temporada a la biblioteca</button>
+          ${seasonLibrary ? '' : `<button class="btn btn-sm btn-ghost" data-action="library-season" data-season="${currentSeason}" data-tmdb="${tmdb}" data-title="${esc(series.title || '')}">${icon('plus', 'sm')} ${seasonData?.library ? 'Actualizar temporada' : 'Añadir temporada a la biblioteca'}</button>`}
           <button class="btn btn-sm btn-ghost" data-action="sync-season" data-season="${currentSeason}">${icon('search', 'sm')} Fuentes</button>
         </div>
       </div>

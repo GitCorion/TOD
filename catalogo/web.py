@@ -815,6 +815,24 @@ class Handler(PlaybackHandler):
                     source="manual",
                 )
                 job_id = None
+                exported = 0
+                if result.get("member"):
+                    # Publica ya lo que ya está en Radarr/Sonarr o tiene
+                    # release; el monitor solo persigue lo que falta.
+                    for key in result.get("keys", []):
+                        try:
+                            report = admin.export_strm(
+                                app.db_path,
+                                app.config.catalog_library,
+                                base_url=app.config.playback_base_url,
+                                key=key,
+                                limit=None,
+                                skip_library=False,
+                            )
+                            exported += int(report.get("written") or 0)
+                        except Exception:
+                            continue
+                    strm_inventory.invalidate(app.config.catalog_library)
                 if result.get("member") and body.get("monitored"):
                     published = strm_inventory.inventory(
                         app.config.catalog_library
@@ -852,10 +870,16 @@ class Handler(PlaybackHandler):
                             job_id = None
                 app.audit(
                     "web.series_library",
-                    payload={**result, "job_id": job_id},
+                    payload={
+                        **result,
+                        "job_id": job_id,
+                        "exported": exported,
+                    },
                 )
                 return self._json(
-                    200, {**result, "job_id": job_id}, head=head
+                    200,
+                    {**result, "job_id": job_id, "exported": exported},
+                    head=head,
                 )
             if len(parts) == 3 and parts[2] == "unpublish":
                 if not mutate:

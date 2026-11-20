@@ -268,3 +268,24 @@ def test_export_filters_by_kind(tmp_path):
     assert result["kind"] == "series"
     assert (out / "series" / "Serie (2021)").is_dir()
     assert not (out / "movies" / "Test Movie (2020)").exists()
+
+
+def test_export_writes_strm_for_library_only(tmp_path):
+    db = tmp_path / "catalogo.db"
+    init_db(db, MIGRATIONS)
+    conn = sqlite3.connect(db)
+    conn.execute(
+        "INSERT INTO media_items(key,kind,tmdb,title,year) VALUES(?,?,?,?,?)",
+        ("movie:tmdb:42", "movie", 42, "En Radarr", 2024),
+    )
+    conn.execute(
+        "INSERT INTO library_files(kind,tmdb,season,episode,path,size_bytes,source) "
+        "VALUES('movie',42,0,0,?,?, 'radarr')",
+        (str(tmp_path / "En Radarr.mkv"), 123),
+    )
+    conn.commit()
+    conn.close()
+    out = tmp_path / "strm"
+    report = export_strm(db, out, base_url="http://127.0.0.1:8773")
+    assert report["written"] == 1
+    assert list(out.rglob("*.strm"))

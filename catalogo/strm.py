@@ -220,7 +220,19 @@ def export_strm(
     expected: set[Path] = set()
     skipped_reasons: dict[str, int] = {}
     library = build_library_index(radarr, sonarr) if skip_library else None
-    conditions = ["EXISTS (SELECT 1 FROM releases r WHERE r.asset_id = a.id)"]
+    conditions = [
+        """(
+            EXISTS (SELECT 1 FROM releases r WHERE r.asset_id = a.id)
+            OR EXISTS (
+                SELECT 1 FROM library_files lf
+                WHERE lf.kind = a.kind AND lf.tmdb = a.tmdb
+                  AND (
+                      a.kind = 'movie'
+                      OR (lf.season = a.season AND lf.episode = a.episode)
+                  )
+            )
+        )"""
+    ]
     params: list[object] = []
     if key:
         conditions.append("(a.key = ? OR a.media_id = ?)")
@@ -249,8 +261,10 @@ def export_strm(
                 if strm_path(out, dict(asset)).is_file()
             ]
         all_releases = {}
+        library_available: dict[int, bool] = {}
         for asset in assets:
-            all_releases[int(asset["id"])] = conn.execute(
+            asset_id = int(asset["id"])
+            all_releases[asset_id] = conn.execute(
                 """
                 SELECT * FROM releases
                 WHERE asset_id = ?
@@ -260,8 +274,28 @@ def export_strm(
                     COALESCE(seeders, 0) DESC,
                     id DESC
                 """,
-                (int(asset["id"]),),
+                (asset_id,),
             ).fetchall()
+            library_available[asset_id] = bool(
+                conn.execute(
+                    """
+                    SELECT 1 FROM library_files lf
+                    WHERE lf.kind = ? AND lf.tmdb = ?
+                      AND (
+                          ? = 'movie'
+                          OR (lf.season = ? AND lf.episode = ?)
+                      )
+                    LIMIT 1
+                    """,
+                    (
+                        asset["kind"],
+                        asset["tmdb"],
+                        asset["kind"],
+                        int(asset["season"] or 0),
+                        int(asset["episode"] or 0),
+                    ),
+                ).fetchone()
+            )
 
     for asset_row in assets:
         asset = dict(asset_row)
@@ -296,9 +330,21 @@ def export_strm(
             or (release["debrid_cached"] and release["debrid_link"])
         ]
         if not playable:
-            skipped += 1
-            reason = "no_playable" if releases else "no_releases"
-            skipped_reasons[reason] = skipped_reasons.get(reason, 0) + 1
+            if not library_available.get(int(asset["id"]), False):
+                skipped += 1
+                reason = "no_playable" if releases else "no_releases"
+                skipped_reasons[reason] = skipped_reasons.get(reason, 0) + 1
+                continue
+            # Está en Radarr/Sonarr aunque el catálogo no tenga un release:
+            # el resolver sirve la copia de la biblioteca oficial.
+            default = strm_path(out, asset)
+            expected.add(default)
+            content = play_url(asset["key"], base_url) + "\n"
+            if not default.exists() or default.read_text(encoding="utf-8") != content:
+                write_strm(default, content, root=out)
+                written += 1
+            else:
+                unchanged += 1
             continue
 
         versions = _versions(
