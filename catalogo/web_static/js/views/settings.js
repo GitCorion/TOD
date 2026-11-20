@@ -173,5 +173,10 @@ export async function renderSettings({ signal } = {}) {
         </table>
       </div>
     </div>
+
+    <div class="row between section settings-footer">
+      <span class="tiny faint">Los cambios se guardan en la configuración local de TOD.</span>
+      <button class="btn btn-primary" data-action="settings-save">${icon('check', 'sm')} Guardar configuración</button>
+    </div>
   `;
 }

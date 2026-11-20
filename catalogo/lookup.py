@@ -14,7 +14,7 @@ from urllib.parse import parse_qs, urlencode, urlparse
 
 from .status import asset_status
 
-DEFAULT_STRM_ROOTS = ("/mnt/catalogo", "/mnt/palantir")
+DEFAULT_STRM_ROOTS = ("/mnt/catalogo",)
 
 
 class LookupQbit(Protocol):

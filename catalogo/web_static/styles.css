@@ -935,3 +935,5 @@ details.fold[open] > summary::before { content: "▾"; }
 @media (max-width: 720px) {
   .settings-hint { display: none; }
 }
+
+.settings-footer { padding: 14px 0 24px; border-top: 1px solid var(--rule); }

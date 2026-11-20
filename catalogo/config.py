@@ -125,7 +125,7 @@ class Config:
     web_allowed_hosts: str = ""
     downloads_root: Path = Path("/mnt/descargas")
     ondemand_save_path: Path = Path("/mnt/descargas/ondemand")
-    strm_roots: tuple[str, ...] = ("/mnt/catalogo", "/mnt/palantir")
+    strm_roots: tuple[str, ...] = ("/mnt/catalogo",)
     playback_base_url: str = "http://127.0.0.1:8773"
 
     @classmethod
@@ -196,7 +196,7 @@ class Config:
                 "CATALOGO_ONDEMAND_SAVE", Path("/mnt/descargas/ondemand")
             ),
             strm_roots=_roots_from_env(
-                "CATALOGO_STRM_ROOTS", ("/mnt/catalogo", "/mnt/palantir")
+                "CATALOGO_STRM_ROOTS", ("/mnt/catalogo",)
             ),
             playback_base_url=_env_value(
                 "CATALOGO_PLAYBACK_BASE_URL", "http://127.0.0.1:8773"

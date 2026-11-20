@@ -1,4 +1,4 @@
-"""Genera .strm multi-versión como /mnt/palantir.
+"""Genera .strm multi-versión como /mnt/catalogo.
 
 Por cada título:
   - Title (Year).strm                 -> /play?key=... (mejor fuente)

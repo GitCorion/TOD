@@ -104,6 +104,7 @@ export async function renderSystem({ signal }) {
         <div class="kv"><span>Biblioteca del catálogo</span><span class="mono">${esc(system.paths?.catalog_library || '—')}</span></div>
         <div class="kv"><span>Semillas</span><span class="mono">${esc(system.paths?.seed_root || '—')}</span></div>
         <div class="kv"><span>Raíz de biblioteca</span><span class="mono">${esc(system.paths?.library_root || '—')}</span></div>
+        <div class="kv"><span>Raíces .strm</span><span class="mono">${esc(system.paths?.strm_roots || '—')} <a class="tiny" href="#/settings">Cambiar</a></span></div>
       </div>
     </div>
 

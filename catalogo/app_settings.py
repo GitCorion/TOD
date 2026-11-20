@@ -154,8 +154,8 @@ SETTINGS: tuple[Setting, ...] = (
     Setting(
         "strm_roots", "strm_roots", "directorios", "Raíces .strm",
         kind="paths", env="CATALOGO_STRM_ROOTS",
-        default="/mnt/catalogo:/mnt/palantir",
-        help="Rutas permitidas para /catalog/lookup, separadas por ':' o ','.",
+        default="/mnt/catalogo",
+        help="Rutas permitidas para /catalog/lookup, separadas por ':' o ','. Se aplican al guardar.",
     ),
     # Reproducción
     Setting(

@@ -2054,6 +2054,7 @@ class Handler(PlaybackHandler):
                 "library_root": str(app.config.library_root),
                 "downloads_root": str(app.config.downloads_root),
                 "ondemand_save_path": str(app.config.ondemand_save_path),
+                "strm_roots": ":".join(app.config.strm_roots),
             },
             "auth_required": bool(app.token),
             "trackers": queries.list_trackers(db),
