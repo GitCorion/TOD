@@ -49,6 +49,8 @@ HASH_RE = re.compile(r"^[0-9a-fA-F]{40}$")
 
 _INDEXER_CACHE: dict[str, tuple[float, list[dict[str, Any]], str | None]] = {}
 _INDEXER_TTL = 120.0
+_TRACKER_URLS_CACHE: dict[str, tuple[float, dict[str, str]]] = {}
+_TRACKER_URLS_TTL = 300.0
 
 
 SERVICES = (
@@ -94,6 +96,27 @@ def _valid_cookie(token: str, value: str | None) -> bool:
     if expiry < _now():
         return False
     return hmac.compare_digest(signature, _sign(token, expiry))
+
+
+def _tracker_urls(config: Config) -> dict[str, str]:
+    """Nombre del indexer de Prowlarr -> URL pública del tracker."""
+    key = str(config.prowlarr_url)
+    cached = _TRACKER_URLS_CACHE.get(key)
+    if cached is not None and time.monotonic() - cached[0] < _TRACKER_URLS_TTL:
+        return cached[1]
+    urls: dict[str, str] = {}
+    try:
+        from .prowlarr import ProwlarrClient
+
+        for item in ProwlarrClient.from_config(config).indexers():
+            name = str(item.get("name") or "").strip()
+            candidates = item.get("indexerUrls") or []
+            if name and candidates:
+                urls[name] = str(candidates[0]).rstrip("/")
+    except Exception:
+        pass
+    _TRACKER_URLS_CACHE[key] = (time.monotonic(), urls)
+    return urls
 
 
 def _systemctl(unit: str) -> dict[str, Any]:
@@ -879,6 +902,11 @@ class Handler(PlaybackHandler):
 
         if parts and parts[0] == "ondemand":
             return self._ondemand(parts, params, body, head=head, mutate=mutate)
+
+        if parts == ["tracker-urls"] and not mutate:
+            return self._json(
+                200, {"items": _tracker_urls(app.config)}, head=head
+            )
 
         if parts == ["trackers"] and not mutate:
             return self._json(200, {"items": queries.list_trackers(db)}, head=head)

@@ -205,6 +205,10 @@ def test_calendar_and_scheduler_params(tmp_path):
         assert status == 200
         assert [item["key"] for item in payload["items"]] == ["movie:tmdb:1"]
 
+        status, payload = _request(base, "/api/tracker-urls")
+        assert status == 200
+        assert payload["items"] == {}
+
         status, payload = _request(
             base,
             "/api/scheduler/rss-sync",
