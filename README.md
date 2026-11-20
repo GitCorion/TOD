@@ -22,7 +22,7 @@ Las URLs y API keys se introducen en la web y TOD aplica el resto. En Docker,
   variante por versión reproducible.
 - **Reproducir bajo demanda** desde qBittorrent con rangos HTTP reales (206).
 - **Sembrar con reglas** por tracker: tiempo mínimo, ratio, abandono y reseed.
-- **Descubrir fuentes** en Prowlarr y Jackett, sin listas de trackers escritas a mano.
+- **Descubrir fuentes** en Prowlarr, Jackett o ambos, sin listas de trackers escritas a mano.
 - **Leer Radarr/Sonarr por API**, nunca tocando sus bases de datos.
 - **Automatizar** RSS, seguimiento, backfill, puente, restauración y límites de qBittorrent.
 - **Configurar integraciones, directorios y tareas** desde
@@ -34,8 +34,8 @@ Las URLs y API keys se introducen en la web y TOD aplica el resto. En Docker,
 Jellyfin ──.strm──▶ TOD :8773 ──▶ fichero local / archivo
                          │
                          ├──▶ qBittorrent (descarga y seed)
-                         ├──▶ Prowlarr    (indexers privados)
-                         ├──▶ Jackett     (fallback público)
+                         ├──▶ Prowlarr    (indexers)
+                         ├──▶ Jackett     (indexers)
                          └──▶ Radarr/Sonarr (solo API, biblioteca)
 ```
 
@@ -97,16 +97,17 @@ Servicios y puertos:
 | Jellyfin | `http://IP_DEL_SERVIDOR:8096` | reproducir la biblioteca |
 | qBittorrent | `http://IP_DEL_SERVIDOR:8080` | descargas y seed |
 | Prowlarr | `http://IP_DEL_SERVIDOR:9696` | indexers |
-| Jackett | `http://IP_DEL_SERVIDOR:9117` | fallback público |
+| Jackett | `http://IP_DEL_SERVIDOR:9117` | indexers |
 
 Radarr y Sonarr no están en el compose: si los usas, conéctalos por URL y API
-key desde **Configuración → Integraciones**.
+key desde **Configuración → Integraciones**. Prowlarr y Jackett sí están, pero
+son alternativas: TOD funciona con uno o con los dos.
 
 Primera puesta en marcha:
 
 1. Abre TOD en `8773`.
 2. Configura qBittorrent con `http://qbittorrent:8080` y sus credenciales.
-3. Pega la API key de Prowlarr, Jackett y Jellyfin.
+3. Configura Prowlarr, Jackett o ambos, y pega la API key de Jellyfin.
 4. En Jellyfin, añade `/media/catalogo/movies` como **Películas** y
    `/media/catalogo/series` como **Series**.
 5. En TOD, revisa **Configuración → Directorios**.
@@ -130,11 +131,13 @@ Requiere Python 3.11+. El instalador crea `/etc/tod.env` si no existe, instala
 Después, abre `http://IP_DEL_SERVIDOR:8773` y configura:
 
 1. **qBittorrent**: URL, usuario y contraseña.
-2. **Prowlarr**: URL y API key.
-3. **Jackett**: URL y API key.
+2. **Prowlarr**: URL y API key (opcional si usas Jackett).
+3. **Jackett**: URL y API key (opcional si usas Prowlarr).
 4. **Jellyfin**: URL y API key.
 5. **Directorios**: biblioteca del catálogo, descargas, semillas y biblioteca existente.
 6. **Radarr/Sonarr** (opcional): URL y API key. TOD solo usa su API.
+
+Prowlarr y Jackett son alternativas: configura uno o ambos.
 
 Cada integración tiene **Probar** para validar antes de guardar; cada directorio
 tiene **Comprobar**. Los secretos se guardan en `var/tod.db` con permisos
@@ -145,8 +148,8 @@ tiene **Comprobar**. Los secretos se guardan en `var/tod.db` con permisos
 | Servicio | Uso en TOD | Necesario |
 |---|---|---|
 | qBittorrent | Descargar, sembrar y servir torrents | Sí, para reproducir bajo demanda |
-| Prowlarr | Descubrir releases y comprobar salud | Recomendado |
-| Jackett | Fallback público | Opcional |
+| Prowlarr | Descubrir releases y comprobar salud | Uno de los dos |
+| Jackett | Descubrir releases | Uno de los dos |
 | Jellyfin | Reproducir los `.strm`; TOD le avisa de rutas nuevas | Recomendado |
 | Radarr | Biblioteca y cola, solo API | Opcional |
 | Sonarr | Biblioteca y cola, solo API | Opcional |
@@ -154,9 +157,9 @@ tiene **Comprobar**. Los secretos se guardan en `var/tod.db` con permisos
 
 TOD se integra con Radarr y Sonarr mediante sus APIs. Solo necesita la URL y
 la API key de cada servicio.
-Los trackers se descubren de Prowlarr (incluido su idioma) y de Jackett
-(`all`, con el indexer real de cada resultado): no hay listas privadas en el
-repositorio.
+Los trackers se descubren de la fuente que configures: Prowlarr (incluido el
+idioma de cada indexer) o Jackett (`all`, con el indexer real de cada
+resultado). Puedes usar uno o ambos; no hay listas privadas en el repositorio.
 
 ## Configuración desde la web
 

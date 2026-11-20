@@ -32,13 +32,16 @@ catalogo/
 
 ## Descubrimiento de trackers
 
+TOD puede usar Prowlarr, Jackett o ambos. Si hay más de uno configurado,
+consulta las dos fuentes.
+
 - **Prowlarr**: TOD usa todos los indexers habilitados. De cada uno lee
   `name`, `language` y `privacy`; el idioma del indexer se usa para inferir el
   audio cuando el título no trae una etiqueta explícita.
 - **Jackett**: consulta el indexer `all`; cada resultado incluye
-  `<jackettindexer>` y `<type>`, así que TOD conoce el tracker real y descarta
-  los privados en el fallback público.
-- No hay listas de trackers en el código ni en la configuración.
+  `<jackettindexer>` y `<type>`, así que TOD conoce el tracker real y su
+  privacidad. No necesita Prowlarr para funcionar.
+- No hay listas de trackers privadas ni credenciales en el repositorio.
 
 ## Radarr y Sonarr
 

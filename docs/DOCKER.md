@@ -7,8 +7,11 @@ El compose levanta cinco contenedores:
 | `tod` | build local | catálogo, web, reproducción y scheduler |
 | `qbittorrent` | LinuxServer | descargas y seed |
 | `jellyfin` | LinuxServer | biblioteca y reproducción |
-| `prowlarr` | LinuxServer | indexers privados |
-| `jackett` | LinuxServer | fallback público |
+| `prowlarr` | LinuxServer | indexers |
+| `jackett` | LinuxServer | indexers (alternativa a Prowlarr) |
+
+Prowlarr y Jackett hacen lo mismo: descubrir indexers. Puedes usar uno o los
+dos; el compose los incluye por defecto, pero no necesitas ambos.
 
 No incluye Radarr/Sonarr. Se pueden conectar por URL y API key si se usan.
 
@@ -27,16 +30,17 @@ Edita `.env` antes de arrancar:
   La red interna (`tod`) se añade automáticamente.
 - `QBIT_USER` y, si ya la tienes, `QBIT_PASS`.
 - `PROWLARR_API_KEY`, `JACKETT_API_KEY`, `JELLYFIN_API_KEY`, `TMDB_API_KEY`.
+  De Prowlarr y Jackett solo hace falta la clave del que uses.
 
 ## Primera configuración
 
 1. **qBittorrent** (`:8080`): usuario `admin`; la contraseña temporal aparece en
    `docker compose logs qbittorrent`. Cámbiala.
-2. **Prowlarr** (`:9696`): añade indexers y copia su API key.
-3. **Jackett** (`:9117`): añade indexers y copia su API key.
-4. **Jellyfin** (`:8096`): completa el asistente y crea una API key.
-5. **TOD** (`:8773`): en Configuración, conecta los servicios y prueba cada uno.
-6. **Jellyfin**: añade `/media/catalogo/movies` como biblioteca de películas
+2. **Prowlarr** (`:9696`) o **Jackett** (`:9117`): añade indexers y copia su API
+   key. Configura uno de los dos, o ambos.
+3. **Jellyfin** (`:8096`): completa el asistente y crea una API key.
+4. **TOD** (`:8773`): en Configuración, conecta los servicios y prueba cada uno.
+5. **Jellyfin**: añade `/media/catalogo/movies` como biblioteca de películas
    y `/media/catalogo/series` como biblioteca de series.
 
 TOD ya conoce las URLs internas (`http://qbittorrent:8080`,

@@ -1,4 +1,4 @@
-"""Cliente Jackett en solo lectura para el fallback público.
+"""Cliente Jackett en solo lectura como fuente de indexers.
 
 No descarga .torrent. La API key se usa en memoria y se elimina de las URLs
 que se guardan en la base.
@@ -125,7 +125,7 @@ class JackettClient:
         url = link if "jackett_apikey=" in link else with_api_key(link, self.api_key)
         request = urllib.request.Request(
             url,
-            headers={"User-Agent": "catalogo-public-fallback/0.1"},
+            headers={"User-Agent": "tod-jackett/0.1"},
         )
         try:
             with urllib.request.urlopen(request, timeout=timeout) as response:
@@ -161,7 +161,7 @@ class JackettClient:
         request = urllib.request.Request(
             url,
             headers={
-                "User-Agent": "catalogo-public-fallback/0.1",
+                "User-Agent": "tod-jackett/0.1",
                 "Accept": "application/rss+xml, application/xml",
             },
         )

@@ -3,6 +3,9 @@
 TOD configura cada servicio desde **Sistema → Configuración**. Cada bloque
 tiene un botón **Probar** que no guarda nada.
 
+Prowlarr y Jackett son dos formas de descubrir indexers. TOD puede usar uno o
+ambos; configura solo el que tengas.
+
 ## qBittorrent
 
 | Campo | Ejemplo |
@@ -33,7 +36,7 @@ excluir un tracker, desactívalo en Prowlarr.
 | API key | la de Jackett |
 
 TOD consulta el indexer `all`. Cada resultado trae su indexer real y su tipo
-(`public`/`private`); el fallback público descarta los privados.
+(`public`/`private`). Puedes usar Jackett en lugar de Prowlarr o junto a él.
 
 ## Jellyfin
 
