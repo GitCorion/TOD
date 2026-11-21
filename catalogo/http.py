@@ -916,7 +916,9 @@ def make_server(
             "play_service": play_service,
         },
     )
-    server = ThreadingHTTPServer((host, port), handler)
-    server.daemon_threads = True
-    return server
+    class Server(ThreadingHTTPServer):
+        daemon_threads = True
+        request_queue_size = 128
+
+    return Server((host, port), handler)
 

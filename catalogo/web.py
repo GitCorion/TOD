@@ -2388,6 +2388,9 @@ class Handler(PlaybackHandler):
 class WebServer(ThreadingHTTPServer):
     daemon_threads = True
     allow_reuse_address = True
+    # Varios arranques de reproducción a la vez (varias TVs) no deben
+    # quedarse en la cola de escucha.
+    request_queue_size = 128
 
     def __init__(self, address: tuple[str, int], app: App):
         self.app = app
