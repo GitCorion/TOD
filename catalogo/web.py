@@ -374,6 +374,17 @@ class Handler(PlaybackHandler):
     def play_service(self) -> Any | None:  # type: ignore[override]
         return self.app.play_service
 
+    def _auto_prepare_allowed(self, key: str, resolution: Any) -> bool:
+        """Permite arrancar el prepare si Jellyfin está reproduciendo esto.
+
+        Un escaneo o un ffprobe suelto no tienen sesión activa, así que
+        siguen recibiendo 403 y no disparan descargas.
+        """
+        try:
+            return key in jellyfin.playing_keys(self.app.config)
+        except Exception:
+            return False
+
     @property
     def strm_roots(self) -> tuple[str, ...]:
         return self.app.config.strm_roots

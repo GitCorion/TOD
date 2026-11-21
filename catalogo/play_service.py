@@ -463,6 +463,52 @@ class PlayService:
 
         raise NoSource("sin fuente disponible", attempts=attempts)
 
+    def wait_stream_ready(
+        self,
+        handle: dict[str, Any],
+        *,
+        timeout: float = 60.0,
+        interval: float = 2.0,
+    ) -> bool:
+        """Espera a que haya buffer contiguo y cola lista.
+
+        Para un `prepare` lanzado desde Jellyfin: en vez de fallar al instante,
+        se sostiene la petición mientras el torrent arranca.
+        """
+        from .status import _buffer_state
+
+        info_hash = (handle.get("info_hash") or "").lower()
+        file_index = handle.get("file_index")
+        if not info_hash or file_index is None:
+            return False
+        deadline = time.monotonic() + max(1.0, timeout)
+        while True:
+            live = self._live_torrent(info_hash)
+            if live is not None and float(live.get("progress") or 0) >= 0.999:
+                return True
+            try:
+                files = self.qbit_read.files(info_hash)
+            except Exception:
+                files = []
+            file_size = None
+            for item in files:
+                if int(item.get("index") or 0) == int(file_index):
+                    file_size = int(item.get("size") or 0) or None
+                    break
+            buffer_bytes, required, tail_ready = _buffer_state(
+                self.qbit_read, info_hash, files, int(file_index), file_size
+            )
+            if (
+                buffer_bytes is not None
+                and required > 0
+                and buffer_bytes >= required
+                and tail_ready
+            ):
+                return True
+            if time.monotonic() >= deadline:
+                return False
+            time.sleep(max(0.2, interval))
+
     def stream_prepared(
         self,
         handler: Any,

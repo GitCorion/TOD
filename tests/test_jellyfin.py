@@ -66,3 +66,24 @@ def test_notify_updated_posts_paths(monkeypatch, tmp_path):
 def test_notify_without_key_is_noop(tmp_path):
     result = notify_updated(_config(tmp_path, api_key=None), [tmp_path / "x.strm"])
     assert result == {"ok": False, "reason": "sin_api_key"}
+
+
+def test_playing_keys_maps_strm_paths(tmp_path):
+    from catalogo.jellyfin import playing_keys
+
+    folder = tmp_path / "movies" / "Movie (2025)"
+    folder.mkdir(parents=True)
+    strm = folder / "Movie (2025).strm"
+    strm.write_text(
+        "http://127.0.0.1:8773/play?key=movie%3Atmdb%3A1&download=0\n",
+        encoding="utf-8",
+    )
+    sessions = [
+        {"NowPlayingItem": {"Path": str(strm)}},
+        {"NowPlayingItem": {"Path": ""}},
+        {"NowPlayingItem": None},
+        {"NowPlayingItem": {"Path": "/mnt/fichier/Peliculas/x.mkv"}},
+    ]
+    assert playing_keys(_config(tmp_path), sessions=sessions) == {
+        "movie:tmdb:1"
+    }

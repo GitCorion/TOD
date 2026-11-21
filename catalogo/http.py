@@ -39,6 +39,8 @@ from .trackers import tracker_priority
 from .torrent import DisabledBackend, TorrentBackend
 
 CHUNK = 256 * 1024
+# Espera máxima cuando Jellyfin arranca un prepare al darle a play.
+AUTO_PREPARE_WAIT = 60.0
 
 ADMISSION_MESSAGES = {
     "sin_espacio": "No hay espacio suficiente en disco para esta descarga.",
@@ -396,33 +398,42 @@ class CatalogHandler(BaseHTTPRequestHandler):
 
         if resolution.source == "torrent":
             prepared = self._torrent_prepared(resolution)
-            if head and not prepared:
-                return self._json(
-                    503,
-                    {"error": "cold_head", "key": resolution.key},
-                    head=head,
-                    extra_headers={"Retry-After": "5"},
-                )
-            if not download_allowed and not prepared:
-                return self._json(
-                    403,
-                    {
-                        "error": "download_not_allowed",
-                        "message": "La descarga no está autorizada.",
-                        "key": resolution.key,
-                        "reason": resolution.reason,
-                        "release_id": resolution.release_id,
-                    },
-                    head=head,
-                    extra_headers={"X-Catalogo-Download": "disabled"},
-                )
-            if not self.headers.get("Range") and not prepared:
-                return self._json(
-                    503,
-                    {"error": "cold_no_range", "key": resolution.key},
-                    head=head,
-                    extra_headers={"Retry-After": "5"},
-                )
+            auto_prepare = False
+            if not prepared:
+                if head:
+                    return self._json(
+                        503,
+                        {"error": "cold_head", "key": resolution.key},
+                        head=head,
+                        extra_headers={"Retry-After": "5"},
+                    )
+                if not download_allowed:
+                    # Jellyfin no llama a /prepare. Si la petición viene de
+                    # una reproducción real (sesión activa con este .strm),
+                    # se autoriza el arranque; un escaneo no tiene sesión.
+                    auto_prepare = self._auto_prepare_allowed(
+                        resolution.key, resolution
+                    )
+                    if not auto_prepare:
+                        return self._json(
+                            403,
+                            {
+                                "error": "download_not_allowed",
+                                "message": "La descarga no está autorizada.",
+                                "key": resolution.key,
+                                "reason": resolution.reason,
+                                "release_id": resolution.release_id,
+                            },
+                            head=head,
+                            extra_headers={"X-Catalogo-Download": "disabled"},
+                        )
+                if not self.headers.get("Range"):
+                    return self._json(
+                        503,
+                        {"error": "cold_no_range", "key": resolution.key},
+                        head=head,
+                        extra_headers={"Retry-After": "5"},
+                    )
             if self.play_service is None:
                 intent = play_intents.create(
                     self.db_path,
@@ -522,7 +533,31 @@ class CatalogHandler(BaseHTTPRequestHandler):
                     handle = self.play_service.ensure(
                         resolution.key, release_id=candidate_id
                     )
-                    self.play_service.preflight(handle)
+                    if auto_prepare:
+                        print(
+                            f"auto_prepare key={resolution.key} "
+                            f"release={candidate_id}",
+                            flush=True,
+                        )
+                        if not self.play_service.wait_stream_ready(
+                            handle, timeout=AUTO_PREPARE_WAIT
+                        ):
+                            return self._json(
+                                503,
+                                {
+                                    "error": "auto_prepare_waiting",
+                                    "message": (
+                                        "Preparando la fuente; vuelve a "
+                                        "intentarlo en unos segundos."
+                                    ),
+                                    "key": resolution.key,
+                                    "release_id": candidate_id,
+                                },
+                                head=head,
+                                extra_headers={"Retry-After": "10"},
+                            )
+                    else:
+                        self.play_service.preflight(handle)
                     self.play_service.stream_prepared(
                         self, handle, start, end
                     )
@@ -678,6 +713,16 @@ class CatalogHandler(BaseHTTPRequestHandler):
         # todavía está frío, no bloquear una versión ya descargada.
         ordered.sort(key=availability)
         return ordered[:4]
+
+    def _auto_prepare_allowed(
+        self, key: str, resolution: Resolution
+    ) -> bool:
+        """¿Esta petición viene de una reproducción real en Jellyfin?
+
+        Por defecto no: el servicio base no conoce Jellyfin. La web lo
+        sobrescribe consultando las sesiones activas.
+        """
+        return False
 
     def _torrent_prepared(self, resolution: Resolution) -> bool:
         """¿La app ya pidió Prepare para este título?

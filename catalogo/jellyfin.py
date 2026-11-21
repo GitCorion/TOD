@@ -7,14 +7,18 @@ la procese en su biblioteca.
 from __future__ import annotations
 
 import json
+import time
 import urllib.error
 import urllib.request
 from pathlib import Path
 from typing import Any, Iterable
 
 from .config import Config
+from .jellyfin_leases import _get_sessions, key_from_strm
 
 DEFAULT_TIMEOUT = 20.0
+SESSIONS_TTL = 2.0
+_PLAYING_CACHE: tuple[float, set[str]] | None = None
 
 
 class JellyfinError(RuntimeError):
@@ -79,3 +83,36 @@ def notify_updated(
     except JellyfinError as exc:
         return {"ok": False, "reason": str(exc)[:200]}
     return {"ok": True, "paths": len(clean), "update_type": update_type}
+
+
+def playing_keys(
+    config: Config,
+    *,
+    sessions: list[dict] | None = None,
+    timeout: float = 3.0,
+) -> set[str]:
+    """Claves del catálogo que Jellyfin está reproduciendo ahora.
+
+    Sirve para distinguir una reproducción real de un escaneo/ffprobe: los
+    escaneos no tienen `NowPlayingItem`.
+    """
+    global _PLAYING_CACHE
+    if sessions is None:
+        now = time.monotonic()
+        if _PLAYING_CACHE is not None and now - _PLAYING_CACHE[0] < SESSIONS_TTL:
+            return set(_PLAYING_CACHE[1])
+        sessions = _get_sessions(
+            config.jellyfin_url, config.jellyfin_api_key or "", timeout=timeout
+        )
+    keys: set[str] = set()
+    for session in sessions:
+        item = session.get("NowPlayingItem") or {}
+        path = item.get("Path")
+        if not path:
+            continue
+        key = key_from_strm(path)
+        if key:
+            keys.add(key)
+    if sessions is not None:
+        _PLAYING_CACHE = (time.monotonic(), set(keys))
+    return keys
