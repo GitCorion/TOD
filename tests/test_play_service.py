@@ -49,6 +49,9 @@ class FakeQbit:
     def set_force_start(self, info_hash, value=True):
         self.forced.append((info_hash, value))
 
+    def toggle_first_last(self, info_hash):
+        pass
+
     def pause(self, info_hash):
         self.paused = getattr(self, "paused", [])
         self.paused.append(info_hash)

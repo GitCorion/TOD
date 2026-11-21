@@ -150,6 +150,13 @@ class QbittorrentWriteClient(QbittorrentClient):
             {"hashes": info_hash, "value": "true" if value else "false"},
         )
 
+    def toggle_first_last(self, info_hash: str) -> None:
+        """Conmuta primera/última pieza; dos veces rearma la prioridad."""
+        self._form(
+            "/api/v2/torrents/toggleFirstLastPiecePrio",
+            {"hashes": info_hash},
+        )
+
     def set_download_limit(self, info_hash: str, limit: int) -> None:
         """Límite de descarga en bytes/s; -1 o 0 = ilimitado."""
         self._form(

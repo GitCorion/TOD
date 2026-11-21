@@ -100,6 +100,7 @@ class QbitWrite(Protocol):
     def add_torrent(self, torrent_bytes: bytes, **kwargs: Any) -> str: ...
     def set_file_priorities(self, info_hash: str, priorities: dict[int, int]) -> None: ...
     def set_force_start(self, info_hash: str, value: bool = True) -> None: ...
+    def toggle_first_last(self, info_hash: str) -> None: ...
     def pause(self, info_hash: str) -> None: ...
     def resume(self, info_hash: str) -> None: ...
 
@@ -246,10 +247,17 @@ def priorities_for(
     Públicos: solo se pide el fichero objetivo (parcial permitido).
     """
     result: dict[int, int] = {}
+    single = len(files) <= 1
     for item in files:
         index = int(item.get("index") or 0)
         if private:
-            result[index] = 6 if index == target_index else 1
+            # Un solo fichero: prioridad normal, que es la única forma de
+            # que qBittorrent respete secuencial + primera/última pieza.
+            # En packs, el episodio pedido va por delante.
+            if single or index != target_index:
+                result[index] = 1
+            else:
+                result[index] = 6
         else:
             result[index] = 1 if index == target_index else 0
     return result
@@ -455,6 +463,13 @@ def prepare_download(
         files, target_index, private=(policy.privacy != "public")
     )
     client.set_file_priorities(hash_, priorities)
+    # qBittorrent no aplica firstLastPiecePrio si la bandera ya venía puesta
+    # desde el add: necesita la transición false->true. Se rearma con el
+    # torrent parado (nuevo o pausado) para que baje la última pieza y el
+    # stream pueda arrancar sin esperar a la descarga completa.
+    if existing is None or was_paused:
+        client.toggle_first_last(hash_)
+        client.toggle_first_last(hash_)
 
     with closing(connect(db_path)) as conn:
         conn.execute(

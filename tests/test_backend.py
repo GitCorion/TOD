@@ -28,6 +28,7 @@ class FakeQbit:
         self.priorities = []
         self.forced = []
         self.resumed = []
+        self.toggles = []
 
     def torrents(self, category=None):
         return list(self.torrents_list)
@@ -47,6 +48,9 @@ class FakeQbit:
 
     def set_force_start(self, info_hash, value=True):
         self.forced.append((info_hash, value))
+
+    def toggle_first_last(self, info_hash):
+        self.toggles.append(info_hash)
 
     def pause(self, info_hash):
         self.paused = getattr(self, "paused", [])
@@ -128,6 +132,7 @@ def test_existing_running_torrent_is_not_paused_or_resumed(tmp_path):
     assert result["resumed"] is False
     assert client.added == []
     assert getattr(client, "paused", []) == []
+    assert client.toggles == []
     assert client.resumed == []
     assert client.forced == []
     assert client.priorities
@@ -172,6 +177,7 @@ def test_private_pack_prioritizes_episode_but_downloads_all(tmp_path):
     assert client.forced == [(info_hash(TORRENT), True)]
     assert client.resumed == [info_hash(TORRENT)]
     assert getattr(client, "paused", []) == []
+    assert client.toggles == [info_hash(TORRENT)] * 2
 
     conn = sqlite3.connect(db)
     assert conn.execute(
@@ -353,3 +359,8 @@ def test_priorities_private_target_high_not_max():
     """Prioridad 6 mantiene el orden secuencial; la 7 lo rompe."""
     files = [{"index": 0}, {"index": 1}]
     assert priorities_for(files, 0, private=True) == {0: 6, 1: 1}
+
+
+def test_priorities_private_single_file_normal():
+    """Con un solo fichero, prioridad 1 mantiene primera/última pieza."""
+    assert priorities_for([{"index": 0}], 0, private=True) == {0: 1}
