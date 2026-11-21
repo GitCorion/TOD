@@ -94,3 +94,7 @@ docker compose logs -f tod
 
 La web de TOD no debe publicarse directamente en Internet. Usa WireGuard o un
 reverse proxy con TLS.
+
+En **Estado → Terceros**, TOD muestra si cada integración está configurada. El
+estado de los procesos se consulta con `docker compose ps`; no se leen unidades
+de systemd de otros contenedores.

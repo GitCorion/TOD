@@ -279,6 +279,59 @@ def test_web_allows_docker_internal_host(tmp_path):
         server.app.runner.stop()
 
 
+def test_title_api_returns_stored_episode_metadata(tmp_path):
+    from catalogo.web import make_server
+
+    db, _movie_id, _ = seed(tmp_path)
+    with sqlite3.connect(db) as conn:
+        conn.execute(
+            "INSERT INTO media_items(key,media_id,kind,tmdb,title,year,season,"
+            "episode,status,episode_title,episode_overview) "
+            "VALUES(?,?,?,?,?,?,?,?,?,?,?)",
+            (
+                "series:tmdb:77:1:2",
+                "series:tmdb:77:1:2",
+                "series",
+                77,
+                "Serie",
+                2024,
+                1,
+                2,
+                "COLD",
+                "Las normas de la tienda",
+                "Sinopsis del episodio",
+            ),
+        )
+        conn.commit()
+        episode_id = conn.execute(
+            "SELECT id FROM media_items WHERE key='series:tmdb:77:1:2'"
+        ).fetchone()[0]
+
+    config = config_for(tmp_path, db)
+    server = make_server("127.0.0.1", 0, config)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    base = f"http://127.0.0.1:{server.server_address[1]}"
+    try:
+        status, payload = _request(base, f"/api/titles/{episode_id}")
+        assert status == 200
+        assert payload["item"]["episode_title"] == "Las normas de la tienda"
+        assert payload["item"]["episode_overview"] == "Sinopsis del episodio"
+    finally:
+        server.shutdown()
+        server.server_close()
+        server.app.runner.stop()
+
+
+def test_runtime_detection(monkeypatch):
+    from catalogo import web
+
+    monkeypatch.setenv("TOD_RUNTIME", " Docker ")
+    assert web._runtime() == "docker"
+    monkeypatch.setenv("TOD_RUNTIME", "systemd")
+    assert web._runtime() == "systemd"
+
+
 def test_web_token_required(tmp_path):
     from catalogo.web import _make_cookie, _valid_cookie, make_server
 

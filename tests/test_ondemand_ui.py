@@ -115,6 +115,20 @@ def test_series_detail_returns_seasons_and_keys(tmp_path):
     assert detail["series"]["poster_path"] == "/poster.jpg"
 
 
+def test_series_detail_uses_stored_episode_title(tmp_path):
+    db = _seed(tmp_path)
+    with sqlite3.connect(db) as conn:
+        conn.execute(
+            "UPDATE media_items SET episode_title='Las normas de la tienda' "
+            "WHERE key='series:tmdb:42:1:1'"
+        )
+        conn.commit()
+    detail = ondemand.series_detail(db, _config(tmp_path, db), 42)
+    assert detail is not None
+    episode = detail["seasons"][0]["episodes"][0]
+    assert episode["name"] == "Las normas de la tienda"
+
+
 def test_search_prefers_prefix_over_substring(tmp_path):
     db = _seed(tmp_path)
     data = ondemand.search_catalog(db, "alien", limit=2)
@@ -181,7 +195,7 @@ def test_series_detail_merges_tmdb_episodes(tmp_path):
                 "name": "Temporada 1",
                 "episodes": [
                     {"episode": 1, "name": "Piloto", "air_date": "2020-01-01",
-                     "still_path": "/s1e1.jpg"},
+                     "overview": "Sinopsis piloto", "still_path": "/s1e1.jpg"},
                     {"episode": 2, "name": "Segundo", "air_date": "2020-01-08",
                      "still_path": "/s1e2.jpg"},
                     {"episode": 3, "name": "Tercero", "air_date": "2020-01-15",
@@ -223,6 +237,13 @@ def test_series_detail_merges_tmdb_episodes(tmp_path):
     assert missing["id"] is None
     assert missing["in_catalog"] is False
     assert missing["publication"] == "sin_catalogo"
+
+    with sqlite3.connect(db) as conn:
+        stored = conn.execute(
+            "SELECT episode_title, episode_overview FROM media_items "
+            "WHERE key='series:tmdb:42:1:1'"
+        ).fetchone()
+    assert stored == ("Piloto", "Sinopsis piloto")
 
 
 def test_library_membership_does_not_require_strm(tmp_path):

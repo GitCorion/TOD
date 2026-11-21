@@ -114,6 +114,14 @@ def _systemctl(unit: str) -> dict[str, Any]:
         return {"unit": unit, "active": "unknown", "error": str(exc)[:120]}
 
 
+def _runtime() -> str:
+    """Entorno de ejecución para no interpretar contenedores como servicios."""
+    explicit = (os.environ.get("TOD_RUNTIME") or "").strip().lower()
+    if explicit in ("docker", "systemd"):
+        return explicit
+    return "docker" if Path("/.dockerenv").exists() else "systemd"
+
+
 class App:
     def __init__(self, config: Config):
         self.config = config
@@ -1427,11 +1435,12 @@ class Handler(PlaybackHandler):
             detail = queries.title_detail(db, asset_id, qbit=qbit)
             if detail is None:
                 raise WebError(404, "título no encontrado")
-            if detail["item"].get("tmdb"):
-                detail["poster_path"] = detail["item"].get("poster_path") or admin.tmdb_poster(
+            item = detail["item"]
+            if item.get("tmdb"):
+                detail["poster_path"] = item.get("poster_path") or admin.tmdb_poster(
                     app.config,
-                    detail["item"]["kind"],
-                    int(detail["item"]["tmdb"]),
+                    item["kind"],
+                    int(item["tmdb"]),
                 )
             detail["ondemand"] = ondemand.item_state(
                 db, app.config, detail["item"], qbit=qbit, arr=app.arr
@@ -2115,6 +2124,7 @@ class Handler(PlaybackHandler):
                 "events": conn.execute("SELECT COUNT(*) FROM events").fetchone()[0],
             }
         return {
+            "runtime": _runtime(),
             "services": [_systemctl(unit) for unit in SERVICES],
             "disk": [
                 queries._disk(path)

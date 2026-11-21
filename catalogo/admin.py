@@ -247,15 +247,35 @@ def tmdb_seasons(config: Config, tmdb_id: int) -> dict[str, Any]:
     return {"series": series, "seasons": seasons}
 
 
-def tmdb_episodes(config: Config, tmdb_id: int, season: int) -> dict[str, Any]:
+_TMDB_EPISODES_CACHE: dict[tuple[str, int, int], tuple[float, dict[str, Any]]] = {}
+_TMDB_EPISODES_LOCK = threading.Lock()
+
+
+def tmdb_episodes(
+    config: Config,
+    tmdb_id: int,
+    season: int,
+    *,
+    ttl: float = 3600.0,
+) -> dict[str, Any]:
+    """Episodios de una temporada, cacheados para la ficha de un episodio."""
+    cache_key = (str(config.db_path), int(tmdb_id), int(season))
+    now = time.monotonic()
+    with _TMDB_EPISODES_LOCK:
+        cached = _TMDB_EPISODES_CACHE.get(cache_key)
+        if cached is not None and now - cached[0] < ttl:
+            return cached[1]
     client = _tmdb(config)
     payload = client.season_details(int(tmdb_id), int(season))
     episodes = episode_items(int(season), payload)
-    return {
+    data = {
         "tmdb": int(tmdb_id),
         "season": int(season),
         "episodes": episodes,
     }
+    with _TMDB_EPISODES_LOCK:
+        _TMDB_EPISODES_CACHE[cache_key] = (now, data)
+    return data
 
 
 _SERIES_FULL_CACHE: dict[tuple[str, int], tuple[float, dict[str, Any]]] = {}

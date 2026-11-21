@@ -90,7 +90,7 @@ export const CAPABILITY_LABELS = {
 };
 
 export const SERVICE_LABELS = {
-  tod: 'TOD (servicio único)',
+  tod: 'TOD',
   'catalogo-web': 'Panel web (obsoleto)',
   'catalogo-proxy': 'Pasarela de reproducción',
   'catalogo-worker': 'Worker',

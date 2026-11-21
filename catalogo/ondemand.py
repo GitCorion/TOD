@@ -693,7 +693,8 @@ def series_detail(
                 """
                 SELECT id, key, kind, tmdb, title, year, season, episode,
                        status, updated_at, poster_path, overview, vote_average,
-                       library_added, monitored, air_date
+                       library_added, monitored, air_date, episode_title,
+                       episode_overview
                 FROM media_items
                 WHERE kind='series' AND tmdb=?
                 ORDER BY season, episode, id
@@ -757,9 +758,9 @@ def series_detail(
             "releases": releases,
             "alive": alive,
             "in_catalog": True,
-            "name": None,
+            "name": row.get("episode_title"),
             "air_date": None,
-            "overview": None,
+            "overview": row.get("episode_overview"),
             "still_path": None,
         }
 
@@ -770,6 +771,7 @@ def series_detail(
 
     tmdb_seasons = (tmdb_data or {}).get("seasons") or []
     seasons_out: list[dict[str, Any]] = []
+    episode_updates: list[tuple[str | None, str | None, int]] = []
     matched: set[tuple[int, int]] = set()
     for season in tmdb_seasons:
         try:
@@ -787,6 +789,15 @@ def series_detail(
             if state is not None:
                 matched.add(key)
                 episode = dict(state)
+                new_name = source.get("name")
+                new_overview = source.get("overview")
+                if (
+                    (new_name and new_name != state.get("name"))
+                    or (new_overview and new_overview != state.get("overview"))
+                ):
+                    episode_updates.append(
+                        (new_name, new_overview, int(state["id"]))
+                    )
             else:
                 episode = {
                     "id": None,
@@ -910,6 +921,19 @@ def series_detail(
         ),
         "seasons": len(seasons_out),
     }
+    if episode_updates:
+        try:
+            with closing(connect(db_path)) as conn:
+                conn.executemany(
+                    "UPDATE media_items SET "
+                    "episode_title=COALESCE(?, episode_title), "
+                    "episode_overview=COALESCE(?, episode_overview) "
+                    "WHERE id=?",
+                    episode_updates,
+                )
+                conn.commit()
+        except Exception:
+            pass
     return {
         "series": series,
         "totals": totals,

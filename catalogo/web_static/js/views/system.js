@@ -24,6 +24,31 @@ function servicePanel(title, items) {
   </div>`;
 }
 
+const EXTERNAL_CAPABILITY = {
+  'qbittorrent.service': 'qbittorrent',
+  'prowlarr.service': 'prowlarr',
+  'jackett.service': 'jackett',
+  'jellyfin.service': 'jellyfin',
+};
+
+function externalPanel(items, capabilities, runtime) {
+  if (runtime !== 'docker') return servicePanel('Terceros', items);
+  return `<div class="panel">
+    <div class="panel-head"><h2>Terceros</h2><span class="right tiny faint">Docker Compose</span></div>
+    <div class="panel-body" style="padding-top:6px;padding-bottom:8px">
+      ${items.map((item) => {
+        const key = EXTERNAL_CAPABILITY[item.unit];
+        const ready = key ? Boolean(capabilities[key]) : false;
+        return `<div class="kv">
+          <span title="${esc(item.unit)}">${esc(serviceName(item.unit))}</span>
+          <span>${ready ? status('Configurado', 'ok') : status('No configurado', 'muted')}</span>
+        </div>`;
+      }).join('')}
+      <p class="tiny faint" style="margin:8px 0 0">Los procesos se gestionan con <span class="mono">docker compose</span>. Aquí se muestra si cada integración está configurada.</p>
+    </div>
+  </div>`;
+}
+
 function schedulerPanel(tasks) {
   const items = tasks || [];
   return `<div class="panel">
@@ -92,7 +117,7 @@ export async function renderSystem({ signal }) {
   $('#view').innerHTML = `
     <div class="grid grid-2">
       ${servicePanel('Aplicación', apps)}
-      ${servicePanel('Terceros', external)}
+      ${externalPanel(external, system.capabilities || {}, system.runtime)}
     </div>
 
     <div class="grid grid-2 section">

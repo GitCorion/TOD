@@ -145,6 +145,8 @@ def upsert_episodes(db_path, series, episodes, *, source: str = "tmdb") -> dict:
                     """
                     UPDATE media_items SET
                         title = ?,
+                        episode_title = COALESCE(?, episode_title),
+                        episode_overview = COALESCE(?, episode_overview),
                         original_title = COALESCE(?, original_title),
                         year = COALESCE(?, year),
                         season = ?, episode = ?,
@@ -161,6 +163,8 @@ def upsert_episodes(db_path, series, episodes, *, source: str = "tmdb") -> dict:
                     """,
                     (
                         title,
+                        item.get("name"),
+                        item.get("overview"),
                         series.get("original_title"),
                         series.get("year"),
                         season,
@@ -181,16 +185,19 @@ def upsert_episodes(db_path, series, episodes, *, source: str = "tmdb") -> dict:
                 conn.execute(
                     """
                     INSERT INTO media_items(
-                        key, kind, tmdb, title, year, season, episode, air_date,
+                        key, kind, tmdb, title, episode_title, episode_overview,
+                        year, season, episode, air_date,
                         original_title, original_language, popularity,
                         poster_path, backdrop_path, overview, vote_average,
                         external_source
-                    ) VALUES(?, 'series', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    ) VALUES(?, 'series', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     (
                         key,
                         tmdb,
                         title,
+                        item.get("name"),
+                        item.get("overview"),
                         series.get("year"),
                         season,
                         episode,

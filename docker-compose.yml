@@ -7,6 +7,7 @@ services:
     restart: unless-stopped
     environment:
       TZ: ${TZ:-Etc/UTC}
+      TOD_RUNTIME: docker
       TOD_DB: /config/tod.db
       TOD_CATALOG_LIBRARY: /media/catalogo
       TOD_LIBRARY_ROOT: /library

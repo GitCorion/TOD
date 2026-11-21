@@ -41,12 +41,19 @@ export async function renderTitle({ params, query, signal }) {
   const tab = query.get('tab') || 'resumen';
   const tag = episodeTag(item);
   const pageLabel = item.kind === 'movie' ? 'Película' : 'Episodio';
+  const episodeName = item.kind === 'series' ? (item.episode_title || '') : '';
+  const heading = episodeName || item.title || '—';
+  const synopsis = item.episode_overview || item.overview;
+  const seriesContext = episodeName && item.tmdb
+    ? `<div class="subtitle"><a href="#/series/${item.tmdb}">${esc(item.title || 'Serie')}</a>${item.year ? ` (${item.year})` : ''}</div>`
+    : '';
   setHeader(pageLabel, 'Catálogo');
-  document.title = `${item.title || pageLabel}, TOD`;
+  document.title = `${heading}, TOD`;
 
   const seriesLink = item.kind === 'series' && item.tmdb
     ? `<a href="#/series/${item.tmdb}">${esc(item.title || 'Serie')}</a>${icon('chevron')}`
-    : '';  const alive = data.releases.filter((release) => release.health === 'alive').length;
+    : '';
+  const alive = data.releases.filter((release) => release.health === 'alive').length;
   const unverified = data.releases.some((release) => ['unknown', 'stale'].includes(release.health));
   const liveState = statusData.stream_ready
     ? status('Reproducible', 'ok')
@@ -170,7 +177,8 @@ export async function renderTitle({ params, query, signal }) {
       <div class="detail-hero">
         <div class="poster">${poster(data.poster_path, item.title)}</div>
         <div class="info">
-          <h2>${esc(item.title || '—')} ${item.year ? `<span class="muted" style="font-size:16px;font-weight:400">(${item.year})</span>` : ''}</h2>
+          <h2>${esc(heading)} ${item.year && (item.kind === 'movie' || !episodeName) ? `<span class="muted" style="font-size:16px;font-weight:400">(${item.year})</span>` : ''}</h2>
+          ${seriesContext}
           <div class="row">
             ${badge(item.kind === 'movie' ? 'película' : 'episodio', 'mono')}
             ${tag ? badge(tag, 'mono') : ''}
@@ -181,7 +189,7 @@ export async function renderTitle({ params, query, signal }) {
             ${od.downloaded ? status('Descargada', 'ok') : ''}
             ${od.download === 'descargando' ? status('Descargando', 'info') : ''}
           </div>
-          ${item.overview ? `<p class="overview">${esc(item.overview)}</p>` : ''}
+          ${synopsis ? `<p class="overview">${esc(synopsis)}</p>` : ''}
           ${data.collection ? `<a class="collection-link" href="#/collection/${data.collection.id}">
             <span class="tiny">Colección</span>
             <strong>${esc(data.collection.name)}</strong>

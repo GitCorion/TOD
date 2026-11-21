@@ -98,8 +98,8 @@ def test_upsert_episodes_inserts_and_updates(tmp_path):
         "popularity": 24.0,
     }
     episodes = [
-        {"season": 1, "episode": 1},
-        {"season": 1, "episode": 5},
+        {"season": 1, "episode": 1, "name": "Piloto", "overview": "Primero"},
+        {"season": 1, "episode": 5, "name": "Quinto", "overview": "Quinto capítulo"},
     ]
     first = upsert_episodes(db, series, episodes)
     assert first["inserted"] == 2
@@ -107,15 +107,17 @@ def test_upsert_episodes_inserts_and_updates(tmp_path):
 
     conn = sqlite3.connect(db)
     rows = conn.execute(
-        "SELECT key, kind, season, episode, title FROM media_items "
-        "WHERE kind='series' ORDER BY episode"
+        "SELECT key, kind, season, episode, title, episode_title, episode_overview "
+        "FROM media_items WHERE kind='series' ORDER BY episode"
     ).fetchall()
     assert rows == [
-        ("series:tmdb:111110:1:1", "series", 1, 1, "ONE PIECE"),
-        ("series:tmdb:111110:1:5", "series", 1, 5, "ONE PIECE"),
+        ("series:tmdb:111110:1:1", "series", 1, 1, "ONE PIECE", "Piloto", "Primero"),
+        ("series:tmdb:111110:1:5", "series", 1, 5, "ONE PIECE", "Quinto", "Quinto capítulo"),
     ]
 
     series["title"] = "One Piece (Netflix)"
+    episodes[0]["name"] = "Piloto (remaster)"
+    episodes[0]["overview"] = "Primero, remasterizado"
     second = upsert_episodes(db, series, episodes)
     assert second["inserted"] == 0
     assert second["updated"] == 2
@@ -123,4 +125,12 @@ def test_upsert_episodes_inserts_and_updates(tmp_path):
         "SELECT DISTINCT title FROM media_items WHERE kind='series'"
     ).fetchall()
     assert titles == [("One Piece (Netflix)",)]
+    names = conn.execute(
+        "SELECT episode_title, episode_overview FROM media_items "
+        "WHERE kind='series' ORDER BY episode"
+    ).fetchall()
+    assert names == [
+        ("Piloto (remaster)", "Primero, remasterizado"),
+        ("Quinto", "Quinto capítulo"),
+    ]
     conn.close()
