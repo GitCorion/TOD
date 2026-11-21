@@ -1,8 +1,17 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
-  <rect width="64" height="64" fill="#f2f0ea"/>
-  <g fill="none" stroke="#1d1a16" stroke-width="3">
-    <rect x="12" y="9" width="40" height="46"/>
-    <path d="M21 9v46M43 9v46"/>
-    <path d="M15 16h3M15 25h3M15 34h3M15 43h3M46 16h3M46 25h3M46 34h3M46 43h3"/>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-labelledby="title">
+  <title id="title">TOD — Torrent on Demand</title>
+  <rect width="64" height="64" rx="10" fill="#f2f0ea"/>
+  <rect x="9" y="5" width="46" height="54" rx="5" fill="#14120f"/>
+  <g fill="#f2f0ea">
+    <rect x="13" y="11" width="3" height="4.5" rx="1"/>
+    <rect x="13" y="21" width="3" height="4.5" rx="1"/>
+    <rect x="13" y="31" width="3" height="4.5" rx="1"/>
+    <rect x="13" y="41" width="3" height="4.5" rx="1"/>
+    <rect x="48" y="11" width="3" height="4.5" rx="1"/>
+    <rect x="48" y="21" width="3" height="4.5" rx="1"/>
+    <rect x="48" y="31" width="3" height="4.5" rx="1"/>
+    <rect x="48" y="41" width="3" height="4.5" rx="1"/>
   </g>
+  <rect x="20" y="9" width="24" height="46" rx="2" fill="#d96b57"/>
+  <path d="M25 19h14v4H25zM30 23h4v22h-4z" fill="#f2f0ea"/>
 </svg>

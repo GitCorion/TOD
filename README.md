@@ -1,10 +1,15 @@
-# TOD — Torrent on Demand
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/assets/tod-banner-dark.png">
+    <img src="docs/assets/tod-banner-light.png" alt="TOD — Torrent on Demand. Catálogo bajo demanda para qBittorrent y Jellyfin." width="100%">
+  </picture>
+</p>
 
-[![tests](https://github.com/GitCorion/TOD/actions/workflows/tests.yml/badge.svg)](https://github.com/GitCorion/TOD/actions/workflows/tests.yml)
-[![license](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
-[![python](https://img.shields.io/badge/python-3.11%2B-3776AB.svg)](https://www.python.org/)
-
-**Catálogo bajo demanda para qBittorrent y Jellyfin.**
+<p align="center">
+  <a href="https://github.com/GitCorion/TOD/actions/workflows/tests.yml"><img alt="tests" src="https://github.com/GitCorion/TOD/actions/workflows/tests.yml/badge.svg"></a>
+  <a href="LICENSE"><img alt="licencia MIT" src="https://img.shields.io/badge/license-MIT-blue.svg"></a>
+  <a href="https://www.python.org/"><img alt="Python 3.11 o superior" src="https://img.shields.io/badge/python-3.11%2B-3776AB.svg"></a>
+</p>
 
 TOD unifica catálogo, reproducción y administración en un servicio. Se integra
 con qBittorrent, Jellyfin, Prowlarr, Jackett y, opcionalmente, Radarr/Sonarr.
