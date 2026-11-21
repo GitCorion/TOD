@@ -21,7 +21,7 @@ from .db import connect
 from .importer import norm_title
 from .public_sync import year_of
 from .title_sync import upsert_episodes, upsert_movies
-from .tmdb import movie_item, tv_item
+from .tmdb import episode_items, movie_item, tv_item
 from .trackers import GENERAL_TRACKERS, spanish_trackers_from_indexers
 
 EXT = re.compile(r"\.(mkv|mp4|avi|m4v|ts|m2ts)$", re.IGNORECASE)
@@ -174,6 +174,7 @@ def sync_rss(
         "keys": [],
         "dry_run": dry_run,
     }
+    season_done: set[tuple[int, int]] = set()
     indexer_payload = prowlarr.indexers()
     found, _missing = resolve_indexers(
         prowlarr, GENERAL_TRACKERS, indexers=indexer_payload
@@ -315,6 +316,40 @@ def sync_rss(
                         [{"season": season, "episode": number}],
                         source="rss",
                     )
+                    # Ingesta automática: una serie que entra por el sistema
+                    # debe traer toda la temporada emitida, no solo el
+                    # episodio que apareció en el RSS.
+                    marker = (int(series["tmdb"]), int(season))
+                    if marker not in season_done:
+                        season_done.add(marker)
+                        try:
+                            payload = tmdb.season_details(*marker)
+                            episodes = episode_items(marker[1], payload)
+                        except Exception as exc:
+                            report["errors"].append(
+                                f"tmdb temporada {marker}: {str(exc)[:120]}"
+                            )
+                            episodes = []
+                        if episodes:
+                            extra = upsert_episodes(
+                                db_path, series, episodes, source="rss"
+                            )
+                            upsert["inserted"] += int(
+                                extra.get("inserted") or 0
+                            )
+                            upsert["updated"] += int(
+                                extra.get("updated") or 0
+                            )
+                        with closing(connect(db_path)) as mconn:
+                            mconn.execute(
+                                "UPDATE media_items SET monitored = 1, "
+                                "monitored_at = COALESCE(monitored_at, ?), "
+                                "monitor_source = COALESCE(monitor_source, 'rss') "
+                                "WHERE kind = 'series' AND tmdb = ? "
+                                "AND season = ?",
+                                (checked_at, marker[0], marker[1]),
+                            )
+                            mconn.commit()
                 else:
                     upsert = {"inserted": 1}
                 if upsert.get("inserted"):
