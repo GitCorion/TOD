@@ -925,6 +925,21 @@ def add_series(
                 for item in episodes
             )
         time.sleep(0.25)
+    if episode_keys:
+        from contextlib import closing
+
+        from .db import connect
+
+        stamp = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+        with closing(connect(config.db_path)) as conn:
+            conn.executemany(
+                "UPDATE media_items SET monitored = 1, "
+                "monitored_at = COALESCE(monitored_at, ?), "
+                "monitor_source = COALESCE(monitor_source, 'series') "
+                "WHERE key = ?",
+                [(stamp, key) for key in episode_keys],
+            )
+            conn.commit()
     return {
         "kind": "series",
         "tmdb": int(tmdb_id),
