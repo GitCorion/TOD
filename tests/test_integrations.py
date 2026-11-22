@@ -1,3 +1,5 @@
+import socket
+import urllib.error
 from pathlib import Path
 
 import pytest
@@ -49,6 +51,23 @@ def test_directories_ok(tmp_path):
         "ondemand_save_path",
     }
     assert result["paths"]["catalog_library"]["writable"] is True
+
+
+def test_directories_separate_library_roots(tmp_path):
+    movies = tmp_path / "fichier/Peliculas"
+    series = tmp_path / "fichier/Series"
+    movies.mkdir(parents=True)
+    series.mkdir(parents=True)
+    config = _config(
+        tmp_path,
+        library_root_movies=movies,
+        library_root_series=series,
+    )
+    result = integrations.test_directories(config)
+    assert result["ok"] is True
+    assert result["paths"]["library_root_movies"]["exists"] is True
+    assert result["paths"]["library_root_series"]["exists"] is True
+    assert "library_root" not in result["paths"]
 
 
 def test_directories_detect_missing(tmp_path):
@@ -149,3 +168,82 @@ def test_missing_credentials_are_reported(tmp_path):
 def test_unknown_integration():
     with pytest.raises(integrations.IntegrationError):
         integrations.test_integration("inventada", None)
+
+
+def test_error_classification_is_actionable():
+    auth = integrations.classify_error(
+        urllib.error.HTTPError(
+            "http://x", 401, "Unauthorized", {}, None
+        )
+    )
+    assert auth[0] == "auth"
+    assert "clave" in auth[1].lower()
+
+    missing = integrations.classify_error(
+        integrations.IntegrationError("sin API key de Jellyfin")
+    )
+    assert missing[0] == "missing"
+    assert "Configuración" in missing[1]
+
+    refused = integrations.classify_error(
+        urllib.error.URLError(ConnectionRefusedError(111, "refused"))
+    )
+    assert refused[0] == "refused"
+    assert "puerto" in refused[1]
+
+    refused_text = integrations.classify_error(
+        integrations.IntegrationError(
+            "Prowlarr no responde: [Errno 111] Connection refused"
+        )
+    )
+    assert refused_text[0] == "refused"
+
+    timeout = integrations.classify_error(
+        urllib.error.URLError(TimeoutError("timed out"))
+    )
+    assert timeout[0] == "timeout"
+
+    dns = integrations.classify_error(
+        urllib.error.URLError(socket.gaierror(-2, "Name or service not known"))
+    )
+    assert dns[0] == "dns"
+
+    not_api = integrations.classify_error(
+        integrations.IntegrationError("respuesta JSON inválida")
+    )
+    assert not_api[0] == "not_api"
+
+
+def test_error_text_hides_secrets():
+    result = integrations._error(
+        "prowlarr",
+        0.0,
+        integrations.IntegrationError(
+            "no responde: http://x/api?apikey=SUPER-SECRETO"
+        ),
+    )
+    assert "SUPER-SECRETO" not in result["error"]
+    assert "apikey=***" in result["error"]
+
+
+def test_light_qbittorrent_skips_torrent_list(monkeypatch, tmp_path):
+    class FakeQbit:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        @classmethod
+        def from_config(cls, config):
+            return cls()
+
+        def app_version(self):
+            return "5.0.0"
+
+        def torrents(self):
+            raise AssertionError("la comprobación ligera no debe listar torrents")
+
+    monkeypatch.setattr(integrations, "QbittorrentClient", FakeQbit)
+    result = integrations.test_qbittorrent(
+        _config(tmp_path, qbittorrent_pass="x"), light=True
+    )
+    assert result["ok"] is True
+    assert result["detail"] == "qBittorrent 5.0.0"

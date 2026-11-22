@@ -1,3 +1,5 @@
+const CURRENT_YEAR = new Date().getFullYear();
+
 const DOWNLOAD = {
   descargando: { label: 'Descargando', tone: 'info' },
   sembrando: { label: 'Descargado', tone: 'ok' },
@@ -7,8 +9,8 @@ const DOWNLOAD = {
 };
 
 const PUBLICATION = {
-  publicado: { label: 'En biblioteca', tone: 'ok' },
-  pendiente: { label: 'Por añadir', tone: 'info' },
+  publicado: { label: 'Añadido', tone: 'ok' },
+  pendiente: { label: 'Sin añadir', tone: 'info' },
   sin_fuente: { label: 'Sin fuente', tone: 'muted' },
 };
 
@@ -34,35 +36,36 @@ export const JOB_LABELS = {
   reseed: 'Reponer borrados',
   evict: 'Liberar espacio',
   seeding: 'Normalizar siembra',
-  'prune-library': 'Podar biblioteca',
-  'sync-library': 'Sincronizar biblioteca',
+  'prune-library': 'Podar Radarr/Sonarr',
+  'sync-library': 'Sincronizar Radarr/Sonarr',
+  'arr-mirror': 'Espejo Radarr/Sonarr',
   metadata: 'Actualizar metadatos',
   monitor: 'Buscar seguimiento',
   'debrid-check': 'Comprobar debrid',
   'qbit-limits': 'Límites qBittorrent',
   'cleanup-leases': 'Limpiar leases',
-  'publish-now': 'Añadir a la biblioteca',
-  'download-now': 'Forzar descarga',
+  'publish-now': 'Añadir',
+  'download-now': 'Descargar ahora',
   'sync-pending': 'Buscar fuentes pendientes',
   'worker-cycle': 'Ciclo del worker',
   bridge: 'Puente a Radarr/Sonarr',
-  'restore-strm': 'Restaurar .strm',
+  'restore-strm': 'Reconciliar .strm',
 };
 
 export const EVENT_LABELS = {
   'web.add_movie': 'Alta de película',
   'web.add_series': 'Alta de serie',
-  'web.ondemand_acquire': 'Añadir a la biblioteca / forzar descarga',
-  'web.ondemand_publish': 'Añadir a la biblioteca',
-  'web.ondemand_download': 'Descarga forzada',
+  'web.ondemand_acquire': 'Añadir / descargar',
+  'web.ondemand_publish': 'Añadir',
+  'web.ondemand_download': 'Descargar ahora',
   'web.ondemand_limit': 'Cambio de límite',
   'web.manual_search': 'Búsqueda manual de fuentes',
   'web.collection_add': 'Añadir colección',
-  'web.title_monitor': 'Seguimiento de título',
-  'web.title_library': 'Añadir título a la biblioteca',
-  'web.series_library': 'Añadir serie a la biblioteca',
-  'web.library_remove': 'Quitar de la biblioteca',
-  'web.series_unpublish': 'Quitar serie de la biblioteca',
+  'web.title_monitor': 'Monitorizar título',
+  'web.title_library': 'Añadir título',
+  'web.series_library': 'Añadir serie',
+  'web.library_remove': 'Quitar de TOD',
+  'web.series_unpublish': 'Quitar serie de TOD',
   'web.sync_pending': 'Búsqueda de pendientes',
   'web.indexer_toggle': 'Pausar o activar indexer',
   'web.job': 'Tarea lanzada',
@@ -91,15 +94,6 @@ export const CAPABILITY_LABELS = {
 
 export const SERVICE_LABELS = {
   tod: 'TOD',
-  'catalogo-web': 'Panel web (obsoleto)',
-  'catalogo-proxy': 'Pasarela de reproducción',
-  'catalogo-worker': 'Worker',
-  'catalogo-rss': 'RSS',
-  'catalogo-backfill': 'Fondo antiguo',
-  'catalogo-bridge': 'Puente a Radarr/Sonarr',
-  'catalogo-restore': 'Restauración',
-  'catalogo-leases': 'Leases de Jellyfin',
-  'catalogo-qbit-limits': 'Límites de qBittorrent',
   qbittorrent: 'qBittorrent',
   prowlarr: 'Prowlarr',
   jackett: 'Jackett',
@@ -129,7 +123,7 @@ export function publicationStatus(item) {
   if (item.kind === 'series' && item.library_episodes !== undefined) {
     if (item.library_episodes > 0) {
       return {
-        label: `${item.library_episodes}/${item.episodes || 0} en biblioteca`,
+        label: `${item.library_episodes}/${item.episodes || 0} añadidos`,
         tone: 'ok',
       };
     }
@@ -158,22 +152,25 @@ export function capabilityLabel(name) {
 export function qbitState(rawValue) {
   const raw = String(rawValue || '').toLowerCase();
   if (!raw) return { label: '—', tone: 'muted' };
-  if (raw.includes('missing') || raw.includes('error')) return { label: 'Error', tone: 'bad' };
+  if (raw.includes('missing') || raw.includes('error')) return { label: 'Con error', tone: 'bad' };
   if (raw.includes('paused') || raw.includes('stopped')) return { label: 'Pausado', tone: 'warn' };
+  if (raw.includes('queuedup')) return { label: 'En cola de siembra', tone: 'muted' };
+  if (raw.includes('queued')) return { label: 'En cola', tone: 'muted' };
+  if (raw.includes('moving')) return { label: 'Moviendo a archivo', tone: 'warn' };
+  if (raw.includes('checking')) return { label: 'Comprobando', tone: 'info' };
   if (raw.includes('stalledup')) return { label: 'Sembrando (sin pares)', tone: 'warn' };
   if (raw.includes('stalleddl')) return { label: 'Descargando (sin pares)', tone: 'warn' };
   if (raw.includes('forcedup')) return { label: 'Sembrando (forzado)', tone: 'ok' };
   if (raw.includes('forceddl')) return { label: 'Descargando (forzado)', tone: 'info' };
   if (raw.includes('up') || raw.includes('seed') || raw.includes('upload')) return { label: 'Sembrando', tone: 'ok' };
   if (raw.includes('dl') || raw.includes('download') || raw.includes('meta')) return { label: 'Descargando', tone: 'info' };
-  if (raw.includes('queued')) return { label: 'En cola', tone: 'muted' };
   return { label: rawValue, tone: 'muted' };
 }
 
 export function availabilityStatus(value) {
   const map = {
     local: { label: 'Local', tone: 'ok' },
-    library: { label: 'Biblioteca', tone: 'ok' },
+    library: { label: 'Radarr/Sonarr', tone: 'ok' },
     debrid: { label: 'Debrid', tone: 'info' },
     cloud: { label: 'archivo', tone: 'info' },
     alive: { label: 'Fuente viva', tone: 'info' },
@@ -197,7 +194,7 @@ export function healthStatus(value) {
 
 export const TASK_CATEGORIES = [
   { key: 'captura', label: 'Captura y fuentes' },
-  { key: 'biblioteca', label: 'Biblioteca' },
+  { key: 'biblioteca', label: 'Radarr/Sonarr' },
   { key: 'siembra', label: 'Descargas y siembra' },
   { key: 'sistema', label: 'Sistema' },
 ];
@@ -218,7 +215,7 @@ export const TASKS = [
     kind: 'sync-sources', title: 'Buscar fuentes', category: 'captura',
     desc: 'Busca releases en Prowlarr y Jackett para títulos fríos.',
     fields: [
-      { name: 'year', label: 'Año', type: 'number', value: 2026, min: 1900, max: 2100 },
+      { name: 'year', label: 'Año', type: 'number', value: CURRENT_YEAR, min: 1900, max: 2100 },
       { name: 'kind', label: 'Tipo', type: 'select', value: 'movie', options: [['movie', 'Películas'], ['series', 'Series']] },
       { name: 'limit', label: 'Títulos', type: 'number', value: 10, min: 1 },
       { name: 'delay', label: 'Pausa (s)', type: 'number', value: 8, step: 0.5 },
@@ -231,7 +228,7 @@ export const TASKS = [
     desc: 'Ingesta lo último de Prowlarr/Jackett y publica seguimientos encontrados.',
     fields: [
       { name: 'limit', label: 'Resultados', type: 'number', value: 200, min: 1 },
-      { name: 'delay', label: 'Pausa (s)', type: 'number', value: 0.3, step: 0.1 },
+      { name: 'delay', label: 'Pausa (s)', type: 'number', value: 0.2, step: 0.1 },
       { name: 'export', label: 'Exportar .strm', type: 'checkbox', value: true },
       { name: 'dry_run', label: 'Solo previsualizar', type: 'checkbox', value: false },
     ],
@@ -242,7 +239,7 @@ export const TASKS = [
     fields: [
       { name: 'limit', label: 'Títulos', type: 'number', value: 250, min: 1 },
       { name: 'delay', label: 'Pausa (s)', type: 'number', value: 8, step: 0.5 },
-      { name: 'years', label: 'Años (coma)', type: 'text', value: '2026,2025,2024,2023,2022,2021,2020' },
+      { name: 'years', label: 'Años (coma)', type: 'text', value: [CURRENT_YEAR, CURRENT_YEAR-1, CURRENT_YEAR-2, CURRENT_YEAR-3, CURRENT_YEAR-4, CURRENT_YEAR-5, CURRENT_YEAR-6].join(',') },
       { name: 'export', label: 'Exportar .strm', type: 'checkbox', value: true },
       { name: 'dry_run', label: 'Solo previsualizar', type: 'checkbox', value: true },
     ],
@@ -251,7 +248,7 @@ export const TASKS = [
     kind: 'export-strm', title: 'Exportar .strm', category: 'biblioteca',
     desc: 'Genera los ficheros estables de Jellyfin.',
     fields: [
-      { name: 'year', label: 'Año (vacío = todo)', type: 'number', value: 2026, min: 1900 },
+      { name: 'year', label: 'Año (vacío = todo)', type: 'number', value: CURRENT_YEAR, min: 1900 },
       { name: 'kind', label: 'Tipo', type: 'select', value: 'movie', options: [['', 'Todo'], ['movie', 'Películas'], ['series', 'Series']] },
       { name: 'limit', label: 'Límite', type: 'number', value: 0, min: 0 },
       { name: 'min_seeders', label: 'Mín. seeds', type: 'number', value: 1, min: 0 },
@@ -278,12 +275,21 @@ export const TASKS = [
     ],
   },
   {
-    kind: 'sync-library', title: 'Sincronizar biblioteca', category: 'biblioteca',
+    kind: 'sync-library', title: 'Sincronizar Radarr/Sonarr', category: 'biblioteca',
     desc: 'Importa library_files desde Radarr/Sonarr.',
     fields: [],
   },
   {
-    kind: 'prune-library', title: 'Podar biblioteca', category: 'biblioteca',
+    kind: 'arr-mirror', title: 'Espejo Radarr/Sonarr', category: 'biblioteca',
+    desc: 'Importa altas, busca fuentes y publica los .strm posibles.',
+    fields: [
+      { name: 'source_limit', label: 'Títulos a buscar', type: 'number', value: 50, min: 0 },
+      { name: 'publish_limit', label: 'Títulos con fichero a publicar', type: 'number', value: 200, min: 0 },
+      { name: 'delay', label: 'Pausa (s)', type: 'number', value: 0.2, step: 0.1 },
+    ],
+  },
+  {
+    kind: 'prune-library', title: 'Podar Radarr/Sonarr', category: 'biblioteca',
     desc: 'Borra .strm de títulos que ya están en Radarr/Sonarr.',
     fields: [
       { name: 'execute', label: 'Ejecutar de verdad (no dry-run)', type: 'checkbox', value: false },

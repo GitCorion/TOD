@@ -191,6 +191,28 @@ def test_settings_validation_paths_and_integration(tmp_path):
         server.app.runner.stop()
 
 
+def test_attention_endpoint(tmp_path):
+    server, base = _server(tmp_path)
+    try:
+        status, payload = _request(base, "/api/attention")
+        assert status == 200
+        assert payload["counts"]["total"] == len(payload["items"])
+        assert any(item["key"] == "setup" for item in payload["items"])
+
+        status, payload = _request(
+            base,
+            "/api/attention/check",
+            method="POST",
+            headers={"X-Catalogo": "web"},
+        )
+        assert status == 202
+        assert payload["job_id"] > 0
+    finally:
+        server.shutdown()
+        server.server_close()
+        server.app.runner.stop()
+
+
 def test_calendar_and_scheduler_params(tmp_path):
     server, base = _server(tmp_path)
     try:

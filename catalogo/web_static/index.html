@@ -58,21 +58,18 @@
       </a>
 
       <nav class="nav" id="nav">
-        <span class="nav-label">Biblioteca</span>
+        <span class="nav-label">Contenido</span>
         <a href="#/dashboard" data-route="dashboard"><svg class="icon"><use href="#i-home"/></svg><span>Inicio</span></a>
+        <a href="#/catalog" data-route="catalog"><svg class="icon"><use href="#i-grid"/></svg><span>Biblioteca</span></a>
         <a href="#/calendar" data-route="calendar"><svg class="icon"><use href="#i-calendar"/></svg><span>Calendario</span></a>
-        <a href="#/add" data-route="add"><svg class="icon"><use href="#i-plus"/></svg><span>Añadir</span></a>
-        <a href="#/catalog" data-route="catalog"><svg class="icon"><use href="#i-grid"/></svg><span>Catálogo</span></a>
         <a href="#/monitor" data-route="monitor"><svg class="icon"><use href="#i-search"/></svg><span>Seguimiento</span><em class="nav-count" id="navMonitor"></em></a>
-        <span class="nav-label">Operación</span>
+        <span class="nav-label">Actividad</span>
         <a href="#/downloads" data-route="downloads"><svg class="icon"><use href="#i-download"/></svg><span>Descargas</span><em class="nav-count" id="navDownloads"></em></a>
         <a href="#/jobs" data-route="jobs"><svg class="icon"><use href="#i-jobs"/></svg><span>Tareas</span><em class="nav-count" id="navJobs"></em></a>
-        <a href="#/history" data-route="history"><svg class="icon"><use href="#i-clock"/></svg><span>Historial</span></a>
         <a href="#/seeds" data-route="seeds"><svg class="icon"><use href="#i-seed"/></svg><span>Siembra</span></a>
         <span class="nav-label">Sistema</span>
+        <a href="#/system" data-route="system"><svg class="icon"><use href="#i-server"/></svg><span>Estado</span><em class="nav-count attention hidden" id="navAttention" aria-live="polite"></em></a>
         <a href="#/settings" data-route="settings"><svg class="icon"><use href="#i-wrench"/></svg><span>Configuración</span></a>
-        <a href="#/system" data-route="system"><svg class="icon"><use href="#i-server"/></svg><span>Estado</span></a>
-        <a href="#/technical" data-route="technical"><svg class="icon"><use href="#i-wrench"/></svg><span>Avanzado</span></a>
       </nav>
 
       <div class="sidebar-foot">
@@ -93,11 +90,12 @@
           <span class="page-kicker" id="pageKicker"></span>
           <h1 id="pageTitle" tabindex="-1">Inicio</h1>
         </div>
-        <button class="search-trigger" id="searchTrigger" data-action="palette-open" aria-label="Buscar en el catálogo (Ctrl K)">
+        <button class="search-trigger" id="searchTrigger" data-action="palette-open" aria-label="Buscar en la biblioteca (Ctrl K)">
           <svg class="icon"><use href="#i-search"/></svg>
-          <span>Buscar títulos, series, claves…</span>
+          <span>Buscar en la biblioteca…</span>
           <kbd>Ctrl K</kbd>
         </button>
+        <a class="btn btn-primary top-add" href="#/add" data-action="add-open"><svg class="icon"><use href="#i-plus"/></svg> Añadir</a>
         <div class="top-actions">
           <button class="btn btn-icon" id="themeToggle" data-action="theme" aria-label="Cambiar a tema claro" title="Cambiar tema">
             <svg class="icon" id="themeIcon"><use href="#i-sun"/></svg>
@@ -106,12 +104,12 @@
         </div>
       </header>
       <div class="activity-bar hidden" id="activityBar"></div>
-      <section id="view" class="view" aria-live="polite"></section>
+      <section id="view" class="view"></section>
     </main>
 
     <nav class="mobile-nav" id="mobileNav" aria-label="Navegación rápida">
       <a href="#/dashboard" data-route="dashboard"><svg class="icon"><use href="#i-home"/></svg><span>Inicio</span></a>
-      <a href="#/catalog" data-route="catalog"><svg class="icon"><use href="#i-grid"/></svg><span>Catálogo</span></a>
+      <a href="#/catalog" data-route="catalog"><svg class="icon"><use href="#i-grid"/></svg><span>Biblioteca</span></a>
       <a href="#/add" data-route="add"><svg class="icon"><use href="#i-plus"/></svg><span>Añadir</span></a>
       <a href="#/downloads" data-route="downloads"><svg class="icon"><use href="#i-download"/></svg><span>Descargas</span></a>
       <button data-action="menu"><svg class="icon"><use href="#i-menu"/></svg><span>Más</span></button>
@@ -134,11 +132,11 @@
     </div>
   </div>
 
-  <div id="palette" class="palette hidden" role="dialog" aria-modal="true" aria-label="Buscar en el catálogo">
+  <div id="palette" class="palette hidden" role="dialog" aria-modal="true" aria-label="Buscar en la biblioteca">
     <div class="palette-card">
       <form class="palette-search" id="paletteForm" autocomplete="off">
         <svg class="icon"><use href="#i-search"/></svg>
-        <input id="paletteInput" name="q" placeholder="Título, serie o clave estable…" aria-label="Buscar" autocomplete="off">
+        <input id="paletteInput" name="q" placeholder="Buscar en la biblioteca o ir a…" aria-label="Buscar en la biblioteca o ir a una página" autocomplete="off">
         <kbd>Esc</kbd>
       </form>
       <div id="paletteResults" class="palette-results"></div>

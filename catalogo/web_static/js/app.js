@@ -1,4 +1,5 @@
 import { api, apiPost, onAuthRequired, onLiveChange } from './api.js';
+import { attentionCard, attentionCount } from './attention.js';
 import { esc, fmtBytes, fmtDate, fmtDuration, fmtEta, fmtInt, pct, debounce } from './format.js';
 import { healthStatus, jobLabel, jobState, qbitState, taskDef } from './labels.js';
 import { navigate, parseRoute, route, updateQuery } from './router.js';
@@ -57,6 +58,7 @@ async function boot() {
     syncThemeButton();
     await route();
     refreshActivity();
+    refreshAttention();
   } catch (error) {
     setLive(false);
     $('#view').innerHTML = `<div class="panel pad"><div class="empty">
@@ -88,8 +90,8 @@ function renderSelectionBar() {
   if (state.view === 'catalog' && state.selection.size) {
     bar.classList.remove('hidden');
     bar.innerHTML = `<span><strong>${state.selection.size}</strong> ${state.selection.size === 1 ? 'seleccionado' : 'seleccionados'}</span>
-      <button class="btn btn-sm btn-primary" data-action="bulk-publish">${icon('plus', 'sm')} Añadir a la biblioteca</button>
-      <button class="btn btn-sm btn-ghost" data-action="bulk-download">${icon('download', 'sm')} Forzar descarga</button>
+      <button class="btn btn-sm btn-primary" data-action="bulk-publish">${icon('plus', 'sm')} Añadir seleccionados</button>
+      <button class="btn btn-sm btn-ghost" data-action="bulk-download">${icon('download', 'sm')} Descargar ahora</button>
       <button class="btn btn-sm btn-icon" data-action="bulk-clear" aria-label="Quitar selección">${icon('close')}</button>`;
     return;
   }
@@ -153,7 +155,7 @@ function setActivity(data) {
         ? Number(latest.result.published || 0)
         : null;
       toast(
-        `${jobLabel(latest.kind)}: ${kind.label.toLowerCase()}${published !== null ? `, ${fmtInt(published)} publicados` : ''}`,
+        `${jobLabel(latest.kind)}: ${kind.label.toLowerCase()}${published !== null ? `, ${fmtInt(published)} añadidos` : ''}`,
         latest.state === 'error' || (published === 0) ? 'warn' : 'ok',
         `<a class="btn btn-sm btn-ghost" href="#/jobs">Ver historial</a>`,
       );
@@ -181,25 +183,144 @@ function startActivityPolling() {
   });
 }
 
+/* -------------------------------------------------------------- atención */
+
+let attentionTimer = null;
+
+function setAttention(data) {
+  state.attention = data;
+  const count = attentionCount(data);
+  const fails = Number(data?.counts?.fail || 0);
+  const node = $('#navAttention');
+  if (node) {
+    node.textContent = count ? String(count) : '';
+    node.classList.toggle('hidden', !count);
+    node.classList.toggle('fail', fails > 0);
+    node.classList.toggle('warn', fails === 0 && count > 0);
+    node.setAttribute(
+      'aria-label',
+      count ? `${count} avisos pendientes` : 'Sin avisos pendientes',
+    );
+    node.title = count ? `${count} avisos pendientes` : 'Sin avisos pendientes';
+  }
+  const panel = $('#attentionPanel');
+  const signature = JSON.stringify({
+    counts: data?.counts,
+    items: (data?.items || []).map((item) => [
+      item.key, item.severity, item.detail, item.hint, item.since,
+    ]),
+  });
+  if (panel && state.attentionSignature !== signature) {
+    panel.outerHTML = attentionCard(data, { compact: state.view !== 'system' });
+    state.attentionSignature = signature;
+  }
+}
+
+async function refreshAttention() {
+  if (document.hidden) return;
+  try {
+    setAttention(await api('/api/attention'));
+  } catch (_) { /* el indicador no debe romper la vista */ }
+}
+
+function startAttentionPolling() {
+  if (attentionTimer) clearInterval(attentionTimer);
+  attentionTimer = setInterval(refreshAttention, 30000);
+  document.addEventListener('visibilitychange', () => {
+    if (!document.hidden) refreshAttention();
+  });
+}
+
+async function runAttentionCheck() {
+  try {
+    const result = await apiPost('/api/attention/check');
+    toast(`Comprobación en cola (#${result.job_id})`, 'ok');
+    let tries = 0;
+    const timer = setInterval(async () => {
+      tries += 1;
+      try {
+        const job = await api(`/api/jobs/${result.job_id}`);
+        if (['ok', 'error', 'cancelled'].includes(job.state) || tries >= 15) {
+          clearInterval(timer);
+          await refreshAttention();
+        }
+      } catch (_) {
+        if (tries >= 15) clearInterval(timer);
+      }
+    }, 2000);
+  } catch (error) {
+    toast(error.message, 'error');
+  }
+}
+
 /* --------------------------------------------------------------- paleta */
 
 let paletteTimer = null;
 
-function paletteItems(results) {
-  if (!results.length) {
-    return `<div class="palette-empty">Sin resultados locales. Prueba en TMDB desde el enlace inferior.</div>`;
+const DESTINATIONS = [
+  { label: 'Inicio', href: '#/dashboard', hint: 'Contenido' },
+  { label: 'Biblioteca', href: '#/catalog', hint: 'Contenido' },
+  { label: 'Calendario', href: '#/calendar', hint: 'Contenido' },
+  { label: 'Seguimiento', href: '#/monitor', hint: 'Contenido' },
+  { label: 'Descargas', href: '#/downloads', hint: 'Actividad' },
+  { label: 'Tareas', href: '#/jobs', hint: 'Actividad' },
+  { label: 'Historial', href: '#/history', hint: 'Actividad' },
+  { label: 'Siembra', href: '#/seeds', hint: 'Actividad' },
+  { label: 'Estado', href: '#/system', hint: 'Sistema' },
+  { label: 'Configuración', href: '#/settings', hint: 'Sistema' },
+  { label: 'Añadir contenido', href: '#/add', hint: 'Acción' },
+  { label: 'Detalle técnico', href: '#/technical', hint: 'Sistema' },
+];
+
+function plain(text) {
+  return String(text).normalize('NFD').replace(/\p{Diacritic}/gu, '').toLowerCase();
+}
+
+function destinationItems(text) {
+  const query = plain(text.trim());
+  return DESTINATIONS
+    .filter((item) => !query
+      || plain(item.label).includes(query)
+      || plain(item.hint).includes(query))
+    .slice(0, 6)
+    .map((item) => ({ ...item, nav: true }));
+}
+
+function paletteItems(items) {
+  if (!items.length) {
+    return `<div class="palette-empty">Sin resultados. Prueba en TMDB desde el enlace inferior.</div>`;
   }
-  return results.map((item, index) => {
+  let mode = null;
+  return items.map((item, index) => {
+    let group = '';
+    if (item.nav && mode !== 'nav') {
+      mode = 'nav';
+      group = '<div class="palette-group">Ir a</div>';
+    }
+    if (!item.nav && mode !== 'catalog') {
+      mode = 'catalog';
+      group = '<div class="palette-group">Biblioteca</div>';
+    }
+    if (item.nav) {
+      return `${group}<a class="palette-item ${index === state.paletteIndex ? 'active' : ''}" href="${esc(item.href)}" data-palette-index="${index}">
+        <span class="palette-icon" aria-hidden="true"><svg class="icon"><use href="#i-chevron"/></svg></span>
+        <div class="info"><strong>${esc(item.label)}</strong><small>${esc(item.hint)}</small></div>
+        <svg class="icon" aria-hidden="true"><use href="#i-arrow-right"/></svg>
+      </a>`;
+    }
     const target = item.kind === 'series'
       ? `#/series/${item.tmdb}`
       : `#/title/${item.id}`;
     const meta = item.kind === 'series'
       ? `Serie, ${item.year || '—'}`
       : `Película, ${item.year || '—'}`;
+    const thumbUrl = /^https?:\/\//i.test(item.poster_path || '')
+      ? item.poster_path
+      : `https://image.tmdb.org/t/p/w92${item.poster_path || ''}`;
     const thumb = item.poster_path
-      ? `<img class="thumb" src="https://image.tmdb.org/t/p/w92${esc(item.poster_path)}" alt="" loading="lazy">`
+      ? `<img class="thumb" src="${esc(thumbUrl)}" alt="" loading="lazy">`
       : `<span class="thumb placeholder">${esc(String(item.title || '?').slice(0, 1).toUpperCase())}</span>`;
-    return `<a class="palette-item ${index === state.paletteIndex ? 'active' : ''}" href="${target}" data-palette-index="${index}">
+    return `${group}<a class="palette-item ${index === state.paletteIndex ? 'active' : ''}" href="${target}" data-palette-index="${index}">
       ${thumb}
       <div class="info"><strong>${esc(item.title || '—')}</strong><small>${esc(meta)}</small></div>
       <svg class="icon" aria-hidden="true"><use href="#i-chevron"/></svg>
@@ -215,28 +336,29 @@ function renderPalette() {
 
 async function searchPalette(text) {
   const query = text.trim();
+  const destinations = destinationItems(query);
   if (query.length < 2) {
-    state.paletteItems = [];
-    $('#paletteResults').innerHTML = `<div class="palette-empty">
-      Escribe al menos 2 caracteres para buscar en 9.000 títulos.<br>
-      <span class="faint">Atajos: Ctrl K para abrir, Esc para cerrar</span>
-    </div>`;
+    state.paletteItems = destinations;
+    state.paletteIndex = 0;
+    renderPalette();
     return;
   }
   try {
     const data = await api(`/api/search?q=${encodeURIComponent(query)}&limit=8`);
-    state.paletteItems = data.items || [];
+    state.paletteItems = [...destinations, ...(data.items || [])];
     state.paletteIndex = 0;
     renderPalette();
   } catch (error) {
-    $('#paletteResults').innerHTML = `<div class="palette-empty">${esc(error.message)}</div>`;
+    state.paletteItems = destinations;
+    renderPalette();
+    toast(error.message, 'error');
   }
 }
 
 function openShortcuts() {
   openModal(
     'Atajos de teclado',
-    `<div class="kv"><span>Buscar en el catálogo</span><kbd>Ctrl K</kbd></div>
+    `<div class="kv"><span>Buscar en la biblioteca</span><kbd>Ctrl K</kbd></div>
      <div class="kv"><span>Cerrar diálogo o menú</span><kbd>Esc</kbd></div>
      <div class="kv"><span>Abrir esta ayuda</span><kbd>?</kbd></div>
      <div class="kv"><span>Abrir ficha o resultado activo</span><kbd>Enter</kbd></div>`,
@@ -245,22 +367,50 @@ function openShortcuts() {
   );
 }
 
+let paletteFocus = null;
+let paletteTrap = null;
+
 function openPalette() {
   const palette = $('#palette');
+  paletteFocus = document.activeElement;
   palette.classList.remove('hidden');
   document.body.style.overflow = 'hidden';
   const input = $('#paletteInput');
   input.value = '';
-  state.paletteItems = [];
+  state.paletteItems = destinationItems('');
   state.paletteIndex = 0;
-  $('#paletteResults').innerHTML = `<div class="palette-empty">Escribe un título, serie o clave estable.</div>`;
+  renderPalette();
+  if (paletteTrap) document.removeEventListener('keydown', paletteTrap);
+  paletteTrap = (event) => {
+    if (event.key !== 'Tab') return;
+    const focusable = $$('a, button, input, [tabindex]:not([tabindex="-1"])', palette)
+      .filter((el) => !el.disabled && el.offsetParent !== null);
+    if (!focusable.length) return;
+    const first = focusable[0];
+    const last = focusable[focusable.length - 1];
+    if (event.shiftKey && document.activeElement === first) {
+      event.preventDefault();
+      last.focus();
+    } else if (!event.shiftKey && document.activeElement === last) {
+      event.preventDefault();
+      first.focus();
+    }
+  };
+  document.addEventListener('keydown', paletteTrap);
   input.focus();
 }
 
 function closePalette() {
   $('#palette').classList.add('hidden');
   document.body.style.overflow = '';
-  $('#searchTrigger')?.focus({ preventScroll: true });
+  if (paletteTrap) {
+    document.removeEventListener('keydown', paletteTrap);
+    paletteTrap = null;
+  }
+  if (paletteFocus && typeof paletteFocus.focus === 'function') {
+    paletteFocus.focus({ preventScroll: true });
+  }
+  paletteFocus = null;
 }
 
 function openActivePaletteItem() {
@@ -274,6 +424,7 @@ function openActivePaletteItem() {
     return;
   }
   closePalette();
+  if (item.nav) { location.hash = item.href; return; }
   if (item.kind === 'series') navigate('series', [item.tmdb]);
   else navigate('title', [item.id]);
 }
@@ -405,7 +556,7 @@ function openTmdbPreview(tmdb, kind, title) {
       <div class="poster">${poster(item.poster_path, item.title)}</div>
       <div class="info">
         <h2>${esc(item.title || '—')} ${item.year ? `<span class="muted" style="font-size:15px;font-weight:400">(${item.year})</span>` : ''}</h2>
-        <div class="row">${status(item.already ? 'En el catálogo' : 'No está en el catálogo', item.already ? 'info' : 'muted')}</div>
+        <div class="row">${status(item.already ? 'Añadido' : 'Sin añadir', item.already ? 'info' : 'muted')}</div>
         <p class="overview">${esc(item.overview || 'Sin sinopsis en TMDB.')}</p>
       </div>
     </div>`,
@@ -416,18 +567,18 @@ function openTmdbPreview(tmdb, kind, title) {
   );
 }
 
-/* --------------------------------------------------- añadir a biblioteca */
+/* ------------------------------------------------------- añadir título */
 
 function openLibraryTitle(id, key, title, releases) {
   openModal(
-    'Añadir a la biblioteca',
-    `<p class="muted" style="margin-top:0">La ficha quedará en la biblioteca aunque todavía no haya ningún enlace disponible.</p>
+    'Añadir',
+    `<p class="muted" style="margin-top:0">Se añadirá el título.</p>
      <label class="inline check">
        <input type="checkbox" name="monitored" ${Number(releases) ? '' : 'checked'}>
        Monitorizar para buscar fuentes a diario
      </label>`,
     `<button class="btn btn-ghost" data-action="modal-close">Cancelar</button>
-     <button class="btn btn-primary" data-action="library-title-start" data-id="${id}" data-key="${esc(key)}" data-releases="${releases}">Añadir a la biblioteca</button>`,
+     <button class="btn btn-primary" data-action="library-title-start" data-id="${id}" data-key="${esc(key)}" data-releases="${releases}">Añadir</button>`,
     { slim: true },
   );
 }
@@ -446,7 +597,7 @@ async function startLibraryTitle(element) {
     if (releases && key) {
       await acquireKeys([key], key.startsWith('series:') ? 'series' : 'movie', 'publish');
     } else {
-      toast(monitored ? 'En biblioteca y en seguimiento' : 'Añadido a la biblioteca', 'ok');
+      toast(monitored ? 'Añadido y monitorizado' : 'Añadido', 'ok');
     }
     await route();
   } catch (error) {
@@ -454,9 +605,9 @@ async function startLibraryTitle(element) {
   }
 }
 
-/* --------------------------------------------------- añadir serie a biblioteca */
+/* --------------------------------------------------------- añadir serie */
 
-function openLibrarySeries(tmdb, title, season) {
+function openLibrarySeries(tmdb, title, season, mode = 'add') {
   const detail = state.seriesDetail;
   const seasons = detail?.seasons || [];
   const selected = season
@@ -464,16 +615,25 @@ function openLibrarySeries(tmdb, title, season) {
     : seasons;
   const episodes = selected.flatMap((entry) => entry.episodes || []);
   const missing = episodes.filter((episode) => !episode.in_catalog).length;
+  const missingLibrary = episodes.filter((episode) => !episode.library_added).length;
   const needsSearch = episodes.some((episode) => !episode.published);
+  const heading = mode === 'add'
+    ? (season ? `Añadir temporada ${season}` : 'Añadir serie')
+    : (season ? `Añadir episodios de la temporada ${season}` : 'Añadir episodios que faltan');
+  const intro = mode === 'add'
+    ? `Se añadirán los episodios que falten.${missing ? ` ${fmtInt(missing)} todavía no están en TOD.` : ''}`
+    : `Se añadirán ${fmtInt(missingLibrary)} episodios que faltan.${missing ? ` ${fmtInt(missing)} todavía no están en TOD.` : ''}`;
+  const action = mode === 'add' ? 'Añadir' : 'Añadir episodios';
+  const monitoredByDefault = needsSearch ? 'checked' : '';
   openModal(
-    season ? `Añadir temporada ${season} a la biblioteca` : `Añadir serie a la biblioteca`,
-    `<p class="muted" style="margin-top:0">${esc(title || 'La serie')} quedará en la biblioteca aunque todavía no haya enlaces.${missing ? ` Se importarán ${fmtInt(missing)} episodio(s) que faltan en el catálogo.` : ''}</p>
+    heading,
+    `<p class="muted" style="margin-top:0">${intro}</p>
      <label class="inline check">
-       <input type="checkbox" name="monitored" ${needsSearch ? 'checked' : ''}>
+       <input type="checkbox" name="monitored" ${monitoredByDefault}>
        Monitorizar para buscar fuentes a diario
      </label>`,
     `<button class="btn btn-ghost" data-action="modal-close">Cancelar</button>
-     <button class="btn btn-primary" data-action="library-series-start" data-tmdb="${tmdb}" ${season ? `data-season="${season}"` : ''}>Añadir a la biblioteca</button>`,
+     <button class="btn btn-primary" data-action="library-series-start" data-tmdb="${tmdb}" data-mode="${mode}" ${season ? `data-season="${season}"` : ''}>${action}</button>`,
     { slim: true },
   );
 }
@@ -500,11 +660,15 @@ async function startLibrarySeries(element) {
       monitored,
       ...(season !== null ? { seasons: [season] } : {}),
     });
+    const mode = element.dataset.mode || 'add';
+    const done = mode === 'add'
+      ? (season !== null ? 'Temporada añadida' : 'Serie añadida')
+      : 'Episodios añadidos';
+    const doneMonitored = `${done} y ${mode === 'add' ? 'monitorizada' : 'monitorizados'}`;
+    const queued = result.job_id ? `, búsqueda en cola (#${result.job_id})` : '';
     closeModal();
     toast(
-      monitored
-        ? `Serie en biblioteca y en seguimiento${result.job_id ? `, búsqueda en cola (#${result.job_id})` : ''}`
-        : 'Serie en biblioteca',
+      `${monitored ? doneMonitored : done}${queued}`,
       monitored ? 'warn' : 'ok',
       result.job_id
         ? `<button class="btn btn-sm btn-ghost" data-action="job-detail" data-id="${result.job_id}">Ver tarea</button>`
@@ -606,7 +770,7 @@ async function openAddSources(tmdb, title) {
     state.seriesDetail = detail;
     const seasons = (detail.seasons || []).filter((season) => season.catalog_episodes > 0);
     if (!seasons.length) {
-      toast('La serie no tiene episodios en el catálogo', 'warn');
+      toast('La serie no tiene episodios añadidos', 'warn');
       return;
     }
     openModal(
@@ -637,7 +801,7 @@ async function syncAddSources(season = null) {
     .flatMap((entry) => entry.episodes || [])
     .filter((episode) => episode.in_catalog);
   if (!episodes.length) {
-    toast('No hay episodios en el catálogo', 'warn');
+    toast('No hay episodios añadidos', 'warn');
     return;
   }
   try {
@@ -710,36 +874,17 @@ async function startSyncPending(publication) {
 
 /* ------------------------------------------------------------------- añadir */
 
-let pendingKeys = [];
-let pendingKind = 'movie';
-
-function openAcquireModal(title, targetKeys, kind) {
-  pendingKeys = targetKeys;
-  pendingKind = kind;
-  openModal(
-    title,
-    `<p class="muted" style="margin-top:0">«Añadir a la biblioteca» genera los .strm. «Forzar descarga» se salta la cola y el límite.</p>
-     <div class="notice">${targetKeys.length} título(s) seleccionados.</div>`,
-    `<button class="btn btn-ghost" data-action="modal-close">Solo añadir</button>
-     <button class="btn" data-action="acquire-publish">Añadir a la biblioteca</button>
-     <button class="btn btn-primary" data-action="acquire-download">${iconDownload()} Forzar descarga</button>`,
-  );
-}
-
-function iconDownload() {
-  return '<svg class="icon" aria-hidden="true"><use href="#i-download"/></svg>';
-}
-
 async function addMovie(tmdb, title) {
   const ok = await confirmModal({
     title: 'Añadir película',
-    message: `Se preparará «${title}» (TMDB ${tmdb}) para añadirlo a la biblioteca o forzar su descarga.`,
-    confirm: 'Dar de alta',
+    message: `Se añadirá «${title}» (TMDB ${tmdb}).`,
+    confirm: 'Añadir',
   });
   if (!ok) return;
   try {
     const result = await apiPost('/api/titles', { kind: 'movie', tmdb });
-    openAcquireModal(result.item?.title || title, [result.key], 'movie');
+    if (result.key) await acquireKeys([result.key], 'movie', 'publish');
+    await route();
   } catch (error) {
     toast(error.message, 'error');
   }
@@ -753,7 +898,7 @@ async function addSeries(tmdb, title) {
     const latest = seasons[seasons.length - 1].season;
     openModal(
       `Añadir serie, ${title}`,
-      `<p class="muted" style="margin-top:0">Elige las temporadas que quieres incorporar al catálogo. Se crearán todos sus episodios.</p>
+      `<p class="muted" style="margin-top:0">Elige las temporadas que quieres añadir. Se crearán todos sus episodios.</p>
        <div id="seasonsForm" class="chips" style="gap:8px">
          ${seasons.map((season) => `<label class="season-option chip" style="cursor:pointer">
            <input type="checkbox" name="season" value="${season.season}" ${season.season === latest ? 'checked' : ''}>
@@ -774,7 +919,8 @@ async function confirmAddSeries(tmdb) {
   if (!seasons.length) { toast('Elige al menos una temporada', 'warn'); return; }
   try {
     const result = await apiPost('/api/titles', { kind: 'series', tmdb, seasons });
-    openAcquireModal(`Serie añadida, ${result.title || `TMDB ${tmdb}`}`, result.keys || [], 'series');
+    if (result.keys?.length) await acquireKeys(result.keys, 'series', 'publish');
+    await route();
   } catch (error) {
     toast(error.message, 'error');
   }
@@ -783,7 +929,7 @@ async function confirmAddSeries(tmdb) {
 async function acquireKeys(keys, kind, action) {
   const result = await apiPost('/api/ondemand/acquire', { keys, kind, action });
   toast(
-    `${action === 'publish' ? 'Añadido a la biblioteca' : 'Descarga forzada'} en cola (#${result.job_id}), ${keys.length} título(s)`,
+    `${action === 'publish' ? 'Añadido' : 'Descarga'} en cola (#${result.job_id}), ${keys.length} título(s)`,
     'ok',
     `<button class="btn btn-sm btn-ghost" data-action="job-detail" data-id="${result.job_id}">Ver tarea</button>`,
   );
@@ -868,6 +1014,7 @@ document.addEventListener('click', async (event) => {
     if (action === 'modal-confirm') { closeModal(true); return; }
     if (action === 'shortcuts') { openShortcuts(); return; }
     if (action === 'theme') { toggleTheme(); return; }
+    if (action === 'attention-check') { await runAttentionCheck(); return; }
     if (action === 'refresh') { refreshActivity(); await route(); return; }
     if (action === 'logout') {
       await apiPost('/api/logout');
@@ -888,6 +1035,25 @@ document.addEventListener('click', async (event) => {
     }
     if (action === 'catalog-filter') {
       updateQuery({ [element.dataset.key]: element.dataset.value });
+      return;
+    }
+    if (action === 'catalog-incomplete') {
+      const current = parseRoute().query;
+      updateQuery({ incomplete: current.get('incomplete') === '1' ? '' : '1' });
+      return;
+    }
+    if (action === 'catalog-select-all') {
+      const boxes = $$('#view [data-action="catalog-select"]');
+      const allSelected = boxes.length > 0
+        && boxes.every((box) => state.selection.has(box.dataset.key));
+      for (const box of boxes) {
+        const key = box.dataset.key;
+        if (allSelected) state.selection.delete(key);
+        else state.selection.add(key);
+        box.checked = !allSelected;
+        box.closest('.media-card, .media-row')?.classList.toggle('selected', !allSelected);
+      }
+      renderSelectionBar();
       return;
     }
     if (action === 'calendar-days') {
@@ -1014,10 +1180,15 @@ document.addEventListener('click', async (event) => {
         if (target) {
           target.textContent = result.ok
             ? `Correcto · ${result.detail || ''} (${result.latency_ms || 0} ms)`
-            : `Error · ${result.error || 'sin detalle'}`;
+            : `Error · ${result.hint || result.error || 'sin detalle'}`;
           target.className = `tiny ${result.ok ? 'ok-text' : 'warn-text'}`;
         }
-        toast(result.ok ? `${name}: conexión correcta` : `${name}: ${result.error || 'error'}`, result.ok ? 'ok' : 'error');
+        toast(
+          result.ok
+            ? `${name}: conexión correcta`
+            : `${name}: ${result.hint || result.error || 'error'}`,
+          result.ok ? 'ok' : 'error',
+        );
       } finally {
         element.disabled = false;
         element.innerHTML = previous;
@@ -1030,9 +1201,20 @@ document.addEventListener('click', async (event) => {
       const result = await apiPost('/api/settings/path-check', { key, path: input?.value || '' });
       const target = $(`[data-path-for="${CSS.escape(key)}"]`);
       if (target) {
-        target.textContent = result.exists
-          ? `${result.is_dir ? 'Directorio' : 'No es directorio'}${result.writable ? ', escribible' : ', sin escritura'} · ${fmtBytes(result.free)} libres`
-          : `No existe · ${fmtBytes(result.free || 0)} libres en ${result.checked_parent || '—'}`;
+        const creatable = ['catalog_library', 'downloads_root', 'seed_root', 'ondemand_save_path'].includes(key);
+        const parent = result.checked_parent || '—';
+        if (result.exists) {
+          const state = result.is_dir
+            ? (result.writable ? 'Directorio, escribible' : 'Directorio, sin escritura')
+            : 'No es un directorio';
+          target.textContent = `${state} · ${fmtBytes(result.free)} libres`;
+        } else if (!result.writable) {
+          target.textContent = `No existe y la carpeta padre ${parent} no permite escribir.`;
+        } else if (creatable) {
+          target.textContent = `No existe; se creará dentro de ${parent} · ${fmtBytes(result.free || 0)} libres.`;
+        } else {
+          target.textContent = `No existe. La carpeta padre ${parent} existe (${fmtBytes(result.free || 0)} libres), pero esta ruta no. Créala o corrige la ruta.`;
+        }
         target.className = `tiny ${result.exists && result.writable ? 'ok-text' : 'warn-text'} path-status`;
       }
       return;
@@ -1094,11 +1276,11 @@ document.addEventListener('click', async (event) => {
       const keys = await expandSelection();
       if (!keys.length) { toast('No hay claves que procesar', 'warn'); return; }
       const ok = await confirmModal({
-        title: publish ? 'Añadir a la biblioteca' : 'Forzar descarga',
+        title: publish ? 'Añadir' : 'Descargar ahora',
         message: publish
-          ? `Se generarán los .strm y se añadirán a la biblioteca ${keys.length} título(s).`
-          : `Se forzará la descarga de ${keys.length} título(s). Puede tardar y saltarse la cola.`,
-        confirm: publish ? 'Añadir a la biblioteca' : 'Forzar descarga',
+          ? `Se añadirán ${keys.length} título(s).`
+          : `Se descargarán ${keys.length} título(s). Puede tardar y saltarse la cola.`,
+        confirm: publish ? 'Añadir' : 'Descargar ahora',
         danger: !publish,
       });
       if (!ok) return;
@@ -1192,6 +1374,7 @@ document.addEventListener('click', async (event) => {
         Number(element.dataset.tmdb),
         element.dataset.title || '',
         action === 'library-season' ? Number(element.dataset.season) : null,
+        element.dataset.mode || 'add',
       );
       return;
     }
@@ -1218,8 +1401,8 @@ document.addEventListener('click', async (event) => {
         const result = await apiPost(`/api/titles/${element.dataset.id}/monitor`, { monitored: true });
         toast(
           result.job_id
-            ? `En seguimiento · búsqueda en cola (#${result.job_id})`
-            : 'En seguimiento hasta encontrar fuente',
+            ? `Monitorizado · búsqueda en cola (#${result.job_id})`
+            : 'Monitorizado hasta encontrar fuente',
           'ok',
           result.job_id
             ? `<button class="btn btn-sm btn-ghost" data-action="job-detail" data-id="${result.job_id}">Ver tarea</button>`
@@ -1249,9 +1432,9 @@ document.addEventListener('click', async (event) => {
     }
     if (action === 'unpublish-title') {
       const ok = await confirmModal({
-        title: 'Quitar de la biblioteca',
-        message: 'Se eliminarán los ficheros .strm de este título. No se borran las descargas, los torrents ni la ficha del catálogo.',
-        confirm: 'Quitar de la biblioteca',
+        title: 'Quitar de TOD',
+        message: 'Se quitará este título de TOD. No se borran las descargas ni los torrents.',
+        confirm: 'Quitar',
         danger: true,
       });
       if (!ok) return;
@@ -1259,9 +1442,7 @@ document.addEventListener('click', async (event) => {
       try {
         const result = await apiPost(`/api/titles/${element.dataset.id}/unpublish`, {});
         toast(
-          result.removed
-            ? `${fmtInt(result.removed)} fichero(s) .strm eliminados`
-            : 'No había .strm que eliminar',
+          result.removed ? 'Quitado de TOD' : 'No había nada que quitar',
           result.removed ? 'ok' : 'warn',
         );
         await route();
@@ -1272,9 +1453,9 @@ document.addEventListener('click', async (event) => {
     }
     if (action === 'unpublish-series') {
       const ok = await confirmModal({
-        title: 'Quitar serie de la biblioteca',
-        message: 'Se eliminarán todos los .strm de los episodios de esta serie. No se borran descargas, torrents ni fichas.',
-        confirm: 'Quitar de la biblioteca',
+        title: 'Quitar serie de TOD',
+        message: 'Se quitará esta serie de TOD. No se borran las descargas ni los torrents.',
+        confirm: 'Quitar',
         danger: true,
       });
       if (!ok) return;
@@ -1282,9 +1463,7 @@ document.addEventListener('click', async (event) => {
       try {
         const result = await apiPost(`/api/series/${element.dataset.tmdb}/unpublish`, {});
         toast(
-          result.removed
-            ? `${fmtInt(result.removed)} fichero(s) .strm eliminados`
-            : 'No había .strm que eliminar',
+          result.removed ? 'Serie quitada de TOD' : 'No había nada que quitar',
           result.removed ? 'ok' : 'warn',
         );
         await route();
@@ -1295,9 +1474,9 @@ document.addEventListener('click', async (event) => {
     }
     if (action === 'download-now') {
       const ok = await confirmModal({
-        title: 'Forzar descarga',
+        title: 'Descargar ahora',
         message: 'Se buscarán fuentes si hace falta y se forzará la descarga: no esperará a la cola de Radarr/Sonarr ni al límite on-demand.',
-        confirm: 'Forzar descarga',
+        confirm: 'Descargar ahora',
         danger: true,
       });
       if (!ok) return;
@@ -1309,30 +1488,14 @@ document.addEventListener('click', async (event) => {
       }
       return;
     }
-    if (action === 'acquire-publish' || action === 'acquire-download') {
-      if (!pendingKeys.length) return;
-      const publish = action === 'acquire-publish';
-      if (!publish) {
-        const ok = await confirmModal({
-          title: 'Forzar descarga',
-          message: 'Se forzará la descarga: no esperará a la cola ni al límite on-demand.',
-          confirm: 'Forzar descarga',
-          danger: true,
-        });
-        if (!ok) return;
-      }
-      closeModal();
-      await acquireKeys(pendingKeys, pendingKind, publish ? 'publish' : 'download');
-      return;
-    }
     if (action === 'collection-add') {
       const mode = element.dataset.mode === 'library' ? 'library' : 'catalog';
       const ok = await confirmModal({
-        title: mode === 'library' ? 'Añadir colección a la biblioteca' : 'Añadir colección al catálogo',
+        title: mode === 'library' ? 'Añadir colección' : 'Añadir sin descargar',
         message: mode === 'library'
-          ? 'Se importarán las películas que falten y se añadirán todas a la biblioteca. Puede tardar.'
-          : 'Se importarán al catálogo las películas que falten.',
-        confirm: mode === 'library' ? 'Añadir a la biblioteca' : 'Añadir al catálogo',
+          ? 'Se añadirán las películas que falten. Puede tardar.'
+          : 'Se añadirán las películas sin descargarlas.',
+        confirm: mode === 'library' ? 'Añadir colección' : 'Añadir sin descargar',
       });
       if (!ok) return;
       element.disabled = true;
@@ -1345,8 +1508,8 @@ document.addEventListener('click', async (event) => {
         } else if (mode === 'library' && !result.job_id) {
           toast(
             monitored
-              ? `${fmtInt(monitored)} en seguimiento hasta encontrar fuente`
-              : 'Toda la colección ya está en la biblioteca',
+              ? `${fmtInt(monitored)} monitorizadas hasta encontrar fuente`
+              : 'Toda la colección ya está añadida',
             monitored ? 'warn' : 'ok',
           );
         } else {
@@ -1414,6 +1577,35 @@ document.addEventListener('click', async (event) => {
       }
       return;
     }
+    if (action === 'manual-search-season') {
+      const detail = state.seriesDetail;
+      if (!detail) return;
+      const seasonNumber = Number(element.dataset.season || 0);
+      const seasonEntry = (detail.seasons || []).find(
+        (entry) => Number(entry.season) === seasonNumber,
+      );
+      const episodes = (seasonEntry?.episodes || []).filter(
+        (episode) => episode.in_catalog,
+      );
+      if (!episodes.length) {
+        toast('No hay episodios añadidos en esta temporada', 'warn');
+        return;
+      }
+      openModal(
+        `Buscar manualmente, temporada ${seasonNumber}`,
+        `<p class="muted" style="margin-top:0">Elige el episodio.</p>
+         <div class="stack">
+           ${episodes.map((episode) => {
+             const tag = `T${String(episode.season || 0).padStart(2, '0')}E${String(episode.episode || 0).padStart(2, '0')}`;
+             const name = episode.name || `Episodio ${episode.episode}`;
+             return `<button class="btn btn-sm" data-action="manual-search" data-id="${episode.id}" data-title="${esc(name)}">${tag} · ${esc(name)}</button>`;
+           }).join('')}
+         </div>`,
+        `<button class="btn btn-ghost" data-action="modal-close">Cerrar</button>`,
+        { wide: true },
+      );
+      return;
+    }
     if (action === 'sync-series' || action === 'sync-season') {
       const detail = state.seriesDetail;
       if (!detail) return;
@@ -1428,63 +1620,12 @@ document.addEventListener('click', async (event) => {
         .flatMap((season) => season.episodes || [])
         .find((episode) => episode.in_catalog)?.id;
       if (!first || !keys.length) {
-        toast('No hay episodios en el catálogo para buscar fuentes', 'warn');
+        toast('No hay episodios añadidos para buscar fuentes', 'warn');
         return;
       }
       const result = await apiPost(`/api/titles/${first}/sync`, { keys });
       toast(`Búsqueda de fuentes en cola (#${result.job_id}), ${keys.length} episodios`, 'ok');
       refreshActivity();
-      return;
-    }
-    if (action === 'publish-series' || action === 'publish-season') {
-      const detail = state.seriesDetail;
-      if (!detail) return;
-      const selected = action === 'publish-series'
-        ? detail.seasons
-        : detail.seasons.filter((season) => season.season === Number(element.dataset.season));
-      const missingSeasons = selected
-        .filter((season) => season.season > 0)
-        .filter((season) => (season.episodes || []).some((episode) => !episode.in_catalog))
-        .map((season) => season.season);
-      const importCount = selected
-        .filter((season) => season.season > 0)
-        .flatMap((season) => season.episodes || [])
-        .filter((episode) => !episode.in_catalog).length;
-      let keys = selected
-        .flatMap((season) => season.episodes || [])
-        .filter((episode) => episode.in_catalog)
-        .map((episode) => episode.key);
-      if (!keys.length && !missingSeasons.length) {
-        toast('No hay episodios que añadir a la biblioteca', 'warn');
-        return;
-      }
-      const ok = await confirmModal({
-        title: 'Añadir a la biblioteca',
-        message: importCount
-          ? `Se importarán ${fmtInt(importCount)} episodio(s) desde TMDB y se añadirán a la biblioteca junto con los que ya existen.`
-          : `Se generarán los .strm y se añadirán a la biblioteca ${fmtInt(keys.length)} episodio(s).`,
-        confirm: 'Añadir a la biblioteca',
-      });
-      if (!ok) return;
-      element.disabled = true;
-      try {
-        if (missingSeasons.length) {
-          const imported = await apiPost('/api/titles', {
-            kind: 'series',
-            tmdb: detail.series.tmdb,
-            seasons: missingSeasons,
-          });
-          keys = [...new Set([...keys, ...(imported.keys || [])])];
-        }
-        if (!keys.length) {
-          toast('No se pudo importar ningún episodio', 'warn');
-          return;
-        }
-        await acquireKeys(keys, 'series', 'publish');
-        await route();
-      } finally {
-        element.disabled = false;
-      }
       return;
     }
     if (action === 'release-target') {
@@ -1550,7 +1691,7 @@ document.addEventListener('click', async (event) => {
       if (!hashes.length) return;
       const ok = await confirmModal({
         title: element.dataset.qaction === 'pause' ? 'Pausar torrents' : 'Reanudar torrents',
-        message: `Se aplicará a ${hashes.length} torrent(s) del catálogo.`,
+        message: `Se aplicará a ${hashes.length} torrent(s) de TOD.`,
         confirm: 'Aplicar',
       });
       if (!ok) return;
@@ -1732,4 +1873,5 @@ window.addEventListener('beforeunload', (event) => {
   event.returnValue = '';
 });
 startActivityPolling();
+startAttentionPolling();
 boot();

@@ -160,7 +160,7 @@ def test_sources_marks_too_large(tmp_path):
     assert sources[0]["too_large"] is True
 
 
-def test_release_order_is_size_ascending_not_quality(tmp_path):
+def test_release_order_prefers_seeders_over_size(tmp_path):
     db = tmp_path / "catalogo.db"
     init_db(db, MIGRATIONS)
     conn = sqlite3.connect(db)
@@ -184,14 +184,14 @@ def test_release_order_is_size_ascending_not_quality(tmp_path):
 
     resolver = Resolver(db)
     sources = resolver.sources("movie:tmdb:2")
-    assert [row["quality"] for row in sources] == ["4K", "1080p"]
+    assert [row["quality"] for row in sources] == ["1080p", "4K"]
     assert [row["size_bytes"] for row in sources] == [
-        100 * 1024**2,
         2 * 1024**3,
+        100 * 1024**2,
     ]
     chosen = resolver.resolve("movie:tmdb:2")
     assert chosen.source == "torrent"
-    assert chosen.size == 100 * 1024**2
+    assert chosen.size == 2 * 1024**3
 
 
 def test_library_file_is_preferred(tmp_path):

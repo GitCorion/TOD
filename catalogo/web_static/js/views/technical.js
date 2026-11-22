@@ -23,7 +23,7 @@ export async function renderTechnical({ query, signal }) {
     sort: query.get('sort') || 'popularity',
     page: Math.max(1, Number(query.get('page')) || 1),
   };
-  setHeader('Avanzado', 'Sistema');
+  setHeader('Detalle técnico', 'Sistema');
   const params = new URLSearchParams({
     q: filters.q,
     kind: filters.kind,
@@ -65,7 +65,7 @@ export async function renderTechnical({ query, signal }) {
       </select></label>
       <label class="field"><span>Disponibilidad</span><select name="availability">
         <option value="">Todo</option>
-        ${[['live', 'Con fuente viva'], ['none', 'Sin release'], ['unverified', 'Sin verificar'], ['local', 'Local'], ['cloud', 'archivo'], ['debrid', 'Debrid'], ['library', 'Biblioteca'], ['downloading', 'Descargando']].map(([value, label]) => `<option value="${value}" ${filters.availability === value ? 'selected' : ''}>${label}</option>`).join('')}
+        ${[['live', 'Con fuente viva'], ['none', 'Sin release'], ['unverified', 'Sin verificar'], ['local', 'Local'], ['cloud', 'archivo'], ['debrid', 'Debrid'], ['library', 'Radarr/Sonarr'], ['downloading', 'Descargando']].map(([value, label]) => `<option value="${value}" ${filters.availability === value ? 'selected' : ''}>${label}</option>`).join('')}
       </select></label>
       <label class="field"><span>Estado</span><select name="status">
         <option value="">Todo</option>

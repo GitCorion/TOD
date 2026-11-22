@@ -12,10 +12,26 @@ export async function renderAdd({ query, signal }) {
   state.tmdb.kind = kind;
   state.tmdb.query = text;
   state.tmdb.year = year;
-  setHeader('Añadir contenido', 'Biblioteca');
+  setHeader('Añadir desde TMDB', 'Contenido');
 
   const params = new URLSearchParams({ kind, q: text, year, page: String(page) });
-  const data = await api(`/api/tmdb/search?${params}`, { signal });
+  let data;
+  try {
+    data = await api(`/api/tmdb/search?${params}`, { signal });
+  } catch (error) {
+    if (error.name === 'AbortError') throw error;
+    const offline = error.status === 0;
+    $('#view').innerHTML = `<div class="panel pad">${empty(
+      offline ? 'Sin conexión' : 'No se puede buscar en TMDB',
+      offline
+        ? 'No se puede conectar con el servidor. Reintenta en unos segundos.'
+        : 'Revisa la API key de TMDB en Configuración. Sin ella no se pueden añadir títulos nuevos.',
+      offline
+        ? '<button class="btn btn-primary" data-action="refresh">Reintentar</button>'
+        : '<a class="btn btn-primary" href="#/settings?section=integraciones&focus=tmdb_api_key">Abrir configuración</a>',
+    )}</div>`;
+    return;
+  }
   const results = data.results || [];
   state.tmdb.results = results;
 
@@ -24,10 +40,10 @@ export async function renderAdd({ query, signal }) {
     const href = isSeries ? `#/series/${item.tmdb}` : `#/title/${item.asset_id}`;
     const catalogCount = item.catalog_episodes || 0;
     const libraryCount = item.library_added || item.published_episodes || 0;
-    let stateLine = status('No está en el catálogo', 'muted');
+    let stateLine = status('Sin catalogar', 'muted');
     if (item.status === 'downloaded') stateLine = status(isSeries ? `${item.downloaded_episodes || 0}/${catalogCount} descargados` : 'Descargado', 'ok');
-    else if (item.status === 'library') stateLine = status(isSeries ? `${libraryCount}/${catalogCount} en biblioteca` : 'En biblioteca', 'ok');
-    else if (item.status === 'catalog') stateLine = status('En el catálogo', 'info');
+    else if (item.status === 'library') stateLine = status(isSeries ? `${libraryCount}/${catalogCount} en Radarr/Sonarr` : 'En Radarr/Sonarr', 'info');
+    else if (item.status === 'catalog') stateLine = status('En TOD', 'info');
     const action = item.already
       ? `<a class="btn btn-sm btn-ghost" href="${href}">Abrir</a>
          <button class="btn btn-sm btn-ghost" data-action="${isSeries ? 'add-sources' : 'sync-title'}" ${isSeries ? `data-tmdb="${item.tmdb}" data-title="${esc(item.title)}"` : `data-id="${item.asset_id}"`}>${icon('search', 'sm')} Fuentes</button>`
@@ -79,26 +95,29 @@ export async function renderAdd({ query, signal }) {
       ? `<div class="poster-grid">${cards}</div>`
       : `<div class="panel pad">${empty('Sin resultados', 'Prueba otro título, otro año o el título original.')}</div>`}
 
-    <div class="grid grid-2 section">
-      <div class="panel">
-        <div class="panel-head"><h2>Alta directa por TMDB</h2></div>
-        <div class="panel-body">
-          <form class="form-grid" data-form="tmdb-direct">
-            <label class="field"><span>Tipo</span><select name="kind">
-              <option value="movie" ${kind === 'movie' ? 'selected' : ''}>Película</option>
-              <option value="series" ${kind === 'series' ? 'selected' : ''}>Serie</option>
-            </select></label>
-            <label class="field"><span>ID de TMDB</span><input name="tmdb" type="number" min="1" required></label>
-            <label class="field"><span>&nbsp;</span><button class="btn" type="submit">Dar de alta</button></label>
-          </form>
+    <details class="fold section">
+      <summary>Avanzado: alta directa y captura por lotes</summary>
+      <div class="grid grid-2">
+        <div class="panel">
+          <div class="panel-head"><h2>Alta directa por TMDB</h2></div>
+          <div class="panel-body">
+            <form class="form-grid" data-form="tmdb-direct">
+              <label class="field"><span>Tipo</span><select name="kind">
+                <option value="movie" ${kind === 'movie' ? 'selected' : ''}>Película</option>
+                <option value="series" ${kind === 'series' ? 'selected' : ''}>Serie</option>
+              </select></label>
+              <label class="field"><span>ID de TMDB</span><input name="tmdb" type="number" min="1" required></label>
+              <label class="field"><span>&nbsp;</span><button class="btn" type="submit">Dar de alta</button></label>
+            </form>
+          </div>
+        </div>
+        <div class="panel">
+          <div class="panel-head"><h2>Captura por lotes</h2></div>
+          <div class="panel-body">
+            <a class="btn btn-ghost" href="#/jobs">Abrir tareas</a>
+          </div>
         </div>
       </div>
-      <div class="panel">
-        <div class="panel-head"><h2>Captura por lotes</h2></div>
-        <div class="panel-body">
-          <a class="btn btn-ghost" href="#/jobs">Abrir tareas</a>
-        </div>
-      </div>
-    </div>
+    </details>
   `;
 }

@@ -6,8 +6,10 @@ archivo no mueve un activo si tiene un lease reciente.
 
 from __future__ import annotations
 
+import sqlite3
 from contextlib import closing
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 
 from .db import connect
 
@@ -26,7 +28,15 @@ def touch(
     now: datetime | None = None,
 ) -> None:
     current = now or _now()
-    with closing(connect(db_path)) as conn:
+    # El lease es telemetría, no un requisito para servir vídeo. Si la base
+    # está ocupada por un job, se descarta en milisegundos en vez de esperar
+    # cinco segundos y romper la reproducción con "database is locked".
+    try:
+        conn = sqlite3.connect(Path(db_path), timeout=0.2)
+    except sqlite3.Error:
+        return
+    try:
+        conn.execute("PRAGMA busy_timeout = 200")
         conn.execute(
             """
             INSERT INTO stream_leases(media_id, session_id, client_ip,
@@ -40,6 +50,10 @@ def touch(
             (media_id, session_id, client_ip, user_agent, current.isoformat()),
         )
         conn.commit()
+    except sqlite3.Error:
+        return
+    finally:
+        conn.close()
 
 
 def active(

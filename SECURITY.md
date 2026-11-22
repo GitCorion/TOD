@@ -10,8 +10,10 @@ directamente a Internet.
   `var/tod.db` con permisos `0600`; el `.env` y `var/` están ignorados por
   git. En Docker, la base está en `/config/tod.db`.
 - `/prepare` y `/lease` solo aceptan peticiones desde loopback.
-- `download=1` en `/play` inicia una descarga explícita. Las rutas de
-  reproducción (`/play`, `/resolve`, `/sources`, `/status`) no usan el token
-  del panel: no expongas el puerto fuera de la LAN o WireGuard.
+- Un `GET` con `Range` en `/play` puede arrancar la descarga de un título
+  frío, porque es un reproductor pidiendo vídeo. `download=1` fuerza el
+  arranque desde la app. Las rutas de reproducción (`/play`, `/resolve`,
+  `/sources`, `/status`) no usan el token del panel: no expongas el puerto
+  fuera de la LAN o WireGuard.
 - Si encuentras una vulnerabilidad, no abras un issue público con credenciales
   ni rutas privadas. Contacta con el mantenedor del repositorio.

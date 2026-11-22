@@ -15,25 +15,23 @@ import { renderSeeds } from './views/seeds.js';
 import { renderSettings } from './views/settings.js';
 import { renderSystem } from './views/system.js';
 import { renderTechnical } from './views/technical.js';
-import { renderAdvanced } from './views/advanced.js';
 
 const ROUTES = {
-  dashboard: { title: 'Inicio', kicker: 'Biblioteca', render: renderDashboard },
-  calendar: { title: 'Calendario', kicker: 'Biblioteca', render: renderCalendar },
-  catalog: { title: 'Catálogo', kicker: 'Biblioteca', render: renderCatalog },
-  monitor: { title: 'Seguimiento', kicker: 'Biblioteca', render: renderMonitor },
+  dashboard: { title: 'Inicio', kicker: 'Contenido', render: renderDashboard },
+  calendar: { title: 'Calendario', kicker: 'Contenido', render: renderCalendar },
+  catalog: { title: 'Biblioteca', kicker: 'Contenido', render: renderCatalog },
+  monitor: { title: 'Seguimiento', kicker: 'Contenido', render: renderMonitor },
   collection: { title: 'Saga', kicker: 'Biblioteca', render: renderCollection },
   series: { title: 'Serie', kicker: 'Biblioteca', render: renderSeries },
   title: { title: 'Ficha', kicker: 'Biblioteca', render: renderTitle },
-  add: { title: 'Añadir contenido', kicker: 'Biblioteca', render: renderAdd },
-  downloads: { title: 'Descargas', kicker: 'Operación', render: renderDownloads },
-  jobs: { title: 'Tareas', kicker: 'Operación', render: renderJobs },
-  history: { title: 'Historial', kicker: 'Operación', render: renderHistory },
-  seeds: { title: 'Siembra', kicker: 'Operación', render: renderSeeds },
-  settings: { title: 'Configuración', kicker: 'TOD', render: renderSettings },
+  add: { title: 'Añadir desde TMDB', kicker: 'Contenido', render: renderAdd },
+  downloads: { title: 'Descargas', kicker: 'Actividad', render: renderDownloads },
+  jobs: { title: 'Tareas', kicker: 'Actividad', render: renderJobs },
+  history: { title: 'Historial', kicker: 'Actividad', render: renderHistory },
+  seeds: { title: 'Siembra', kicker: 'Actividad', render: renderSeeds },
+  settings: { title: 'Configuración', kicker: 'Sistema', render: renderSettings },
   system: { title: 'Estado', kicker: 'Sistema', render: renderSystem },
-  technical: { title: 'Avanzado', kicker: 'Sistema', render: renderTechnical },
-  advanced: { title: 'Avanzado', kicker: 'Sistema', render: renderAdvanced },
+  technical: { title: 'Detalle técnico', kicker: 'Sistema', render: renderTechnical },
 };
 
 export function parseRoute() {

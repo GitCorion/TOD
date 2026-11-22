@@ -46,10 +46,11 @@ TOD consulta el indexer `all`. Cada resultado trae su indexer real y su tipo
 | URL | `http://127.0.0.1:8096` (Docker: `http://jellyfin:8096`) |
 | API key | Dashboard → API Keys |
 
-TOD escribe los `.strm` en la biblioteca del catálogo y avisa a Jellyfin de las
-rutas nuevas. Durante la reproducción, cada petición a `/play` renueva el
-lease; el comando `tod jellyfin-leases` también lo hace a partir de las
-sesiones activas de Jellyfin.
+TOD escribe los `.strm` en la biblioteca del catálogo y avisa a Jellyfin de
+las rutas nuevas. La API key es opcional: sin ella no hay avisos de escaneo
+ni detección de sesión, pero el play sigue funcionando porque un `GET` con
+`Range` autoriza el prepare. Durante la reproducción, cada petición a `/play`
+renueva el lease.
 
 ## Radarr y Sonarr
 
@@ -71,8 +72,10 @@ con la API key de TMDB (v3).
 
 | Ajuste | Uso |
 |---|---|
-| Biblioteca del catálogo | donde TOD escribe los `.strm` |
-| Biblioteca existente | raíz de Radarr/Sonarr (solo lectura) |
+| Carpeta de publicación (`.strm`) | donde TOD escribe los `.strm` que lee Jellyfin |
+| Biblioteca de películas | raíz de Radarr (solo lectura) |
+| Biblioteca de series | raíz de Sonarr (solo lectura) |
+| Raíz común | opcional, si ambas comparten carpeta padre |
 | Descargas de qBittorrent | raíz de descargas |
 | Carpeta on-demand | destino de descargas del catálogo |
 | Raíces `.strm` | rutas válidas para `/catalog/lookup` |

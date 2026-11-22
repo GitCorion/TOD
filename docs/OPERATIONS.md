@@ -39,11 +39,13 @@ El scheduler interno ejecuta las tareas periódicas. Se gestiona en
 | Tarea | Por defecto |
 |---|---|
 | `worker-cycle` | cada 5 min |
+| `attention-check` | cada 5 min |
 | `qbit-limits` | cada 1 min |
 | `rss-sync` | cada 30 min |
 | `bridge` | cada 30 min |
+| `arr-mirror` | cada 30 min |
 | `monitor` | diario 04:20 |
-| `restore-strm` | diario 04:30 |
+| `restore-strm` | diario 04:30 (reconcilia y poda) |
 | `backfill` | domingo 03:00 |
 | `metadata` | lunes 05:00, desactivado |
 
@@ -63,8 +65,10 @@ tod monitor --limit 100 --delay 2
 http://127.0.0.1:8773/play?key=movie:tmdb:9737&download=0
 ```
 
-- `download=0`: Jellyfin nunca arranca una descarga.
-- `download=1`: la app puede preparar un torrent frío.
+- `download=0`: uso normal desde Jellyfin. Si el `.strm` está frío, un
+  `GET` con `Range` (un reproductor real) autoriza el prepare; un escaneo
+  sin `Range` sigue recibiendo 403.
+- `download=1`: fuerza el arranque desde la app o un cliente explícito.
 - `/status?key=...`: progreso, velocidad, seeds y `stream_ready`.
 - `/sources?key=...`: versiones vivas y su salud.
 
@@ -92,6 +96,9 @@ tod qbit-limits
 ## Seed y espacio
 
 - Privados: seed mínimo por política; no se borra al cumplir las horas.
+- Al descubrir un tracker privado sin política, TOD crea una inicial de
+  72 h y ratio 1,0. Se puede cambiar:
+  `tod set-policy Tracker --min-seed-hours 24 --target-ratio 0.5`.
 - Públicos: sin compromiso de seed.
 - `evict` es manual y solo actúa sobre compromisos ya cumplidos.
 
@@ -140,6 +147,6 @@ No copies `*.db-wal` por separado. Para restaurar, para el servicio, sustituye
 | Prowlarr vacío | API key en Configuración; debe listar indexers |
 | Jackett falla | API key y que Jackett tenga indexers configurados |
 | Jellyfin 401 | API key de Jellyfin |
-| Reproducción 403 | `.strm` con `download=0` y torrent frío; usa `download=1` desde la app (`/prepare` solo acepta loopback) |
+| Reproducción 403 | La petición no trae `Range` ni `download=1`; un reproductor real sí lo trae. Revisa también capacidad on-demand y política del tracker |
 | Sin espacio | `df -h`, límite on-demand y `evictable` |
 | Tarea atascada | `Tareas` en la web; `jobs` guarda estado y error |

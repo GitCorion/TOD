@@ -1,4 +1,5 @@
 import { api } from '../api.js';
+import { attentionCard } from '../attention.js';
 import { esc, fmtBytes, fmtDate, fmtInt } from '../format.js';
 import { capabilityLabel, eventLabel, SERVICE_LABELS } from '../labels.js';
 import { state } from '../store.js';
@@ -63,11 +64,13 @@ function schedulerPanel(tasks) {
 }
 
 export async function renderSystem({ signal }) {
-  const [system, events] = await Promise.all([
+  const [system, events, attention] = await Promise.all([
     api('/api/system', { signal }),
     api('/api/events?limit=60', { signal }),
+    api('/api/attention', { signal }).catch(() => null),
   ]);
   state.system = system;
+  state.attention = attention;
   setHeader('Estado', 'Sistema');
 
   const services = system.services || [];
@@ -115,7 +118,9 @@ export async function renderSystem({ signal }) {
   </tr>`).join('');
 
   $('#view').innerHTML = `
-    <div class="grid grid-2">
+    <div class="section" style="margin-top:0">${attentionCard(attention, { compact: false })}</div>
+
+    <div class="grid grid-2 section">
       ${servicePanel('Aplicación', apps)}
       ${externalPanel(external, system.capabilities || {}, system.runtime)}
     </div>
@@ -131,18 +136,27 @@ export async function renderSystem({ signal }) {
           <div class="kv"><span>Títulos / releases</span><span>${fmtInt(system.db?.media_items || 0)} / ${fmtInt(system.db?.releases || 0)}</span></div>
           <div class="kv"><span>Reproductor</span><span>${system.capabilities?.play_service ? status('Activo', 'ok') : status(system.play_error || 'Inactivo', 'muted')}</span></div>
           <div class="kv"><span>Acceso</span><span>${system.auth_required ? 'Token obligatorio' : 'LAN / WireGuard'}</span></div>
+          <div class="kv"><span>Detalle interno</span><a class="tiny" href="#/technical">Abrir detalle técnico</a></div>
         </div>
       </div>
     </div>
 
     <div class="panel section">
-      <div class="panel-head"><h2>Discos y rutas</h2></div>
+      <div class="panel-head">
+        <h2>Discos y rutas</h2>
+        <div class="right row" style="gap:6px">
+          <button class="btn btn-sm btn-ghost" data-action="scheduler-run" data-task="arr-mirror">Espejo Radarr/Sonarr</button>
+          <button class="btn btn-sm btn-ghost" data-action="scheduler-run" data-task="restore-strm">Reconciliar .strm</button>
+        </div>
+      </div>
       <div class="panel-body">
         ${disks || empty('Sin rutas', 'No se pudieron leer los discos.')}
         <div class="divider"></div>
-        <div class="kv"><span>Biblioteca del catálogo</span><span class="mono">${esc(system.paths?.catalog_library || '—')}</span></div>
+        <div class="kv"><span>Carpeta de publicación</span><span class="mono">${esc(system.paths?.catalog_library || '—')}</span></div>
         <div class="kv"><span>Semillas</span><span class="mono">${esc(system.paths?.seed_root || '—')}</span></div>
-        <div class="kv"><span>Raíz de biblioteca</span><span class="mono">${esc(system.paths?.library_root || '—')}</span></div>
+        ${system.paths?.library_root_movies ? `<div class="kv"><span>Carpeta de películas</span><span class="mono">${esc(system.paths.library_root_movies)}</span></div>` : ''}
+        ${system.paths?.library_root_series ? `<div class="kv"><span>Carpeta de series</span><span class="mono">${esc(system.paths.library_root_series)}</span></div>` : ''}
+        ${!system.paths?.library_root_movies && !system.paths?.library_root_series ? `<div class="kv"><span>Carpeta común</span><span class="mono">${esc(system.paths?.library_root || '—')}</span></div>` : ''}
         <div class="kv"><span>Raíces .strm</span><span class="mono">${esc(system.paths?.strm_roots || '—')} <a class="tiny" href="#/settings">Cambiar</a></span></div>
       </div>
     </div>

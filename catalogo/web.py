@@ -1,6 +1,5 @@
-"""Panel web local de administración del catálogo.
+"""Panel web, API, reproducción y scheduler en un único proceso.
 
-- Escucha en loopback por defecto (127.0.0.1:8775).
 - API JSON + SPA sin dependencias externas.
 - Las mutaciones exigen la cabecera `X-Catalogo: web` (anti-CSRF) y, si se
   configura `CATALOGO_WEB_TOKEN`, una sesión válida.
@@ -28,7 +27,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any
 
-from . import app_settings, admin, integrations, jellyfin, jobs, ondemand, queries
+from . import app_settings, admin, attention, integrations, jellyfin, jobs, ondemand, queries
 from . import settings, strm_inventory
 from . import strm as strm_module
 from .arr_data import ArrData
@@ -53,6 +52,8 @@ HASH_RE = re.compile(r"^[0-9a-fA-F]{40}$")
 _INDEXER_CACHE: dict[str, tuple[float, list[dict[str, Any]], str | None]] = {}
 _INDEXER_TTL = 120.0
 
+
+INTERNAL_JOB_KINDS = ("attention-check",)
 
 SERVICES = (
     "tod.service",
@@ -169,6 +170,7 @@ class App:
 
         written = 0
         skipped = 0
+        to_notify: list[str] = []
         for index, key in enumerate(keys):
             ctx.check()
             ctx.report(
@@ -185,7 +187,10 @@ class App:
             )
             written += int(report.get("written") or 0)
             skipped += int(report.get("skipped") or 0)
+            to_notify.extend(report.get("written_paths") or [])
         invalidate(self.config.catalog_library)
+        if to_notify:
+            jellyfin.notify_updated(self.config, to_notify[:500])
         return {"sync": summary, "published": written, "skipped": skipped}
 
     def _job_download(self, ctx) -> dict:
@@ -362,7 +367,7 @@ PLAYBACK_PATHS = {
 
 
 class Handler(PlaybackHandler):
-    server_version = "tod/0.1"
+    server_version = "tod/0.2"
     protocol_version = "HTTP/1.1"
 
     @property
@@ -484,6 +489,22 @@ class Handler(PlaybackHandler):
             machine,
             f"{machine}.local",
         }
+        # Permite abrir el panel por la IP de la LAN sin editar .env. El
+        # socket UDP no envía tráfico: solo pregunta qué IP de salida hay.
+        try:
+            probe = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+            try:
+                probe.connect(("8.8.8.8", 80))
+                names.add(probe.getsockname()[0])
+            finally:
+                probe.close()
+        except OSError:
+            pass
+        try:
+            for address in socket.gethostbyname_ex(machine)[2]:
+                names.add(address)
+        except OSError:
+            pass
         extra = (
             os.environ.get("CATALOGO_WEB_ALLOWED_HOSTS")
             or self.app.config.web_allowed_hosts
@@ -608,7 +629,7 @@ class Handler(PlaybackHandler):
         if path.name == "index.html":
             self.send_header(
                 "Content-Security-Policy",
-                "default-src 'self'; img-src 'self' data: https://image.tmdb.org; "
+                "default-src 'self'; img-src 'self' data: https:; "
                 "style-src 'self' 'unsafe-inline'; script-src 'self'; "
                 "connect-src 'self'; frame-ancestors 'none'",
             )
@@ -672,7 +693,9 @@ class Handler(PlaybackHandler):
             )
 
         if parts == ["activity"] and not mutate:
-            recent = jobs.list_jobs(db, limit=30)
+            recent = jobs.list_jobs(
+                db, limit=30, exclude_kinds=INTERNAL_JOB_KINDS
+            )
             active = [
                 job for job in recent
                 if job.get("state") in ("queued", "running")
@@ -779,6 +802,7 @@ class Handler(PlaybackHandler):
                                 "min_seeders": 1,
                             },
                             requested_by=self.client_address[0],
+                            allow_duplicate=True,
                         )
                 else:
                     skipped_no_source = 0
@@ -1140,7 +1164,10 @@ class Handler(PlaybackHandler):
                 200,
                 {
                     "items": jobs.list_jobs(
-                        db, limit=self._int(params.get("limit"), 50), state=state
+                        db,
+                        limit=self._int(params.get("limit"), 50),
+                        state=state,
+                        exclude_kinds=INTERNAL_JOB_KINDS,
                     )
                 },
                 head=head,
@@ -1169,21 +1196,19 @@ class Handler(PlaybackHandler):
                     {
                         **app_settings.serialize(app.config),
                         "paths": {
-                            "catalog_library": app_settings.path_status(
-                                app.config.catalog_library
-                            ),
-                            "library_root": app_settings.path_status(
-                                app.config.library_root
-                            ),
-                            "seed_root": app_settings.path_status(
-                                app.config.seed_root
-                            ),
-                            "downloads_root": app_settings.path_status(
-                                app.config.downloads_root
-                            ),
-                            "ondemand_save_path": app_settings.path_status(
-                                app.config.ondemand_save_path
-                            ),
+                            setting.key: app_settings.path_status(
+                                getattr(app.config, setting.attr)
+                            )
+                            for setting in app_settings.SETTINGS
+                            if setting.kind == "path"
+                            and getattr(app.config, setting.attr, None)
+                            and not (
+                                setting.key == "library_root"
+                                and (
+                                    app.config.library_root_movies
+                                    or app.config.library_root_series
+                                )
+                            )
                         },
                     },
                     head=head,
@@ -1207,6 +1232,10 @@ class Handler(PlaybackHandler):
             except ValueError as exc:
                 raise WebError(400, str(exc)) from exc
             config = app.reload_config()
+            try:
+                app.runner.submit("attention-check", requested_by="settings")
+            except JobConflict:
+                pass
             app.audit(
                 "web.settings_save",
                 payload={
@@ -1311,6 +1340,22 @@ class Handler(PlaybackHandler):
             app.audit("web.scheduler_run", payload=result)
             return self._json(202, result, head=head)
 
+        if parts == ["attention"]:
+            if mutate:
+                raise WebError(405, "usa GET")
+            return self._json(
+                200,
+                attention.status(db, app.config),
+                head=head,
+            )
+
+        if parts == ["attention", "check"]:
+            if not mutate:
+                raise WebError(405, "usa POST")
+            job_id = app.runner.submit("attention-check", requested_by="web")
+            app.audit("web.attention_check", payload={"job_id": job_id})
+            return self._json(202, {"job_id": job_id}, head=head)
+
         if parts == ["setup"] and not mutate:
             config = app.config
             capabilities = {
@@ -1332,8 +1377,10 @@ class Handler(PlaybackHandler):
             }
             missing = [
                 name for name, ok in capabilities.items()
-                if not ok and name in ("qbittorrent", "prowlarr", "jellyfin", "tmdb")
+                if not ok and name in ("qbittorrent", "jellyfin", "tmdb")
             ]
+            if not (capabilities["prowlarr"] or capabilities["jackett"]):
+                missing.append("prowlarr")
             if not paths["catalog_library"].get("exists"):
                 missing.append("catalog_library")
             return self._json(
@@ -1609,7 +1656,6 @@ class Handler(PlaybackHandler):
                     "keys": keys,
                     "min_seeders": self._int(body.get("min_seeders"), 1),
                     "versions": body.get("versions") or "available",
-                    "include_unavailable": bool(body.get("include_unavailable")),
                     "require_health": bool(body.get("require_health")),
                 }
             job_id = app.runner.submit(
@@ -1664,6 +1710,7 @@ class Handler(PlaybackHandler):
                     publication=params.get("publication") or "",
                     download=params.get("download") or "",
                     library=params.get("library") or "",
+                    incomplete=params.get("incomplete") == "1",
                     page=self._int(params.get("page"), 1),
                     per_page=self._int(params.get("per_page"), 25),
                     group=params.get("group") or "episode",
@@ -1811,6 +1858,7 @@ class Handler(PlaybackHandler):
                     "min_seeders": 1,
                 },
                 requested_by=self.client_address[0],
+                allow_duplicate=True,
             )
             app.audit(
                 "web.ondemand_acquire",
@@ -1996,6 +2044,29 @@ class Handler(PlaybackHandler):
             except Exception as exc:
                 detail = getattr(exc, "decision", None) or str(exc)[:300]
                 raise WebError(503, "no se pudo preparar", detail)
+            try:
+                radarr, sonarr = admin._arr_clients(app.config)
+                published = admin.export_strm(
+                    app.config.db_path,
+                    app.config.catalog_library,
+                    base_url=app.config.playback_base_url,
+                    key=result.get("key"),
+                    limit=None,
+                    min_seeders=1,
+                    versions_filter="available",
+                    radarr=radarr,
+                    sonarr=sonarr,
+                )
+                paths = published.get("written_paths") or []
+                if paths:
+                    strm_inventory.invalidate(app.config.catalog_library)
+                    jellyfin.notify_updated(app.config, paths[:100])
+                result["strm"] = {
+                    "written": published.get("written", 0),
+                    "paths": paths[:10],
+                }
+            except Exception as exc:
+                result["strm"] = {"error": str(exc)[:200]}
             app.audit(
                 "web.prepare", asset_id=row["asset_id"], payload={
                     "release_id": release_id,
@@ -2158,6 +2229,16 @@ class Handler(PlaybackHandler):
                 "catalog_library": str(app.config.catalog_library),
                 "seed_root": str(app.config.seed_root),
                 "library_root": str(app.config.library_root),
+                "library_root_movies": (
+                    str(app.config.library_root_movies)
+                    if app.config.library_root_movies
+                    else ""
+                ),
+                "library_root_series": (
+                    str(app.config.library_root_series)
+                    if app.config.library_root_series
+                    else ""
+                ),
                 "downloads_root": str(app.config.downloads_root),
                 "ondemand_save_path": str(app.config.ondemand_save_path),
                 "strm_roots": ":".join(app.config.strm_roots),

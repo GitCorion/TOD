@@ -23,7 +23,12 @@ from pathlib import Path
 from typing import Any
 
 from .db import connect
-from .policy import TrackerPolicy, get_policy
+from .policy import (
+    TrackerPolicy,
+    default_policy,
+    ensure_default_policy,
+    get_policy,
+)
 
 ACTIVE_STATES = ("approved", "active", "seeding")
 DEFAULT_RESERVE_BYTES = 20 * 1024**3
@@ -334,6 +339,12 @@ def admit(
 
         tracker = row["tracker"] or ""
         policy = get_policy(conn, tracker)
+        if policy is None:
+            policy = (
+                ensure_default_policy(conn, tracker, row["privacy"])
+                if persist
+                else default_policy(tracker, row["privacy"])
+            )
         free = (
             disk_free_override
             if disk_free_override is not None

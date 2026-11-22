@@ -164,7 +164,7 @@ def test_jobs_runner_roundtrip(tmp_path):
         runner.stop()
 
 
-def test_recover_jobs_marks_running_as_error(tmp_path):
+def test_recover_jobs_marks_running_as_cancelled(tmp_path):
     db = tmp_path / "recover.db"
     init_db(db, MIGRATIONS)
     conn = sqlite3.connect(db)
@@ -175,7 +175,7 @@ def test_recover_jobs_marks_running_as_error(tmp_path):
     conn.close()
     assert recover_jobs(db) == 1
     job = list_jobs(db)[0]
-    assert job["state"] == "error"
+    assert job["state"] == "cancelled"
     assert "reinicio" in job["error"]
 
 

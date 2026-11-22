@@ -70,7 +70,9 @@ export function barPercent(value, tone = '') {
 
 export function poster(path, title, { size = 'w342', cls = '' } = {}) {
   if (path) {
-    const url = `https://image.tmdb.org/t/p/${size}${path}`;
+    const url = /^https?:\/\//i.test(path)
+      ? path
+      : `https://image.tmdb.org/t/p/${size}${path}`;
     return `<img src="${esc(url)}" alt="" loading="lazy" decoding="async">`;
   }
   const letter = String(title || '?').trim().slice(0, 1).toUpperCase();
@@ -79,7 +81,10 @@ export function poster(path, title, { size = 'w342', cls = '' } = {}) {
 
 export function thumb(path, title) {
   if (path) {
-    return `<img class="thumb" src="${esc(`https://image.tmdb.org/t/p/w92${path}`)}" alt="" loading="lazy">`;
+    const url = /^https?:\/\//i.test(path)
+      ? path
+      : `https://image.tmdb.org/t/p/w92${path}`;
+    return `<img class="thumb" src="${esc(url)}" alt="" loading="lazy">`;
   }
   return `<span class="thumb placeholder">${esc(String(title || '?').trim().slice(0, 1).toUpperCase())}</span>`;
 }
@@ -227,7 +232,10 @@ export function setActiveNav(route) {
     const active = name === route
       || (route === 'title' && name === 'catalog')
       || (route === 'collection' && name === 'catalog')
-      || (route === 'series' && name === 'catalog');
+      || (route === 'series' && name === 'catalog')
+      || (route === 'add' && name === 'catalog')
+      || (route === 'history' && name === 'jobs')
+      || (route === 'technical' && name === 'system');
     link.classList.toggle('active', active);
     if (active) link.setAttribute('aria-current', 'page');
     else link.removeAttribute('aria-current');

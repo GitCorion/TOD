@@ -126,14 +126,27 @@ SETTINGS: tuple[Setting, ...] = (
     # Directorios
     Setting(
         "catalog_library", "catalog_library", "directorios",
-        "Biblioteca del catálogo", kind="path",
+        "Carpeta de publicación (.strm)", kind="path",
         env="CATALOGO_CATALOG_LIBRARY", default="/mnt/catalogo",
-        help="Donde se escriben los .strm de TOD.",
+        help="Donde TOD escribe los .strm que lee Jellyfin.",
+    ),
+    Setting(
+        "library_root_movies", "library_root_movies", "directorios",
+        "Carpeta de películas (Radarr)", kind="path",
+        env="CATALOGO_LIBRARY_ROOT_MOVIES",
+        help="Carpeta que usa Radarr para películas. Debe existir; TOD solo la lee.",
+    ),
+    Setting(
+        "library_root_series", "library_root_series", "directorios",
+        "Carpeta de series (Sonarr)", kind="path",
+        env="CATALOGO_LIBRARY_ROOT_SERIES",
+        help="Carpeta que usa Sonarr para series. Debe existir; TOD solo la lee.",
     ),
     Setting(
         "library_root", "library_root", "directorios",
-        "Biblioteca existente (Radarr/Sonarr)", kind="path",
+        "Carpeta común (opcional)", kind="path",
         env="CATALOGO_LIBRARY_ROOT", default="/mnt/library",
+        help="Solo si las carpetas anteriores comparten un padre. También sirve de base para el archivo de torrents privados.",
     ),
     Setting(
         "seed_root", "seed_root", "directorios", "Raíz de semillas",

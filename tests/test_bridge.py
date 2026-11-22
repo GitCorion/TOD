@@ -100,6 +100,58 @@ def test_bridge_copies_movie_and_rescans(tmp_path):
     assert radarr.rescanned == [7]
 
 
+class FakeRadarrAdd:
+    def __init__(self, root):
+        self.root = root
+        self.movie = None
+        self.added = None
+        self.deleted = []
+        self.rescanned = []
+
+    def movie_by_tmdb(self, tmdb):
+        return self.movie
+
+    def root_folders(self):
+        return [{"path": str(self.root), "accessible": True}]
+
+    def quality_profiles(self):
+        return [{"id": 3, "name": "HD"}]
+
+    def add_movie(self, **kwargs):
+        self.added = kwargs
+        self.movie = {
+            "id": 8,
+            "title": kwargs["title"],
+            "year": kwargs["year"],
+            "path": str(self.root / "Test Movie (2020)"),
+            "hasFile": False,
+        }
+        return self.movie
+
+    def rescan_movie(self, movie_id):
+        self.rescanned.append(movie_id)
+
+    def queue(self):
+        return {"records": [{"id": 11, "movieId": 8}]}
+
+    def delete_queue_item(self, queue_id, **_kwargs):
+        self.deleted.append(queue_id)
+
+
+def test_bridge_adds_missing_movie_and_clears_queue(tmp_path):
+    db, _source = seed(tmp_path, kind="movie")
+    radarr = FakeRadarrAdd(tmp_path / "radarr")
+    report = bridge_downloads(db, radarr, None, limit=5, dry_run=False)
+    assert report["bridged"], report
+    assert radarr.added["tmdb"] == 1
+    assert radarr.added["monitored"] is False
+    destination = (
+        tmp_path / "radarr" / "Test Movie (2020)" / "Test Movie (2020).mkv"
+    )
+    assert destination.read_bytes() == b"video"
+    assert radarr.deleted == [11]
+
+
 def test_bridge_skips_if_already_in_radarr(tmp_path):
     db, _source = seed(tmp_path, kind="movie")
     radarr = FakeRadarr(

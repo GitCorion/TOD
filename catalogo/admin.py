@@ -9,10 +9,17 @@ from __future__ import annotations
 
 import time
 import threading
+from datetime import datetime
 from typing import Any
 
 from .abandon import abandon_idle
 from .arr import RadarrClient, SonarrClient
+from .arr_mirror import (
+    mirror_library,
+    pending_publish_keys,
+    pending_source_keys,
+)
+from .attention import run_checks as attention_run_checks
 from .backfill import run_backfill
 from .bridge import bridge_downloads
 from .broken import clean_broken
@@ -23,6 +30,7 @@ from .debrid_cache import cache_public
 from .evict import evict_completed
 from .health_worker import run as health_run
 from .jackett import JackettClient, JackettError
+from .jellyfin import notify_updated as jellyfin_notify
 from .jobs import JobContext, JobError
 from .library_sync import sync_library
 from .metadata import backfill as metadata_backfill
@@ -472,7 +480,12 @@ def set_library(
     monitored: bool | None = None,
     source: str = "manual",
 ) -> dict[str, Any]:
-    """Marca pertenencia a biblioteca, sin exigir que exista un .strm."""
+    """Marca un título como solicitado en TOD.
+
+    No implica que esté en Radarr/Sonarr: eso solo lo decide el espejo de
+    *arr. Aquí se activa el seguimiento para buscar fuentes y publicar el
+    `.strm` cuando exista.
+    """
     from contextlib import closing
 
     from .db import connect
@@ -491,7 +504,6 @@ def set_library(
             params.extend(clean)
     else:
         raise JobError("falta key o serie")
-    stamp = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
     with closing(connect(config.db_path)) as conn:
         rows = conn.execute(
             f"SELECT id, key FROM media_items WHERE {where}", params
@@ -499,18 +511,14 @@ def set_library(
         if not rows:
             raise JobError("título no encontrado")
         fields = [
-            "library_added = ?",
-            "library_added_at = ?",
-            "library_source = ?",
+            "monitored = ?",
+            "monitor_source = ?",
+            "monitor_last_search_at = NULL",
         ]
         values: list[Any] = [
-            1 if member else 0,
-            stamp if member else None,
+            1 if member and (monitored is None or monitored) else 0,
             source if member else None,
         ]
-        if monitored is not None:
-            fields.append("monitored = ?")
-            values.append(1 if monitored else 0)
         conn.execute(
             f"UPDATE media_items SET {', '.join(fields)} WHERE {where}",
             values + params,
@@ -1228,6 +1236,21 @@ def _sync_keys(
                 "inserted": report.get("inserted", 0),
             }
         )
+        try:
+            from contextlib import closing
+
+            from .db import connect
+
+            stamp = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+            with closing(connect(str(ctx.config.db_path))) as conn:
+                conn.execute(
+                    "UPDATE media_items SET monitor_last_search_at = ? "
+                    "WHERE key = ?",
+                    (stamp, key),
+                )
+                conn.commit()
+        except Exception:
+            pass
         if delay and index < len(keys) - 1:
             time.sleep(max(0.0, delay))
     return summary
@@ -1241,7 +1264,7 @@ def job_sync_sources(ctx: JobContext) -> dict[str, Any]:
     min_seeders = _int(params.get("min_seeders"), 1)
     no_jackett = _bool(params.get("no_jackett"), False)
     if keys:
-        return _sync_keys(
+        summary = _sync_keys(
             ctx,
             keys,
             kind=kind,
@@ -1249,6 +1272,30 @@ def job_sync_sources(ctx: JobContext) -> dict[str, Any]:
             min_seeders=min_seeders,
             no_jackett=no_jackett,
         )
+        radarr, sonarr = _arr_clients(ctx.config)
+        written = 0
+        paths: list[str] = []
+        for key in keys:
+            report = export_strm(
+                ctx.config.db_path,
+                ctx.config.catalog_library,
+                base_url=ctx.config.playback_base_url,
+                key=key,
+                limit=None,
+                min_seeders=1,
+                versions_filter="available",
+                radarr=radarr,
+                sonarr=sonarr,
+            )
+            written += int(report.get("written") or 0)
+            paths.extend(report.get("written_paths") or [])
+        if paths:
+            from .strm_inventory import invalidate
+
+            invalidate(ctx.config.catalog_library)
+            jellyfin_notify(ctx.config, paths[:500])
+        summary["published"] = written
+        return summary
     year = _int(params.get("year"), 0) or None
     limit = _int(params.get("limit"), 10)
     ctx.report(f"buscando fuentes ({kind}, {limit} títulos)", progress=0.1)
@@ -1313,9 +1360,13 @@ def job_rss(ctx: JobContext) -> dict[str, Any]:
 
 def job_backfill(ctx: JobContext) -> dict[str, Any]:
     params = ctx.params
+    current_year = datetime.now().year
     years = [
         int(value)
-        for value in params.get("years") or [2026, 2025, 2024, 2023, 2022]
+        for value in (
+            params.get("years")
+            or list(range(current_year, current_year - 5, -1))
+        )
     ]
     ctx.report("eligiendo año y buscando lote", progress=0.05)
     report = run_backfill(
@@ -1362,7 +1413,6 @@ def job_export(ctx: JobContext) -> dict[str, Any]:
                 limit=None,
                 min_seeders=min_seeders,
                 versions_filter=versions,
-                include_unavailable=_bool(params.get("include_unavailable"), False),
                 require_health=_bool(params.get("require_health"), False),
                 skip_library=_bool(params.get("skip_library"), False),
                 radarr=radarr,
@@ -1394,7 +1444,6 @@ def job_export(ctx: JobContext) -> dict[str, Any]:
         kind=params.get("kind") if params.get("kind") in ("movie", "series") else None,
         min_seeders=min_seeders,
         versions_filter=versions,
-        include_unavailable=_bool(params.get("include_unavailable"), False),
         require_health=_bool(params.get("require_health"), False),
         skip_library=_bool(params.get("skip_library"), False),
         prune=_bool(params.get("prune"), False),
@@ -1416,7 +1465,7 @@ def job_qbit_sync(ctx: JobContext) -> dict[str, Any]:
         _qb_read(ctx.config),
         radarr=radarr,
         sonarr=sonarr,
-        archive_root=str(ctx.config.library_root),
+        archive_root=ctx.config.archive_roots(),
         dry_run=_bool(ctx.params.get("dry_run"), False),
         check_exists=_bool(ctx.params.get("check_exists"), True),
     )
@@ -1538,6 +1587,113 @@ def job_library(ctx: JobContext) -> dict[str, Any]:
     )
 
 
+def job_arr_mirror(ctx: JobContext) -> dict[str, Any]:
+    """Espeja Radarr/Sonarr, busca fuentes y publica los `.strm` posibles."""
+    params = ctx.params
+    source_limit = max(0, _int(params.get("source_limit"), 50))
+    publish_limit = max(0, _int(params.get("publish_limit"), 200))
+    delay = max(0.0, _float(params.get("delay"), 0.3))
+
+    radarr, sonarr = _arr_clients(ctx.config)
+    ctx.report("sincronizando ficheros de Radarr/Sonarr", progress=0.05)
+    library = sync_library(
+        str(ctx.config.db_path), radarr=radarr, sonarr=sonarr
+    )
+    ctx.report("espejando catálogo de Radarr/Sonarr", progress=0.15)
+    mirror = mirror_library(
+        str(ctx.config.db_path), radarr=radarr, sonarr=sonarr
+    )
+
+    pending = pending_source_keys(
+        str(ctx.config.db_path), limit=source_limit
+    ) if source_limit else []
+    grouped: dict[str, list[str]] = {"movie": [], "series": []}
+    for key, kind in pending:
+        grouped.setdefault(kind, []).append(key)
+    sources: dict[str, Any] = {}
+    for kind, keys in grouped.items():
+        if not keys:
+            continue
+        ctx.report(
+            f"buscando fuentes para {len(keys)} {kind}",
+            progress=0.3,
+        )
+        sources[kind] = _sync_keys(
+            ctx,
+            keys,
+            kind=kind,
+            delay=delay,
+            min_seeders=1,
+            no_jackett=False,
+            progress_base=0.3,
+            progress_span=0.4,
+        )
+
+    exported = 0
+    to_notify: list[str] = []
+    for index, (key, _kind) in enumerate(pending):
+        ctx.check()
+        ctx.report(
+            f"publicando {key} ({index + 1}/{len(pending)})",
+            progress=0.72 + 0.2 * (index / max(1, len(pending))),
+        )
+        report = export_strm(
+            ctx.config.db_path,
+            ctx.config.catalog_library,
+            base_url=ctx.config.playback_base_url,
+            key=key,
+            limit=None,
+            min_seeders=1,
+            versions_filter="available",
+            radarr=radarr,
+            sonarr=sonarr,
+        )
+        exported += int(report.get("written") or 0)
+        to_notify.extend(report.get("written_paths") or [])
+
+    published = pending_publish_keys(
+        str(ctx.config.db_path),
+        ctx.config.catalog_library,
+        limit=publish_limit,
+    ) if publish_limit else []
+    for index, key in enumerate(published):
+        ctx.check()
+        ctx.report(
+            f"publicando biblioteca {key} ({index + 1}/{len(published)})",
+            progress=0.92 + 0.06 * (index / max(1, len(published))),
+        )
+        report = export_strm(
+            ctx.config.db_path,
+            ctx.config.catalog_library,
+            base_url=ctx.config.playback_base_url,
+            key=key,
+            limit=None,
+            min_seeders=1,
+            versions_filter="available",
+            radarr=radarr,
+            sonarr=sonarr,
+        )
+        exported += int(report.get("written") or 0)
+        to_notify.extend(report.get("written_paths") or [])
+
+    from .strm_inventory import invalidate
+
+    invalidate(ctx.config.catalog_library)
+    notified = (
+        jellyfin_notify(ctx.config, to_notify[:500]) if to_notify else None
+    )
+    ctx.report("espejo y publicación terminados", progress=0.99)
+    return {
+        "library": library,
+        "mirror": mirror,
+        "source_keys": len(pending),
+        "sources": sources,
+        "publish_keys": len(published),
+        "written": exported,
+        "jellyfin": notified,
+    }
+
+
 def job_metadata(ctx: JobContext) -> dict[str, Any]:
     params = ctx.params
     limit = _int(params.get("limit"), 0)
@@ -1631,19 +1787,20 @@ def job_worker_cycle(ctx: JobContext) -> dict[str, Any]:
     radarr, sonarr = _arr_clients(config)
 
     def sync() -> dict:
-        return qbit_sync(
+        ctx.report("sincronizando qBittorrent", progress=0.1)
+        report = qbit_sync(
             db,
             qbit_read,
             radarr=radarr,
             sonarr=sonarr,
-            archive_root=str(config.library_root),
+            archive_root=config.archive_roots(),
             check_exists=True,
         ).public()
-
-    def library() -> dict:
-        return sync_library(db, radarr=radarr, sonarr=sonarr)
+        ctx.report("qBittorrent sincronizado", progress=0.45)
+        return report
 
     def repair() -> dict:
+        ctx.report("reparando torrents con error", progress=0.5)
         return repair_torrents(
             db, qbit_read, qbit_write, limit=5, dry_run=False
         )
@@ -1687,7 +1844,6 @@ def job_worker_cycle(ctx: JobContext) -> dict[str, Any]:
     return run_once(
         cleanup=cleanup,
         sync=sync,
-        library=library,
         repair=repair,
         reseed=reseed,
         clean=clean,
@@ -1714,43 +1870,49 @@ def job_bridge(ctx: JobContext) -> dict[str, Any]:
 
 
 def job_restore_strm(ctx: JobContext) -> dict[str, Any]:
+    """Reconcilia los .strm con el catálogo y las fuentes vivas.
+
+    Escribe los que faltan y poda los de títulos que ya no existen o que no
+    tienen ni fuente viva ni fichero local. Así Jellyfin no acumula entradas
+    muertas.
+    """
     params = ctx.params
-    raw_years = str(params.get("years") or "2020,2021,2022,2023,2024,2025,2026")
-    years = [
-        int(part.strip())
-        for part in raw_years.split(",")
-        if part.strip().lstrip("-").isdigit()
-    ]
-    out = str(ctx.config.catalog_library)
+    prune = _bool(params.get("prune"), True)
+    min_seeders = _int(params.get("min_seeders"), 1)
     radarr, sonarr = _arr_clients(ctx.config)
-    report: dict[str, Any] = {}
-    for year in years:
-        ctx.check()
-        report[f"movie_{year}"] = export_strm(
-            ctx.config.db_path,
-            out,
-            base_url=ctx.config.playback_base_url,
-            limit=None,
-            year=year,
-            kind="movie",
-            skip_library=False,
-            radarr=radarr,
-            sonarr=sonarr,
-        )
-    report["series"] = export_strm(
+    ctx.report("reconciliando .strm", progress=0.1)
+    report = export_strm(
         ctx.config.db_path,
-        out,
+        ctx.config.catalog_library,
         base_url=ctx.config.playback_base_url,
         limit=None,
-        kind="series",
+        min_seeders=min_seeders,
+        versions_filter="available",
+        prune=prune,
         skip_library=False,
         radarr=radarr,
         sonarr=sonarr,
     )
+    from .strm_inventory import invalidate
+
+    invalidate(ctx.config.catalog_library)
+    paths = report.get("written_paths") or []
+    if paths:
+        report["jellyfin"] = jellyfin_notify(ctx.config, paths[:500])
+    ctx.report("reconciliación terminada", progress=0.98)
+    return report
+
+
+def job_attention(ctx: JobContext) -> dict[str, Any]:
+    ctx.report("comprobando integraciones", progress=0.1)
+    report = attention_run_checks(str(ctx.config.db_path), ctx.config)
+    ctx.check()
+    ctx.report("estado actualizado", progress=0.95)
     return report
 
 
 JOB_HANDLERS = {
+    "attention-check": job_attention,
     "health": job_health,
     "sync-sources": job_sync_sources,
     "rss-sync": job_rss,
@@ -1766,6 +1928,7 @@ JOB_HANDLERS = {
     "seeding": job_seeding,
     "prune-library": job_prune,
     "sync-library": job_library,
+    "arr-mirror": job_arr_mirror,
     "metadata": job_metadata,
     "monitor": job_monitor,
     "debrid-check": job_debrid,

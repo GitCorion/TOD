@@ -30,6 +30,7 @@ Las URLs y API keys se introducen en la web y TOD aplica el resto. En Docker,
 - **Descubrir fuentes** en Prowlarr, Jackett o ambos, sin listas de trackers escritas a mano.
 - **Leer Radarr/Sonarr por API**, nunca tocando sus bases de datos.
 - **Automatizar** RSS, seguimiento, backfill, puente, restauración y límites de qBittorrent.
+- **Ver qué necesita atención** en Inicio, con el motivo y un enlace al ajuste exacto.
 - **Configurar integraciones, directorios y tareas** desde
   **Sistema → Configuración**, con pruebas de conexión.
 
@@ -73,10 +74,17 @@ series/Título (Año)/Season 01/Título S01E01 - 1080p Cast.strm
 - Cada variante apunta a una versión concreta y aparece como versión distinta
   en Jellyfin, para elegir calidad o audio.
 - El nombre usa calidad y audio; si se repiten, añade tracker o id.
-- Por defecto solo se publican versiones reproducibles: fichero local, copia en
-  archivo o debrid cacheado.
-- Si el título solo está en Radarr/Sonarr, se publica el principal aunque el
-  catálogo no tenga releases. En series, cada episodio recibe su `.strm`.
+- Solo se publica si hay algo que reproducir: **un release vivo con seeds** o
+  un fichero local/archivado. Los releases muertos no crean entradas vacías.
+- Radarr/Sonarr se espejan completos al catálogo, pero su `.strm` solo aparece
+  cuando TOD encuentra una fuente viva o un fichero local.
+- Si la fuente muere, TOD la busca otra vez al reproducir. Si ya no hay
+  ninguna, el `.strm` se retira en la reconciliación diaria.
+
+El catálogo y `.strm` son dos niveles distintos. El catálogo puede contener
+miles o millones de títulos; Jellyfin solo ve los que tienen una fuente viva
+o un fichero local. Al reproducir, TOD revalida la fuente, busca otra si hace
+falta y prepara el torrent sin esperar a la cola de Radarr/Sonarr.
 
 ## Instalación con Docker Compose
 
@@ -112,7 +120,8 @@ Primera puesta en marcha:
 
 1. Abre TOD en `8773`.
 2. Configura qBittorrent con `http://qbittorrent:8080` y sus credenciales.
-3. Configura Prowlarr, Jackett o ambos, y pega la API key de Jellyfin.
+3. Configura Prowlarr, Jackett o ambos. La API key de Jellyfin es opcional:
+   solo sirve para avisos de escaneo y para detectar la sesión activa.
 4. En Jellyfin, añade `/media/catalogo/movies` como **Películas** y
    `/media/catalogo/series` como **Series**.
 5. En TOD, revisa **Configuración → Directorios**.
@@ -155,9 +164,9 @@ tiene **Comprobar**. Los secretos se guardan en `var/tod.db` con permisos
 | qBittorrent | Descargar, sembrar y servir torrents | Sí, para reproducir bajo demanda |
 | Prowlarr | Descubrir releases y comprobar salud | Uno de los dos |
 | Jackett | Descubrir releases | Uno de los dos |
-| Jellyfin | Reproducir los `.strm`; TOD le avisa de rutas nuevas | Recomendado |
-| Radarr | Biblioteca y cola, solo API | Opcional |
-| Sonarr | Biblioteca y cola, solo API | Opcional |
+| Jellyfin | Reproducir los `.strm` y avisar de rutas nuevas | Opcional |
+| Radarr | Espejo de biblioteca y destino de lo descargado por TOD | Opcional |
+| Sonarr | Espejo de biblioteca y destino de lo descargado por TOD | Opcional |
 | TMDB | Metadatos, pósters y sinopsis | Recomendado |
 
 TOD se integra con Radarr y Sonarr mediante sus APIs. Solo necesita la URL y
@@ -168,10 +177,14 @@ resultado). Puedes usar uno o ambos; no hay listas privadas en el repositorio.
 
 ## Configuración desde la web
 
+**Sistema → Estado** muestra los avisos de TOD y el resultado de la última
+comprobación de integraciones, con enlaces a la sección que los arregla.
+
 **Sistema → Configuración** incluye:
 
-- **Integraciones** con prueba de conexión.
-- **Directorios** con comprobación de existencia, escritura y espacio.
+- **Integraciones** con prueba de conexión y el motivo concreto de cada fallo.
+- **Directorios** con comprobación de existencia, escritura y espacio. Las
+  bibliotecas de Radarr (películas) y Sonarr (series) se configuran por separado.
 - **Reproducción**: descargas simultáneas, tamaño máximo y URL base de `.strm`.
 - **Seguridad**: token web y hosts permitidos.
 - **Tareas programadas**: activar, cambiar cadencia, ver la próxima ejecución y lanzar ahora.
@@ -199,12 +212,15 @@ pip install -e ".[dev]"
 python -m pytest -q
 ```
 
-TOD se distribuye como paquete Python y se ejecuta con el comando `tod`:
+Desde el clon, tras `pip install -e .`, se ejecuta con el comando `tod`:
 
 ```bash
 tod --help
 tod service --host 0.0.0.0 --port 8773
 ```
+
+La instalación recomendada sigue siendo Docker Compose o el instalador
+systemd, porque incluyen migraciones y rutas de datos.
 
 ## Documentación
 

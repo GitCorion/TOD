@@ -149,10 +149,12 @@ def test_http_local_range_and_pointer(tmp_path):
             "GET", "/play?key=movie%3Atmdb%3A2",
             {"Range": "bytes=0-"},
         )
-        assert status == 403
-        assert b"download_not_allowed" in body
+        # Un reproductor con Range puede arrancar el prepare aunque el .strm
+        # no lleve download=1. Sin backend, queda en 503 y crea intención.
+        assert status == 503
+        assert b"backend_disabled" in body
         conn = sqlite3.connect(db)
-        assert conn.execute("SELECT COUNT(*) FROM play_intents").fetchone()[0] == 0
+        assert conn.execute("SELECT COUNT(*) FROM play_intents").fetchone()[0] == 1
         conn.close()
 
         status, _headers, body = request(
@@ -162,6 +164,7 @@ def test_http_local_range_and_pointer(tmp_path):
         assert status == 503
         assert b"backend_disabled" in body
         conn = sqlite3.connect(db)
+        # El intento activo se reutiliza mientras no se consume.
         assert conn.execute("SELECT COUNT(*) FROM play_intents").fetchone()[0] == 1
         conn.close()
     finally:
@@ -191,6 +194,9 @@ class FakePlayService:
 
     def preflight(self, handle, *, timeout=6.0):
         return None
+
+    def wait_stream_ready(self, handle, *, timeout=60.0):
+        return True
 
     def discard_failed(self, handle):
         self.failed.add(handle.get("release_id"))
@@ -356,7 +362,34 @@ def test_catalog_lookup_http(tmp_path, monkeypatch):
         thread.join(timeout=5)
 
 
-def test_strm_url_cannot_start_download(tmp_path):
+def test_play_serves_local_file_while_db_is_write_locked(tmp_path):
+    db, content = build_db(tmp_path)
+    server = make_server("127.0.0.1", 0, db)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    host, port = server.server_address
+    lock = sqlite3.connect(db)
+    try:
+        lock.execute("BEGIN IMMEDIATE")
+        conn = http.client.HTTPConnection(host, port, timeout=5)
+        conn.request(
+            "GET", "/play?key=movie%3Atmdb%3A1",
+            headers={"Range": "bytes=0-99"},
+        )
+        response = conn.getresponse()
+        body = response.read()
+        conn.close()
+        assert response.status == 206
+        assert body == content[:100]
+    finally:
+        lock.rollback()
+        lock.close()
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=5)
+
+
+def test_strm_url_starts_download_on_range(tmp_path):
     db, _content = build_db(tmp_path)
     service = FakePlayService()
     server = make_server("127.0.0.1", 0, db, play_service=service)
@@ -372,11 +405,10 @@ def test_strm_url_cannot_start_download(tmp_path):
         response = conn.getresponse()
         body = response.read()
         conn.close()
-        assert response.status == 403
-        assert b"download_not_allowed" in body
-        assert service.calls == []
+        assert response.status == 206
+        assert service.calls == [("movie:tmdb:2", 0, 99)]
         conn = sqlite3.connect(db)
-        assert conn.execute("SELECT COUNT(*) FROM play_intents").fetchone()[0] == 0
+        assert conn.execute("SELECT COUNT(*) FROM play_intents").fetchone()[0] == 1
         conn.close()
     finally:
         server.shutdown()

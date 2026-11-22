@@ -256,6 +256,7 @@ def catalog(
     publication: str = "",
     download: str = "",
     library: str = "",
+    incomplete: bool = False,
     page: int = 1,
     per_page: int = PAGE_SIZE,
     group: str = "episode",
@@ -298,7 +299,7 @@ def catalog(
             SELECT m.id, m.key, m.kind, m.tmdb, m.title, m.year, m.season,
                    m.episode, m.status, m.updated_at, m.created_at,
                    m.library_added_at, m.poster_path, m.overview,
-                   m.vote_average, m.library_added,
+                   m.vote_average, m.library_added, m.release_date, m.air_date,
                    COALESCE(m.popularity,0) AS popularity,
                    (SELECT COUNT(*) FROM releases r WHERE r.asset_id=m.id)
                        AS releases,
@@ -317,13 +318,9 @@ def catalog(
         if kind in ("movie", "series") and item["kind"] != kind:
             continue
         published = strm_inventory.is_key_published(item, keys)
+        # `library_added` significa estar en Radarr/Sonarr. Publicado es
+        # tener .strm. Son dos estados distintos y no se mezclan.
         library_added = bool(item.get("library_added"))
-        if published or library_added:
-            pub_state = "publicado"
-        elif int(item["id"]) in with_releases:
-            pub_state = "pendiente"
-        else:
-            pub_state = "sin_fuente"
         torrent = torrents.get(int(item["id"]))
         dl_state, progress = _download_state(torrent)
         lib = (
@@ -331,10 +328,40 @@ def catalog(
             if arr is not None and item["kind"] == "movie" and item.get("tmdb")
             else {"in_library": False, "has_file": False}
         )
+        lib_series = None
+        if item["kind"] == "series" and item.get("tmdb"):
+            if item.get("season") and item.get("episode"):
+                lib_series = series_library(
+                    int(item["tmdb"]),
+                    int(item["season"]),
+                    int(item["episode"]),
+                )
+            else:
+                lib_series = series_library(int(item["tmdb"]))
+        if lib.get("has_file") or (lib_series and lib_series.get("has_file")):
+            library_added = True
         downloaded = (
             dl_state == "sembrando"
             or int(item["id"]) in downloaded_assets
             or (item["kind"] == "movie" and bool(lib.get("has_file")))
+            or bool(lib_series and lib_series.get("has_file"))
+        )
+        if published:
+            pub_state = "publicado"
+        elif downloaded or int(item["id"]) in with_releases:
+            pub_state = "pendiente"
+        else:
+            pub_state = "sin_fuente"
+        available, _ = _release_available(
+            item.get("release_date") or item.get("air_date")
+        )
+        is_special = item["kind"] == "series" and int(item.get("season") or 0) == 0
+        incomplete_item = bool(
+            library_added
+            and not downloaded
+            and int(item.get("alive") or 0) == 0
+            and available
+            and not is_special
         )
         item.update(
             {
@@ -343,6 +370,7 @@ def catalog(
                 "library_added": library_added,
                 "download": dl_state,
                 "downloaded": downloaded,
+                "incomplete": incomplete_item,
                 "progress": progress,
                 "in_library": bool(lib.get("in_library")),
                 "has_file": bool(lib.get("has_file")),
@@ -354,8 +382,7 @@ def catalog(
                 ),
             }
         )
-        if item["kind"] == "series" and item.get("tmdb"):
-            lib_series = series_library(int(item["tmdb"]))
+        if lib_series is not None:
             item["in_library"] = bool(lib_series.get("in_library"))
             item["has_file"] = bool(lib_series.get("has_file"))
         base.append(item)
@@ -409,6 +436,7 @@ def catalog(
         item
         for item in entries
         if (not kind or item["kind"] == kind)
+        and (not publication or item.get("publication") == publication)
     ]
     facet_data = _facets(facet_source) if facets else None
 
@@ -443,6 +471,8 @@ def catalog(
         if library == "yes" and not item.get("in_library"):
             return False
         if library == "no" and item.get("in_library"):
+            return False
+        if incomplete and not item.get("incomplete"):
             return False
         return True
 
@@ -531,11 +561,14 @@ def _group_series(items, series_library) -> list[dict[str, Any]]:
         }
         published_count = 0
         library_count = 0
+        incomplete_count = 0
         for row in rows:
             if row.get("published"):
                 published_count += 1
-            if row.get("published") or row.get("library_added"):
+            if row.get("library_added"):
                 library_count += 1
+            if row.get("incomplete"):
+                incomplete_count += 1
             if row.get("downloaded"):
                 counts["descargado"] += 1
                 continue
@@ -558,7 +591,7 @@ def _group_series(items, series_library) -> list[dict[str, Any]]:
             primary = "sin_descarga"
         publication = (
             "publicado"
-            if library_count
+            if published_count
             else "pendiente"
             if any(row.get("publication") == "pendiente" for row in rows)
             else "sin_fuente"
@@ -610,6 +643,8 @@ def _group_series(items, series_library) -> list[dict[str, Any]]:
                 "episodes": len(rows),
                 "published_episodes": published_count,
                 "download_counts": counts,
+                "incomplete": incomplete_count > 0,
+                "incomplete_episodes": incomplete_count,
                 "seasons": sorted(
                     {int(row.get("season") or 0) for row in rows if row.get("season")}
                 ),
@@ -621,7 +656,7 @@ def _group_series(items, series_library) -> list[dict[str, Any]]:
     return output
 
 
-def _facets(items: list[dict[str, Any]]) -> dict[str, dict[str, int]]:
+def _facets(items: list[dict[str, Any]]) -> dict[str, Any]:
     publication = {"publicado": 0, "pendiente": 0, "sin_fuente": 0}
     downloads = {
         "descargando": 0,
@@ -631,12 +666,15 @@ def _facets(items: list[dict[str, Any]]) -> dict[str, dict[str, int]]:
         "sin_descarga": 0,
     }
     kinds = {"movie": 0, "series": 0}
+    incomplete = 0
     for item in items:
         publication[item.get("publication") or "sin_fuente"] = (
             publication.get(item.get("publication") or "sin_fuente", 0) + 1
         )
         if item.get("kind") in kinds:
             kinds[item["kind"]] += 1
+        if item.get("incomplete"):
+            incomplete += 1
         if item["kind"] == "series":
             counts = item.get("download_counts") or {}
             if counts.get("descargando"):
@@ -661,6 +699,7 @@ def _facets(items: list[dict[str, Any]]) -> dict[str, dict[str, int]]:
         "publication": publication,
         "download": downloads,
         "kind": kinds,
+        "incomplete": incomplete,
     }
 
 
@@ -727,19 +766,40 @@ def series_detail(
 
     def state_for(row: dict[str, Any]) -> dict[str, Any]:
         published = strm_inventory.is_key_published(row, keys)
-        library_added = bool(row.get("library_added")) or published
-        publication = (
-            "publicado"
-            if library_added
-            else "pendiente"
-            if int(row["id"]) in with_releases
-            else "sin_fuente"
-        )
+        library_added = bool(row.get("library_added"))
+        lib_episode = {"has_file": False}
+        if arr is not None:
+            lib_episode = arr.in_library(
+                "series",
+                tmdb,
+                season=int(row.get("season") or 0),
+                episode=int(row.get("episode") or 0),
+            )
+        if lib_episode.get("has_file"):
+            library_added = True
         torrent = torrents.get(int(row["id"]))
         download, progress = _download_state(torrent)
-        downloaded = download == "sembrando" or int(row["id"]) in downloaded_assets
+        downloaded = (
+            download == "sembrando"
+            or int(row["id"]) in downloaded_assets
+            or bool(lib_episode.get("has_file"))
+        )
+        publication = (
+            "publicado"
+            if published
+            else "pendiente"
+            if downloaded or int(row["id"]) in with_releases
+            else "sin_fuente"
+        )
         releases, alive = release_counts.get(int(row["id"]), (0, 0))
         available, available_at = _release_available(row.get("air_date"))
+        incomplete = bool(
+            library_added
+            and not downloaded
+            and alive == 0
+            and available
+            and int(row.get("season") or 0) > 0
+        )
         return {
             "id": row["id"],
             "key": row["key"],
@@ -754,6 +814,7 @@ def series_detail(
             "available_at": available_at,
             "download": download,
             "downloaded": downloaded,
+            "incomplete": incomplete,
             "progress": progress,
             "releases": releases,
             "alive": alive,
@@ -875,8 +936,19 @@ def series_detail(
         season["library"] = sum(
             1 for episode in season["episodes"] if episode.get("library_added")
         )
+        season["monitored"] = sum(
+            1 for episode in season["episodes"] if episode.get("monitored")
+        )
+        season["covered"] = sum(
+            1 for episode in season["episodes"]
+            if episode.get("in_catalog")
+            and (episode.get("library_added") or episode.get("monitored"))
+        )
         season["downloaded"] = sum(
             1 for episode in season["episodes"] if episode.get("downloaded")
+        )
+        season["incomplete"] = sum(
+            1 for episode in season["episodes"] if episode.get("incomplete")
         )
 
     first = rows[0] if rows else {}
@@ -912,12 +984,21 @@ def series_detail(
         ),
         "published": sum(1 for episode in all_episodes if episode.get("published")),
         "library": sum(1 for episode in all_episodes if episode.get("library_added")),
+        "monitored": sum(1 for episode in all_episodes if episode.get("monitored")),
+        "covered": sum(
+            1 for episode in all_episodes
+            if episode.get("in_catalog")
+            and (episode.get("library_added") or episode.get("monitored"))
+        ),
         "downloaded": sum(
             1 for episode in all_episodes if episode.get("downloaded")
         ),
         "downloading": sum(
             1 for episode in all_episodes
             if episode.get("download") == "descargando"
+        ),
+        "incomplete": sum(
+            1 for episode in all_episodes if episode.get("incomplete")
         ),
         "seasons": len(seasons_out),
     }
@@ -979,12 +1060,13 @@ def collection_states(db_path, config, parts: list[dict]) -> list[dict]:
             )
         else:
             published = row["key"] in published_keys
-            library_added = bool(row.get("library_added")) or published
+            library_added = bool(row.get("library_added"))
+            downloaded = int(row["id"]) in downloaded_ids
             publication = (
                 "publicado"
                 if library_added
                 else "pendiente"
-                if int(row["id"]) in with_releases
+                if downloaded or int(row["id"]) in with_releases
                 else "sin_fuente"
             )
             item.update(
@@ -994,7 +1076,7 @@ def collection_states(db_path, config, parts: list[dict]) -> list[dict]:
                     "in_catalog": True,
                     "published": published,
                     "library_added": library_added,
-                    "downloaded": int(row["id"]) in downloaded_ids,
+                    "downloaded": downloaded,
                     "publication": publication,
                     "monitored": bool(row.get("monitored")),
                     "available": _release_available(row.get("release_date"))[0],
@@ -1281,12 +1363,6 @@ def item_state(db_path, config, item: dict[str, Any], *, qbit=None, arr=None) ->
         item.get("release_date") or item.get("air_date")
     )
     with_releases = _asset_ids_with_releases(db_path)
-    if library_added:
-        publication = "publicado"
-    elif int(item["id"]) in with_releases:
-        publication = "pendiente"
-    else:
-        publication = "sin_fuente"
     torrents = _ondemand_torrents(db_path, qbit)
     torrent = torrents.get(int(item["id"]))
     dl_state, progress = _download_state(torrent)
@@ -1299,6 +1375,19 @@ def item_state(db_path, config, item: dict[str, Any], *, qbit=None, arr=None) ->
             season=item.get("season"),
             episode=item.get("episode"),
         )
+    downloaded = (
+        dl_state == "sembrando"
+        or int(item["id"]) in downloaded_assets
+        or bool(lib.get("has_file"))
+    )
+    if lib.get("has_file"):
+        library_added = True
+    if library_added:
+        publication = "publicado"
+    elif downloaded or int(item["id"]) in with_releases:
+        publication = "pendiente"
+    else:
+        publication = "sin_fuente"
     return {
         "publication": publication,
         "published": published,
@@ -1306,11 +1395,7 @@ def item_state(db_path, config, item: dict[str, Any], *, qbit=None, arr=None) ->
         "available": available,
         "available_at": available_at,
         "download": dl_state,
-        "downloaded": (
-            dl_state == "sembrando"
-            or int(item["id"]) in downloaded_assets
-            or bool(lib.get("has_file"))
-        ),
+        "downloaded": downloaded,
         "progress": progress,
         "in_library": bool(lib.get("in_library")),
         "has_file": bool(lib.get("has_file")),

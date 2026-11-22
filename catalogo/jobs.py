@@ -68,20 +68,22 @@ def create_job(
     params: dict[str, Any] | None = None,
     *,
     requested_by: str | None = None,
+    allow_duplicate: bool = False,
 ) -> int:
     with closing(connect(db_path)) as conn:
-        current = conn.execute(
-            """
-            SELECT id FROM jobs
-            WHERE kind = ? AND state IN ('queued', 'running')
-            ORDER BY id DESC LIMIT 1
-            """,
-            (kind,),
-        ).fetchone()
-        if current is not None:
-            raise JobConflict(
-                f"ya hay una tarea '{kind}' en curso (id {current['id']})"
-            )
+        if not allow_duplicate:
+            current = conn.execute(
+                """
+                SELECT id FROM jobs
+                WHERE kind = ? AND state IN ('queued', 'running')
+                ORDER BY id DESC LIMIT 1
+                """,
+                (kind,),
+            ).fetchone()
+            if current is not None:
+                raise JobConflict(
+                    f"ya hay una tarea '{kind}' en curso (id {current['id']})"
+                )
         cursor = conn.execute(
             """
             INSERT INTO jobs(kind, params, requested_by)
@@ -106,12 +108,21 @@ def list_jobs(
     *,
     limit: int = 50,
     state: str | None = None,
+    exclude_kinds: tuple[str, ...] = (),
 ) -> list[dict[str, Any]]:
-    query = "SELECT * FROM jobs"
+    clauses: list[str] = []
     params: list[Any] = []
     if state:
-        query += " WHERE state = ?"
+        clauses.append("state = ?")
         params.append(state)
+    if exclude_kinds:
+        clauses.append(
+            "kind NOT IN (" + ",".join("?" for _ in exclude_kinds) + ")"
+        )
+        params.extend(exclude_kinds)
+    query = "SELECT * FROM jobs"
+    if clauses:
+        query += " WHERE " + " AND ".join(clauses)
     query += " ORDER BY id DESC LIMIT ?"
     params.append(max(1, min(int(limit), 200)))
     with closing(connect(db_path)) as conn:
@@ -189,12 +200,16 @@ def cancel_job(db_path: str | Path, job_id: int) -> dict[str, Any] | None:
 
 
 def recover_jobs(db_path: str | Path) -> int:
-    """Marca como fallidas las tareas que quedaron a medias por un reinicio."""
+    """Cancela las tareas que quedaron a medias por un reinicio.
+
+    No son fallos del producto: un reinicio controlado no debe llenar el
+    panel de avisos ni contar como error en las métricas.
+    """
     with closing(connect(db_path)) as conn:
         cursor = conn.execute(
             """
             UPDATE jobs
-            SET state = 'error',
+            SET state = 'cancelled',
                 error = 'interrumpida por reinicio del servidor',
                 message = 'interrumpida por reinicio del servidor',
                 finished_at = ?
@@ -277,6 +292,7 @@ class JobRunner:
         params: dict[str, Any] | None = None,
         *,
         requested_by: str | None = None,
+        allow_duplicate: bool = False,
     ) -> int:
         if kind not in self.handlers:
             raise JobError(f"tarea desconocida: {kind}")
@@ -285,6 +301,7 @@ class JobRunner:
             kind,
             params,
             requested_by=requested_by,
+            allow_duplicate=allow_duplicate,
         )
         self._queue.put(job_id)
         return job_id

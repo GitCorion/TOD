@@ -89,6 +89,54 @@ def can_remove(
     return Decision(True, "politica_cumplida")
 
 
+def default_policy(tracker: str, privacy: str | None = None) -> TrackerPolicy:
+    """Política de arranque para un tracker sin regla configurada.
+
+    Sin ella, cualquier descarga privada se bloquea con ``sin_politica`` y
+    el play bajo demanda no funciona en una instalación recién creada. Los
+    valores son conservadores y se pueden ajustar después.
+    """
+    public = (privacy or "").lower() == "public"
+    return TrackerPolicy(
+        tracker=tracker,
+        min_seed_hours=0 if public else 72,
+        target_ratio=0.0 if public else 1.0,
+        privacy="public" if public else "private",
+        keep_for_bonus=True,
+        notes="Política automática inicial; ajústala si tu tracker exige otra cosa.",
+    )
+
+
+def ensure_default_policy(
+    conn: Any, tracker: str, privacy: str | None = None
+) -> TrackerPolicy:
+    """Devuelve la política existente o crea una por defecto en la misma conexión."""
+    existing = get_policy(conn, tracker)
+    if existing is not None:
+        return existing
+    policy = default_policy(tracker, privacy)
+    conn.execute(
+        """
+        INSERT INTO tracker_policies(tracker, min_seed_hours, target_ratio,
+                                     max_active, allow_partial, keep_for_bonus,
+                                     privacy, enabled, abandon_under_percent,
+                                     abandon_action, notes, updated_at)
+        VALUES (?, ?, ?, NULL, 0, ?, ?, 1, 0, 'keep', ?,
+                strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+        ON CONFLICT(tracker) DO NOTHING
+        """,
+        (
+            policy.tracker,
+            policy.min_seed_hours,
+            policy.target_ratio,
+            1 if policy.keep_for_bonus else 0,
+            policy.privacy,
+            policy.notes,
+        ),
+    )
+    return get_policy(conn, tracker) or policy
+
+
 def get_policy(conn: Any, tracker: str) -> TrackerPolicy | None:
     row = conn.execute(
         "SELECT * FROM tracker_policies WHERE tracker = ?", (tracker,)

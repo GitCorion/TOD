@@ -8,14 +8,17 @@ reproducción y scheduler. Comparten configuración, base de datos y clientes.
 ```text
 catalogo/
 ├── web.py            SPA + API + rutas de reproducción
-├── http.py           /play, /resolve, /sources, /status, /prepare, /lease
+├── http.py           /play, /resolve, /sources, /status, búsqueda al vuelo
 ├── play_service.py   admisión, prepare, preflight y streaming
 ├── resolver.py       local_seed → library → torrent → unavailable
 ├── backend.py        qBittorrent de escritura, admisión y capacidad
 ├── scheduler.py      tareas periódicas internas
 ├── app_settings.py   ajustes tipados, secretos y recarga
+├── attention.py      avisos agregados de configuración, rutas e integraciones
 ├── integrations.py   pruebas de conexión
-├── arr.py            clientes Radarr/Sonarr (solo API)
+├── arr.py            clientes Radarr/Sonarr (lectura y altas puntuales)
+├── arr_mirror.py     espejo Radarr/Sonarr → catálogo
+├── bridge.py         TOD → Radarr/Sonarr tras una descarga
 ├── qbit_sync.py      inventario de qBittorrent en solo lectura
 ├── strm.py           generación de .strm multiversión
 └── web_static/       SPA sin dependencias
@@ -25,10 +28,13 @@ catalogo/
 
 1. Jellyfin lee un `.strm` y llama a `/play?key=...&download=0`.
 2. TOD resuelve la clave: fichero local, biblioteca, debrid o torrent.
-3. Si el torrent ya está preparado, sirve rangos con `206`.
-4. Si está frío, `/play` responde `403` salvo `download=1` explícito.
-5. La app puede llamar a `/prepare` (solo loopback) para iniciar la descarga.
-6. El scheduler sincroniza qBittorrent, mueve completados y mantiene la biblioteca.
+3. Si no hay fuente viva, `/play` busca en Prowlarr/Jackett y guarda los
+   candidatos.
+4. Si el torrent ya está preparado, sirve rangos con `206`.
+5. Si está frío, un `GET` con `Range` autoriza el prepare; un escaneo sin
+   `Range` sigue recibiendo `403`.
+6. El scheduler sincroniza qBittorrent, espeja Radarr/Sonarr, busca fuentes,
+   publica `.strm` y devuelve a *arr lo descargado por TOD.
 
 ## Descubrimiento de trackers
 
@@ -72,6 +78,7 @@ principales:
 | `tracker_policies` | reglas por tracker |
 | `jobs` | cola persistente y scheduler |
 | `settings` | configuración web y secretos |
+| `integration_health` | último estado y fallos consecutivos de cada integración |
 | `events` | auditoría |
 
 ## API principal
@@ -79,6 +86,7 @@ principales:
 | Ruta | Uso |
 |---|---|
 | `/api/overview`, `/api/activity` | panel |
+| `/api/attention`, `/api/attention/check` | avisos de estado y comprobación bajo demanda |
 | `/api/ondemand/*` | catálogo, añadir, descargar |
 | `/api/settings` | leer y guardar configuración |
 | `/api/integrations/{name}/test` | probar conexión |

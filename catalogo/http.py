@@ -17,6 +17,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import threading
 import time
 import urllib.parse
 from contextlib import closing
@@ -41,6 +42,20 @@ from .torrent import DisabledBackend, TorrentBackend
 CHUNK = 256 * 1024
 # Espera máxima cuando Jellyfin arranca un prepare al darle a play.
 AUTO_PREPARE_WAIT = 60.0
+SOURCE_SEARCH_TTL = 300.0
+_SOURCE_SEARCH_LOCK = threading.Lock()
+_SOURCE_SEARCH_AT: dict[str, float] = {}
+_SOURCE_SEARCH_RESULT: dict[str, bool] = {}
+
+
+class _NoProwlarr:
+    """Stub para instalaciones que usan solo Jackett."""
+
+    def indexers(self) -> list[dict]:
+        return []
+
+    def search(self, *args: Any, **kwargs: Any) -> list[dict]:
+        return []
 
 ADMISSION_MESSAGES = {
     "sin_espacio": "No hay espacio suficiente en disco para esta descarga.",
@@ -107,6 +122,92 @@ class CatalogHandler(BaseHTTPRequestHandler):
         if parsed.path != "/lease":
             return self._text(405, "método no permitido", head=False)
         self._serve(head=False)
+
+    @property
+    def config(self) -> Any | None:
+        app = getattr(self, "app", None)
+        return getattr(app, "config", None)
+
+    def _alive_sources(self, key: str) -> int:
+        with closing(connect(self.db_path)) as conn:
+            row = conn.execute(
+                """
+                SELECT COUNT(*) AS n
+                FROM releases r
+                JOIN media_items m ON m.id = r.asset_id
+                WHERE (m.key = ? OR m.media_id = ?)
+                  AND r.health = 'alive'
+                  AND COALESCE(r.seeders, 0) > 0
+                """,
+                (key, key),
+            ).fetchone()
+        return int(row["n"] if row is not None else 0)
+
+    def _search_sources(self, key: str) -> bool:
+        """Busca fuentes al vuelo, una vez por título y ventana de tiempo.
+
+        Permite un catálogo enorme: el `.strm` existe porque hay fuente, y
+        si murió se reintenta en el momento de reproducir.
+        """
+        config = self.config
+        if config is None:
+            return False
+        now = time.monotonic()
+        with _SOURCE_SEARCH_LOCK:
+            last = _SOURCE_SEARCH_AT.get(key)
+            if last is not None and now - last < SOURCE_SEARCH_TTL:
+                return bool(_SOURCE_SEARCH_RESULT.get(key))
+            _SOURCE_SEARCH_AT[key] = now
+            _SOURCE_SEARCH_RESULT[key] = False
+
+        with closing(connect(self.db_path)) as conn:
+            row = conn.execute(
+                "SELECT kind FROM media_items "
+                "WHERE key = ? OR media_id = ? LIMIT 1",
+                (key, key),
+            ).fetchone()
+        if row is None:
+            return False
+        kind = "series" if row["kind"] == "series" else "movie"
+
+        try:
+            from .bulk_sync import sync_sources
+            from .jackett import JackettClient, JackettError
+            from .prowlarr import ProwlarrClient, ProwlarrError
+
+            try:
+                prowlarr = ProwlarrClient.from_config(config)
+            except ProwlarrError:
+                prowlarr = _NoProwlarr()
+            try:
+                jackett = JackettClient.from_config(config)
+            except JackettError:
+                jackett = None
+            report = sync_sources(
+                self.db_path,
+                prowlarr,
+                jackett=jackett,
+                limit=1,
+                delay=0,
+                min_seeders=1,
+                key=key,
+                kind=kind,
+                recheck=True,
+            )
+            found = bool(report.get("accepted"))
+            print(
+                f"source_search key={key} accepted={report.get('accepted', 0)} "
+                f"errors={len(report.get('errors') or [])}",
+                flush=True,
+            )
+        except Exception as exc:
+            print(f"source_search key={key} failed: {str(exc)[:200]}", flush=True)
+            found = False
+
+        with _SOURCE_SEARCH_LOCK:
+            _SOURCE_SEARCH_RESULT[key] = found
+            _SOURCE_SEARCH_AT[key] = time.monotonic()
+        return found
 
     def _serve(self, head: bool) -> None:
         parsed = urllib.parse.urlparse(self.path)
@@ -362,6 +463,24 @@ class CatalogHandler(BaseHTTPRequestHandler):
             if release_id is not None
             else self.resolver.resolve(key)
         )
+        if (
+            parsed.path == "/play"
+            and not head
+            and (download_allowed or self.headers.get("Range"))
+        ):
+            needs_search = (
+                resolution.source == "unavailable"
+                or (
+                    resolution.source == "torrent"
+                    and self._alive_sources(key) == 0
+                )
+            )
+            if needs_search and self._search_sources(key):
+                resolution = (
+                    self.resolver.resolve_release(key, release_id)
+                    if release_id is not None
+                    else self.resolver.resolve(key)
+                )
         if parsed.path == "/play" and not head and self.headers.get("Range"):
             ua = self.headers.get("User-Agent") or ""
             session_id = (
@@ -408,12 +527,15 @@ class CatalogHandler(BaseHTTPRequestHandler):
                         extra_headers={"Retry-After": "5"},
                     )
                 if not download_allowed:
-                    # Jellyfin no llama a /prepare. Si la petición viene de
-                    # una reproducción real (sesión activa con este .strm),
-                    # se autoriza el arranque; un escaneo no tiene sesión.
+                    # Jellyfin no llama a /prepare. Una petición con Range
+                    # es un reproductor pidiendo vídeo, no un escaneo: se
+                    # autoriza el arranque aunque no haya API key de Jellyfin.
+                    # La sesión activa sigue siendo la señal preferente.
                     auto_prepare = self._auto_prepare_allowed(
                         resolution.key, resolution
                     )
+                    if not auto_prepare and self.headers.get("Range"):
+                        auto_prepare = True
                     if not auto_prepare:
                         return self._json(
                             403,
@@ -624,6 +746,25 @@ class CatalogHandler(BaseHTTPRequestHandler):
                     head=head,
                     extra_headers={"Retry-After": "5"},
                 )
+            if errors and all(
+                str(error.get("error") or "").lower() == "capacityerror"
+                or str(error.get("reason") or "") == "max_active"
+                for error in errors
+            ):
+                return self._json(
+                    503,
+                    {
+                        "error": "capacity",
+                        "message": (
+                            "Hay demasiadas descargas activas. "
+                            "Espera o cancela una."
+                        ),
+                        "key": resolution.key,
+                        "attempts": errors[:6],
+                    },
+                    head=head,
+                    extra_headers={"Retry-After": "60"},
+                )
             return self._json(
                 503,
                 {
@@ -670,8 +811,8 @@ class CatalogHandler(BaseHTTPRequestHandler):
             return (
                 tracker_priority(source.get("tracker")),
                 health,
-                int(source.get("size_bytes") or 0),
                 -int(source.get("seeders") or 0),
+                int(source.get("size_bytes") or 0),
                 same_audio,
             )
 

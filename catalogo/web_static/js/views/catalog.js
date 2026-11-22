@@ -1,30 +1,32 @@
 import { api } from '../api.js';
 import { esc, fmtInt, pct, posterUrl } from '../format.js';
-import { downloadStatus, publicationStatus } from '../labels.js';
-import { navigate, updateQuery } from '../router.js';
+import { updateQuery } from '../router.js';
 import { state } from '../store.js';
 import { $, badge, empty, icon, poster, setHeader, skeletonGrid, status } from '../ui.js';
 
 function primaryStatus(item) {
-  if (item.kind === 'series') {
-    const counts = item.download_counts || {};
-    if (counts.descargando) return status('Descargando', 'info');
-    if (counts.pausado) return status('Pausado', 'warn');
-    if (counts.error) return status('Error', 'bad');
-    if (counts.descargado) return status(`${counts.descargado}/${item.episodes} descargados`, 'ok');
-    if (item.library_episodes) return status(`${fmtInt(item.library_episodes)}/${fmtInt(item.episodes)} en biblioteca`, 'ok');
-    if (item.publication === 'pendiente') {
-      return item.alive ? status(`${item.alive} fuentes`, 'info') : status('Sin verificar', 'warn');
+  if (item.published) {
+    if (item.kind === 'series' && item.episodes) {
+      return status(`${fmtInt(item.published_episodes || 0)}/${fmtInt(item.episodes)} en Jellyfin`, 'ok');
     }
-    return status('Sin fuente', 'muted');
+    return status('En Jellyfin', 'ok');
   }
   if (item.download === 'descargando') return status('Descargando', 'info');
   if (item.download === 'pausado') return status('Pausado', 'warn');
   if (item.download === 'error') return status('Error', 'bad');
   if (item.downloaded) return status('Descargado', 'ok');
-  if (item.library_added) return status('En biblioteca', 'ok');
-  if (item.publication === 'pendiente') {
-    return item.alive ? status(`${item.alive} fuentes`, 'info') : status('Sin verificar', 'warn');
+  if (item.library_added) {
+    if (item.kind === 'series' && item.episodes) {
+      return status(`${fmtInt(item.library_episodes || 0)}/${fmtInt(item.episodes)} en Radarr/Sonarr`, 'info');
+    }
+    return item.alive
+      ? status('En Radarr/Sonarr', 'info')
+      : status('En Radarr/Sonarr · sin fuente', 'warn');
+  }
+  if (item.publication === 'pendiente' || item.alive) {
+    return item.alive
+      ? status(`${item.alive} fuentes`, 'info')
+      : status('Sin verificar', 'warn');
   }
   return status('Sin fuente', 'muted');
 }
@@ -34,7 +36,7 @@ function card(item, selected) {
   const href = isSeries ? `#/series/${item.tmdb}` : `#/title/${item.id}`;
   const key = isSeries ? `series:${item.tmdb}` : item.key;
   const meta = isSeries
-    ? `${item.seasons?.length || 0} ${(item.seasons?.length || 0) === 1 ? 'temporada' : 'temporadas'}, ${fmtInt(item.episodes)} en catálogo`
+    ? `${item.seasons?.length || 0} ${(item.seasons?.length || 0) === 1 ? 'temporada' : 'temporadas'}, ${fmtInt(item.episodes)} episodios`
     : 'Película';
   const total = isSeries ? Number(item.episodes || 0) : 1;
   const inLibrary = isSeries
@@ -47,7 +49,7 @@ function card(item, selected) {
       <input type="checkbox" class="check" data-action="catalog-select" data-key="${esc(key)}" data-kind="${esc(item.kind)}" data-tmdb="${item.tmdb || ''}" ${selected ? 'checked' : ''} aria-label="Seleccionar ${esc(item.title || '')}">
       ${poster(item.poster_path, item.title)}
     </div>
-    <div class="poster-progress ${progressClass}" title="${fmtInt(inLibrary)} de ${fmtInt(total)} en biblioteca"><i style="width:${Math.round(ratio * 100)}%"></i></div>
+    <div class="poster-progress ${progressClass}" title="${fmtInt(inLibrary)} de ${fmtInt(total)} en Radarr/Sonarr"><i style="width:${Math.round(ratio * 100)}%"></i></div>
     <div class="meta">
       <strong>${esc(item.title || '—')}</strong>
       <small>${esc(item.year || '—')}</small>
@@ -62,7 +64,7 @@ function row(item, selected) {
   const href = isSeries ? `#/series/${item.tmdb}` : `#/title/${item.id}`;
   const key = isSeries ? `series:${item.tmdb}` : item.key;
   const meta = isSeries
-    ? `${item.year || '—'}, ${item.seasons?.length || 0} ${(item.seasons?.length || 0) === 1 ? 'temporada' : 'temporadas'}, ${fmtInt(item.episodes)} en catálogo`
+    ? `${item.year || '—'}, ${item.seasons?.length || 0} ${(item.seasons?.length || 0) === 1 ? 'temporada' : 'temporadas'}, ${fmtInt(item.episodes)} episodios`
     : `${item.year || '—'}, Película`;
   return `<div class="media-row ${selected ? 'selected' : ''}" data-href="${href}" tabindex="0" role="link">
     <input type="checkbox" data-action="catalog-select" data-key="${esc(key)}" data-kind="${esc(item.kind)}" data-tmdb="${item.tmdb || ''}" ${selected ? 'checked' : ''} aria-label="Seleccionar ${esc(item.title || '')}">
@@ -82,20 +84,22 @@ export async function renderCatalog({ query, signal }) {
   const filters = {
     q: query.get('q') || '',
     kind: query.get('kind') || '',
-    publication: query.get('publication') || 'publicado',
+    publication: query.get('publication') || '',
     download: query.get('download') || '',
+    incomplete: query.get('incomplete') === '1',
     sort: query.get('sort') || 'popularity',
     view: query.get('view') || 'grid',
     page: Math.max(1, Number(query.get('page')) || 1),
   };
   state.filters = filters;
-  setHeader('Catálogo', 'Biblioteca');
+  setHeader('Biblioteca', 'Contenido');
 
   const params = new URLSearchParams({
     q: filters.q,
     kind: filters.kind,
     publication: filters.publication,
     download: filters.download,
+    incomplete: filters.incomplete ? '1' : '',
     sort: filters.sort,
     group: 'series',
     facets: '1',
@@ -109,18 +113,19 @@ export async function renderCatalog({ query, signal }) {
   const rows = data.items.map((item) => row(item, selected(item.kind === 'series' ? `series:${item.tmdb}` : item.key))).join('');
   const totalGroups = data.total || 0;
 
-  const pubTabs = [
-    ['publicado', 'En biblioteca', facets.publication?.publicado || 0],
-    ['pendiente', 'Por añadir', facets.publication?.pendiente || 0],
-    ['sin_fuente', 'Sin fuente', facets.publication?.sin_fuente || 0],
-  ];
   const kindChips = [
-    ['', 'Todo', (facets.kind?.movie || 0) + (facets.kind?.series || 0)],
+    ['', 'Todos', (facets.kind?.movie || 0) + (facets.kind?.series || 0)],
     ['movie', 'Películas', facets.kind?.movie || 0],
     ['series', 'Series', facets.kind?.series || 0],
   ];
+  const publicationChips = [
+    ['', 'Cualquier estado', data.total || 0],
+    ['publicado', 'En Jellyfin', facets.publication?.publicado || 0],
+    ['pendiente', 'Con fuente', facets.publication?.pendiente || 0],
+    ['sin_fuente', 'Sin fuente', facets.publication?.sin_fuente || 0],
+  ];
   const downloadChips = [
-    ['', 'Cualquier estado', 0],
+    ['', 'Cualquier descarga', 0],
     ['descargando', 'Descargando', facets.download?.descargando || 0],
     ['descargado', 'Descargado', facets.download?.descargado || 0],
     ['pausado', 'Pausado', facets.download?.pausado || 0],
@@ -128,27 +133,22 @@ export async function renderCatalog({ query, signal }) {
     ['sin_descarga', 'Sin descarga', facets.download?.sin_descarga || 0],
   ];
 
-  const clearButton = (filters.q || filters.kind || filters.download)
+  const clearButton = (filters.q || filters.kind || filters.download || filters.publication || filters.incomplete)
     ? `<button class="btn btn-sm btn-ghost" data-action="catalog-clear">${icon('close', 'sm')} Limpiar filtros</button>`
     : '';
-
-  const pendingAction = ['pendiente', 'sin_fuente'].includes(filters.publication)
-    ? `<div class="row section">
-        <button class="btn btn-primary" data-action="sync-pending-open" data-publication="${filters.publication}">
-          ${icon('search')} Buscar fuentes en todas
-        </button>
-      </div>`
+  const tmdbButton = filters.q
+    ? `<a class="btn btn-sm" href="#/add?q=${encodeURIComponent(filters.q)}&kind=${filters.kind === 'series' ? 'series' : 'movie'}">${icon('search', 'sm')} Buscar «${esc(filters.q)}» en TMDB</a>`
     : '';
 
   $('#view').innerHTML = `
     <div class="toolbar">
       <label class="field grow">
         <span>Buscar</span>
-        <input data-input="catalog-q" value="${esc(filters.q)}" placeholder="Título, serie o año" autocomplete="off" aria-label="Buscar en el catálogo">
+        <input data-input="catalog-q" value="${esc(filters.q)}" placeholder="Título, serie o año" autocomplete="off" aria-label="Buscar en la biblioteca">
       </label>
       <label class="field">
         <span>Orden</span>
-        <select data-change="catalog-sort" aria-label="Ordenar catálogo">
+        <select data-change="catalog-sort" aria-label="Ordenar biblioteca">
           <option value="popularity" ${filters.sort === 'popularity' ? 'selected' : ''}>Popularidad</option>
           <option value="title" ${filters.sort === 'title' ? 'selected' : ''}>Título</option>
           <option value="year" ${filters.sort === 'year' ? 'selected' : ''}>Año</option>
@@ -164,16 +164,17 @@ export async function renderCatalog({ query, signal }) {
 
     <div class="panel section" style="padding:12px 14px">
       <div class="row between">
-        <div class="chips" role="tablist" aria-label="Estado de publicación">
-          ${pubTabs.map(([value, label, count]) => `<button class="chip ${filters.publication === value ? 'active' : ''}" data-action="catalog-filter" data-key="publication" data-value="${value}" role="tab" aria-selected="${filters.publication === value}">${esc(label)} <b>${fmtInt(count)}</b></button>`).join('')}
+        <div class="chips">
+          ${kindChips.map(([value, label, count]) => `<button class="chip ${filters.kind === value ? 'active' : ''}" data-action="catalog-filter" data-key="kind" data-value="${value}">${esc(label)} <b>${fmtInt(count)}</b></button>`).join('')}
+          <button class="chip" data-action="catalog-select-all">${icon('check', 'sm')} Seleccionar todo</button>
         </div>
-        <button class="chip only-mobile ${(filters.kind || filters.download) ? 'active' : ''}" data-action="toggle-filters">
-          ${icon('filter', 'sm')} Filtros${(filters.kind || filters.download) ? `, ${(filters.kind ? 1 : 0) + (filters.download ? 1 : 0)}` : ''}
+        <button class="chip only-mobile ${filters.download || filters.publication ? 'active' : ''}" data-action="toggle-filters">
+          ${icon('filter', 'sm')} Filtros${filters.download || filters.publication ? ', 1' : ''}
         </button>
       </div>
       <div class="filter-details ${state.filtersOpen ? 'open' : ''}">
-        <div class="chips">
-          ${kindChips.map(([value, label, count]) => `<button class="chip ${filters.kind === value ? 'active' : ''}" data-action="catalog-filter" data-key="kind" data-value="${value}">${esc(label)} <b>${fmtInt(count)}</b></button>`).join('')}
+        <div class="chips" style="margin-bottom:8px">
+          ${publicationChips.map(([value, label, count]) => `<button class="chip ${filters.publication === value ? 'active' : ''}" data-action="catalog-filter" data-key="publication" data-value="${value}">${esc(label)} <b>${fmtInt(count)}</b></button>`).join('')}
         </div>
         <div class="chips">
           ${downloadChips.map(([value, label, count]) => `<button class="chip ${filters.download === value ? 'active' : ''}" data-action="catalog-filter" data-key="download" data-value="${value}">${esc(label)}${count ? ` <b>${fmtInt(count)}</b>` : ''}</button>`).join('')}
@@ -182,17 +183,15 @@ export async function renderCatalog({ query, signal }) {
     </div>
 
     <div class="row between section" style="margin-bottom:10px">
-      <div class="tiny faint">${fmtInt(totalGroups)} ${totalGroups === 1 ? (filters.kind === 'movie' ? 'película' : filters.kind === 'series' ? 'serie' : 'título') : (filters.kind === 'movie' ? 'películas' : filters.kind === 'series' ? 'series' : 'títulos')}, página ${data.page} de ${data.pages}${filters.kind === 'movie' ? '' : `, ${fmtInt(data.episodes_library_total || 0)} episodios en biblioteca`}</div>
+      <div class="tiny faint">${fmtInt(totalGroups)} ${totalGroups === 1 ? (filters.kind === 'movie' ? 'película' : filters.kind === 'series' ? 'serie' : 'título') : (filters.kind === 'movie' ? 'películas' : filters.kind === 'series' ? 'series' : 'títulos')}, página ${data.page} de ${data.pages}${filters.kind === 'movie' ? '' : `, ${fmtInt(data.episodes_library_total || 0)} episodios en Radarr/Sonarr`}</div>
       <div class="tiny faint">${filters.view === 'grid' ? 'Carteles' : 'Lista'}, 60 por página</div>
     </div>
-
-    ${pendingAction}
 
     ${data.items.length
       ? filters.view === 'grid'
         ? `<div class="poster-grid">${cards}</div>`
         : `<div class="panel flush"><div class="media-rows">${rows}</div></div>`
-      : `<div class="panel pad">${empty('Sin resultados', 'Prueba otro estado, otro tipo o limpia los filtros.', clearButton)}</div>`}
+      : `<div class="panel pad">${empty('Sin resultados', 'Prueba otro estado, otro tipo o busca el título en TMDB.', `<div class="row">${clearButton}${tmdbButton}</div>`)}</div>`}
 
     <div class="row between section">
       <span class="tiny faint">${fmtInt(totalGroups)} resultados</span>

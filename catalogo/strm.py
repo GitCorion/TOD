@@ -13,6 +13,7 @@ from __future__ import annotations
 import re
 from contextlib import closing
 from pathlib import Path
+from xml.sax.saxutils import escape as xml_escape
 
 from .db import connect
 from .health import publishable
@@ -79,6 +80,41 @@ def write_strm(path: Path, content: str, *, root: Path) -> None:
         path.chmod(path.stat().st_mode | 0o060)
     except OSError:
         pass
+
+
+def _nfo(asset: dict) -> tuple[Path, str] | None:
+    title = xml_escape(str(asset.get("title") or ""))
+    year = asset.get("year")
+    tmdb = asset.get("tmdb")
+    if asset["kind"] == "movie":
+        default = strm_path(Path("."), asset)
+        path = default.with_suffix(".nfo")
+        body = [
+            '<?xml version="1.0" encoding="utf-8" standalone="yes"?>',
+            "<movie>",
+            f"  <title>{title}</title>",
+        ]
+        if year:
+            body.append(f"  <year>{int(year)}</year>")
+        if tmdb:
+            body.append(f"  <tmdbid>{int(tmdb)}</tmdbid>")
+        body.append("</movie>")
+        return path, "\n".join(body) + "\n"
+    default = strm_path(Path("."), asset)
+    path = default.parent.parent / "tvshow.nfo"
+    body = [
+        '<?xml version="1.0" encoding="utf-8" standalone="yes"?>',
+        "<tvshow>",
+        f"  <title>{title}</title>",
+    ]
+    if year:
+        body.append(f"  <year>{int(year)}</year>")
+    if tmdb:
+        body.append(f"  <tmdbid>{int(tmdb)}</tmdbid>")
+    if asset.get("tvdb_id"):
+        body.append(f"  <tvdbid>{int(asset['tvdb_id'])}</tvdbid>")
+    body.append("</tvshow>")
+    return path, "\n".join(body) + "\n"
 
 
 def _quality(value: str | None) -> str:
@@ -195,7 +231,6 @@ def export_strm(
     base_url: str = "http://127.0.0.1:8773",
     limit: int | None = None,
     key: str | None = None,
-    include_unavailable: bool = False,
     require_health: bool = False,
     min_seeders: int = 1,
     versions_filter: str = "available",
@@ -212,17 +247,40 @@ def export_strm(
     if prune and (key or limit):
         raise ValueError("--prune solo se permite en una exportación completa")
     out = Path(out_dir)
+
+    def ensure_nfo(asset: dict) -> None:
+        data = _nfo(asset)
+        if data is None:
+            return
+        relative, content = data
+        path = out / relative
+        if path in nfo_done:
+            return
+        nfo_done.add(path)
+        # Radarr/Sonarr ya pueden haber escrito un NFO completo. No se
+        # sobrescribe: el de TOD es solo un respaldo para emparejar.
+        if path.is_file():
+            return
+        write_strm(path, content, root=out)
+
     written = 0
     unchanged = 0
     skipped = 0
     versions_written = 0
     pruned = 0
+    written_paths: list[str] = []
+    nfo_done: set[Path] = set()
     expected: set[Path] = set()
     skipped_reasons: dict[str, int] = {}
     library = build_library_index(radarr, sonarr) if skip_library else None
     conditions = [
         """(
             EXISTS (SELECT 1 FROM releases r WHERE r.asset_id = a.id)
+            OR EXISTS (
+                SELECT 1 FROM torrent_files f
+                WHERE f.asset_id = a.id
+                  AND f.state IN ('ready', 'archived', 'seeding', 'complete')
+            )
             OR EXISTS (
                 SELECT 1 FROM library_files lf
                 WHERE lf.kind = a.kind AND lf.tmdb = a.tmdb
@@ -254,6 +312,17 @@ def export_strm(
 
     with closing(connect(db_path)) as conn:
         available_ids = _available_release_ids(conn)
+        local_assets = {
+            int(row["asset_id"])
+            for row in conn.execute(
+                """
+                SELECT DISTINCT asset_id FROM torrent_files
+                WHERE asset_id IS NOT NULL
+                  AND state IN ('ready', 'archived', 'seeding', 'complete')
+                  AND (local_path IS NOT NULL OR library_path IS NOT NULL)
+                """
+            ).fetchall()
+        }
         assets = conn.execute(assets_query, params).fetchall()
         if existing_only:
             assets = [
@@ -317,34 +386,40 @@ def export_strm(
             versions_filter="all",
             min_seeders=min_seeders,
         )
-        if require_health:
-            playable = [
-                (release, label) for release, label in playable
-                if release["health"] == "alive"
-                or int(release["id"]) in available_ids
-            ]
+        # Un .strm solo se publica si hay algo que reproducir de verdad:
+        # fichero local/archivado, debrid cacheado o un release VIVO con
+        # seeds. Los releases unknown/stale/dead no crean entradas muertas
+        # en Jellyfin; el catálogo conserva el título para reintentarlo.
         playable = [
             (release, label) for release, label in playable
-            if int(release["seeders"] or 0) >= min_seeders
-            or int(release["id"]) in available_ids
+            if int(release["id"]) in available_ids
             or (release["debrid_cached"] and release["debrid_link"])
+            or (
+                release["health"] == "alive"
+                and int(release["seeders"] or 0) >= min_seeders
+            )
         ]
         if not playable:
-            if not library_available.get(int(asset["id"]), False):
+            if (
+                not library_available.get(int(asset["id"]), False)
+                and int(asset["id"]) not in local_assets
+            ):
                 skipped += 1
                 reason = "no_playable" if releases else "no_releases"
                 skipped_reasons[reason] = skipped_reasons.get(reason, 0) + 1
                 continue
-            # Está en Radarr/Sonarr aunque el catálogo no tenga un release:
-            # el resolver sirve la copia de la biblioteca oficial.
+            # Hay una copia local o de biblioteca aunque no haya release:
+            # el resolver la sirve directamente.
             default = strm_path(out, asset)
             expected.add(default)
             content = play_url(asset["key"], base_url) + "\n"
             if not default.exists() or default.read_text(encoding="utf-8") != content:
                 write_strm(default, content, root=out)
                 written += 1
+                written_paths.append(str(default))
             else:
                 unchanged += 1
+            ensure_nfo(asset)
             continue
 
         versions = _versions(
@@ -361,8 +436,10 @@ def export_strm(
         if not default.exists() or default.read_text(encoding="utf-8") != content:
             write_strm(default, content, root=out)
             written += 1
+            written_paths.append(str(default))
         else:
             unchanged += 1
+        ensure_nfo(asset)
 
         if len(versions) > 1:
             for release, label in versions:
@@ -375,6 +452,7 @@ def export_strm(
                 if not path.exists() or path.read_text(encoding="utf-8") != content:
                     write_strm(path, content, root=out)
                     versions_written += 1
+                    written_paths.append(str(path))
 
     if prune:
         for path in sorted(out.rglob("*.strm")):
@@ -392,6 +470,7 @@ def export_strm(
         "assets": len(assets),
         "written": written,
         "versions_written": versions_written,
+        "written_paths": written_paths,
         "unchanged": unchanged,
         "skipped": skipped,
         "skipped_reasons": skipped_reasons,

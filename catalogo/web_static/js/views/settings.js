@@ -1,4 +1,5 @@
 import { api } from '../api.js';
+import { attentionSummary } from '../attention.js';
 import { esc, fmtBytes, fmtDate } from '../format.js';
 import { state } from '../store.js';
 import { $, badge, icon, setHeader, status } from '../ui.js';
@@ -12,6 +13,23 @@ const INTEGRATIONS = [
   { name: 'sonarr', label: 'Sonarr (solo lectura)', prefix: 'sonarr' },
   { name: 'tmdb', label: 'TMDB', prefix: 'tmdb' },
 ];
+
+function attentionFor(attention, group) {
+  return (attention?.items || []).filter((item) => item.group === group && item.severity !== 'info');
+}
+
+function sectionDot(attention, group) {
+  const items = attentionFor(attention, group);
+  if (!items.length) return '';
+  const text = items.length === 1 ? 'aviso pendiente' : 'avisos pendientes';
+  return `<span class="settings-dot" title="${items.length} ${text}" aria-label="${items.length} ${text}"></span>`;
+}
+
+function integrationDot(attention, name) {
+  const item = (attention?.items || []).find((entry) => entry.key === `integration:${name}`);
+  if (!item) return '';
+  return `<span class="settings-dot" title="${esc(item.title)}" aria-label="${esc(item.title)}"></span>`;
+}
 
 function sourceBadge(source) {
   if (source === 'db') return badge('web', 'ok');
@@ -57,10 +75,10 @@ function field(item) {
   </div>`;
 }
 
-function integrationCard(items, meta, paths) {
-  return `<div class="panel">
+function integrationCard(items, meta, paths, attention) {
+  return `<div class="panel" id="settings-int-${esc(meta.name)}">
     <div class="panel-head">
-      <h2>${esc(meta.label)}</h2>
+      <h2>${integrationDot(attention, meta.name)}${esc(meta.label)}</h2>
       <div class="row">
         <button class="btn btn-sm btn-ghost" data-action="settings-test" data-name="${meta.name}">Probar</button>
       </div>
@@ -127,20 +145,36 @@ function schedulerRow(task) {
   </tr>`;
 }
 
-function diskLine(item) {
+const CREATABLE_PATHS = new Set([
+  'catalog_library', 'downloads_root', 'seed_root', 'ondemand_save_path',
+]);
+
+function diskLine(item, key) {
   if (!item) return '';
-  const label = item.exists
-    ? `${item.exists ? 'existe' : 'no existe'}${item.is_dir ? ', directorio' : ''}${item.writable ? ', escribible' : ', sin escritura'} · ${fmtBytes(item.free)} libres`
-    : `no existe; se creará dentro de ${esc(item.checked_parent || '—')} · ${fmtBytes(item.free || 0)} libres`;
-  return `<span class="tiny ${item.exists && item.writable ? 'ok-text' : 'warn-text'}">${esc(label)}</span>`;
+  if (item.exists) {
+    const state = item.is_dir
+      ? (item.writable ? 'Directorio, escribible' : 'Directorio, sin escritura')
+      : 'No es un directorio';
+    return `<span class="tiny ${item.writable ? 'ok-text' : 'warn-text'}">${esc(state)} · ${fmtBytes(item.free)} libres</span>`;
+  }
+  const parent = item.checked_parent || '—';
+  if (!item.writable) {
+    return `<span class="tiny warn-text">No existe y la carpeta padre ${esc(parent)} no permite escribir.</span>`;
+  }
+  if (CREATABLE_PATHS.has(key)) {
+    return `<span class="tiny warn-text">No existe; se creará dentro de ${esc(parent)} · ${fmtBytes(item.free || 0)} libres.</span>`;
+  }
+  return `<span class="tiny warn-text">No existe. La carpeta padre ${esc(parent)} existe (${fmtBytes(item.free || 0)} libres), pero esta ruta no. Créala o corrige la ruta.</span>`;
 }
 
-export async function renderSettings({ signal } = {}) {
-  const [data, schedule] = await Promise.all([
+export async function renderSettings({ signal, query } = {}) {
+  const [data, schedule, attention] = await Promise.all([
     api('/api/settings', { signal }),
     api('/api/scheduler', { signal }),
+    api('/api/attention', { signal }).catch(() => null),
   ]);
-  setHeader('Configuración', 'TOD');
+  state.attention = attention;
+  setHeader('Configuración', 'Sistema');
   const items = data.settings || [];
   const integrationKeys = new Set(INTEGRATIONS.flatMap((meta) =>
     items.filter((item) => item.key.startsWith(`${meta.prefix}_`)).map((item) => item.key)));
@@ -153,10 +187,11 @@ export async function renderSettings({ signal } = {}) {
     <div class="panel pad section">
       <div class="row between" style="align-items:flex-start">
         <div style="flex:1;min-width:280px">
-          <strong>Un proceso, una configuración</strong>
-          <p class="muted tiny" style="margin:4px 0 0">Web, API, reproducción y tareas programadas comparten proceso, base de datos y configuración. Las integraciones se conectan desde aquí. Los cambios se aplican sin reiniciar salvo los marcados como «requiere reinicio».</p>
+          <strong>Integraciones y biblioteca</strong>
+          <p class="muted tiny" style="margin:4px 0 0">Conecta qBittorrent, Prowlarr/Jackett y Jellyfin. Radarr/Sonarr se espejan automáticamente. Los cambios se aplican al guardar; la URL de reproducción requiere reinicio.</p>
         </div>
         <div class="row">
+          <a href="#/system" title="Ver avisos en Estado" style="text-decoration:none">${attentionSummary(attention)}</a>
           <span id="settingsDirty" class="status warn ${state.settingsDirty ? '' : 'hidden'}">Cambios sin guardar</span>
           <button class="btn btn-primary" data-action="settings-save">${icon('check', 'sm')} Guardar configuración</button>
         </div>
@@ -172,22 +207,22 @@ export async function renderSettings({ signal } = {}) {
     </div>
 
     <div class="section" id="settings-integrations">
-      <div class="panel-head"><h2>Integraciones</h2><span class="right tiny faint settings-hint">Prowlarr, Jackett, qBittorrent, Jellyfin, Radarr/Sonarr</span></div>
+      <div class="panel-head"><h2>${sectionDot(attention, 'integraciones')}Integraciones</h2><span class="right tiny faint settings-hint">Prowlarr, Jackett, qBittorrent, Jellyfin, Radarr/Sonarr</span></div>
       <div class="settings-grid">
         ${INTEGRATIONS.map((meta) => integrationCard(
-          items.filter((item) => item.key.startsWith(`${meta.prefix}_`)), meta, data.paths,
+          items.filter((item) => item.key.startsWith(`${meta.prefix}_`)), meta, data.paths, attention,
         )).join('')}
-        ${otherIntegrations.length ? integrationCard(otherIntegrations, { name: 'otros', label: 'Otros servicios' }, data.paths) : ''}
+        ${otherIntegrations.length ? integrationCard(otherIntegrations, { name: 'otros', label: 'Otros servicios' }, data.paths, attention) : ''}
       </div>
     </div>
 
     <div class="grid grid-2 section" id="settings-directories">
       <div class="panel">
-        <div class="panel-head"><h2>Directorios</h2>
+        <div class="panel-head"><h2>${sectionDot(attention, 'directorios')}Directorios</h2>
           <button class="btn btn-sm btn-ghost" data-action="settings-test" data-name="directories">Comprobar todo</button>
         </div>
         <div class="panel-body">
-          ${dirs.map((item) => `${field(item)}${diskLine(data.paths?.[item.key])}`).join('')}
+          ${dirs.map((item) => `${field(item)}${diskLine(data.paths?.[item.key], item.key)}`).join('')}
           <span class="tiny faint" data-integration-result="directories"></span>
         </div>
       </div>
@@ -198,12 +233,12 @@ export async function renderSettings({ signal } = {}) {
     </div>
 
     <div class="panel section" id="settings-security">
-      <div class="panel-head"><h2>Seguridad</h2></div>
+      <div class="panel-head"><h2>${sectionDot(attention, 'seguridad')}Seguridad</h2></div>
       <div class="panel-body">${security.map(field).join('')}</div>
     </div>
 
     <div class="panel flush section" id="settings-scheduler">
-      <div class="panel-head"><h2>Tareas programadas</h2><span class="right tiny faint">${schedule.items?.length || 0} tareas</span></div>
+      <div class="panel-head"><h2>${sectionDot(attention, 'tareas')}Tareas programadas</h2><span class="right tiny faint">${schedule.items?.length || 0} tareas</span></div>
       <div class="table-wrap">
         <table class="table--stack">
           <thead><tr><th>Tarea</th><th>Activa</th><th>Cadencia</th><th>Próxima</th><th>Última</th><th></th></tr></thead>
@@ -227,5 +262,28 @@ export async function renderSettings({ signal } = {}) {
     };
     document.addEventListener('input', state.settingsDirtyHandler);
     document.addEventListener('change', state.settingsDirtyHandler);
+  }
+
+  const sections = {
+    integraciones: 'settings-integrations',
+    directorios: 'settings-directories',
+    reproduccion: 'settings-playback',
+    seguridad: 'settings-security',
+    tareas: 'settings-scheduler',
+  };
+  const target = sections[query?.get('section')];
+  if (target) {
+    requestAnimationFrame(() => {
+      document.getElementById(target)?.scrollIntoView({
+        behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth',
+        block: 'start',
+      });
+      const focus = query.get('focus');
+      if (!focus) return;
+      const input = document.querySelector(`[data-setting="${CSS.escape(focus)}"]`);
+      if (!input) return;
+      input.closest('.settings-item')?.classList.add('attention-focus');
+      input.focus({ preventScroll: true });
+    });
   }
 }

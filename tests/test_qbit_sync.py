@@ -3,7 +3,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from catalogo.db import init_db
-from catalogo.qbit_sync import radarr_index, sonarr_index, sync
+from catalogo.qbit_sync import _storage_for, radarr_index, sonarr_index, sync
 
 MIGRATIONS = Path(__file__).resolve().parents[1] / "migrations"
 NOW = datetime(2026, 11, 18, 12, 0, tzinfo=timezone.utc)
@@ -123,12 +123,47 @@ def seed_db(tmp_path):
     return db, asset_id
 
 
+def test_storage_accepts_separate_archive_roots():
+    roots = ("/mnt/fichier/Peliculas", "/mnt/fichier/Series")
+    assert _storage_for("/mnt/fichier/Peliculas/x.mkv", roots) == "1FICHIER"
+    assert _storage_for("/mnt/fichier/Series/x.mkv", roots) == "1FICHIER"
+    assert _storage_for("/mnt/descargas/ondemand/x.mkv", roots) == "LOCAL_DISK"
+    assert _storage_for("/otro/x.mkv", roots) == "NONE"
+
+
 def test_indexes(tmp_path):
     radarr = FakeRadarrAPI()
     sonarr = FakeSonarrAPI()
     assert radarr_index(radarr)["comp1"]["tmdb"] == 100
     assert sonarr_index(sonarr)["ser1"][0]["tmdb"] == 200
     assert sonarr_index(sonarr)["ser1"][0]["tvdb"] == 555
+
+
+class LockProbeQbit(FakeQbit):
+    """Comprueba que `files()` se llama sin una transacción de escritura abierta."""
+
+    db = None
+
+    def files(self, info_hash):
+        conn = sqlite3.connect(self.db, timeout=0.2)
+        try:
+            conn.execute("BEGIN IMMEDIATE")
+            conn.rollback()
+        finally:
+            conn.close()
+        return super().files(info_hash)
+
+
+def test_sync_does_not_hold_write_lock_during_qbit_calls(tmp_path):
+    db, _ = seed_db(tmp_path)
+    client = LockProbeQbit()
+    client.db = db
+    report = sync(
+        db, client, radarr=FakeRadarrAPI(), sonarr=FakeSonarrAPI(),
+        dry_run=False, check_exists=False, now=NOW,
+    )
+    assert report.errors == []
+    assert set(client.files_calls) == {"cat1", "comp1"}
 
 
 def test_sync_read_only_and_dedup(tmp_path):

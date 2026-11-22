@@ -81,6 +81,104 @@ def test_catalog_groups_series_and_keeps_counts(tmp_path):
     assert data["facets"]["kind"] == {"movie": 3, "series": 1}
 
 
+def test_specials_do_not_mark_series_incomplete(tmp_path):
+    db = _seed(tmp_path)
+    with sqlite3.connect(db) as conn:
+        conn.execute(
+            "INSERT INTO media_items(key, media_id, kind, tmdb, title, year, "
+            "season, episode, popularity, library_added) "
+            "VALUES('series:tmdb:43:0:1', 'series:tmdb:43:0:1', 'series', 43, "
+            "'Serie con especiales', 2021, 0, 1, 1, 1)"
+        )
+        conn.commit()
+    data = ondemand.catalog(
+        db, _config(tmp_path, db), group="series", per_page=20, incomplete=True
+    )
+    assert 43 not in [item.get("tmdb") for item in data["items"]]
+
+
+def test_incomplete_library_filter(tmp_path):
+    db = _seed(tmp_path)
+    with sqlite3.connect(db) as conn:
+        conn.execute(
+            "UPDATE media_items SET library_added=1 "
+            "WHERE key IN ('movie:tmdb:1', 'movie:tmdb:2')"
+        )
+        conn.execute(
+            "INSERT INTO releases(asset_id, tracker, title, health) "
+            "SELECT id, 'test', 'Alien 3', 'alive' FROM media_items "
+            "WHERE key='movie:tmdb:2'"
+        )
+        conn.commit()
+    data = ondemand.catalog(
+        db, _config(tmp_path, db), group="movie", per_page=10, incomplete=True
+    )
+    titles = [item["title"] for item in data["items"]]
+    assert "Los Valientes" in titles
+    assert "Alien 3" not in titles
+    assert data["facets"]["incomplete"] == 1
+
+
+def test_published_title_is_not_in_arr_by_default(tmp_path):
+    db = _seed(tmp_path)
+    config = _config(tmp_path, db)
+    original = ondemand.strm_inventory.is_key_published
+    ondemand.strm_inventory.is_key_published = lambda item, keys: True
+    try:
+        data = ondemand.catalog(db, config, group="movie", per_page=10)
+    finally:
+        ondemand.strm_inventory.is_key_published = original
+    item = next(
+        entry for entry in data["items"] if entry["title"] == "Los Valientes"
+    )
+    assert item["published"] is True
+    assert item["library_added"] is False
+    assert item["publication"] == "publicado"
+
+
+def test_arr_membership_is_not_publication(tmp_path):
+    db = _seed(tmp_path)
+    with sqlite3.connect(db) as conn:
+        conn.execute(
+            "UPDATE media_items SET library_added=1, library_source='radarr' "
+            "WHERE key='movie:tmdb:1'"
+        )
+        conn.commit()
+    data = ondemand.catalog(
+        db, _config(tmp_path, db), group="movie", per_page=10
+    )
+    item = next(
+        entry for entry in data["items"] if entry["title"] == "Los Valientes"
+    )
+    assert item["library_added"] is True
+    assert item["published"] is False
+    assert item["publication"] == "sin_fuente"
+
+
+def test_downloaded_without_release_is_pending(tmp_path):
+    db = _seed(tmp_path)
+    with sqlite3.connect(db) as conn:
+        asset_id = conn.execute(
+            "SELECT id FROM media_items WHERE key='movie:tmdb:1'"
+        ).fetchone()[0]
+        conn.execute(
+            "INSERT INTO torrent_files(asset_id, rel_path, storage_location, state) "
+            "VALUES(?, 'Los Valientes.mkv', 'LOCAL_DISK', 'ready')",
+            (asset_id,),
+        )
+        conn.commit()
+    config = _config(tmp_path, db)
+    pending = ondemand.catalog(
+        db, config, group="movie", per_page=10, publication="pendiente"
+    )
+    assert "Los Valientes" in [item["title"] for item in pending["items"]]
+
+    no_source = ondemand.catalog(
+        db, config, group="movie", per_page=10, publication="sin_fuente"
+    )
+    assert "Los Valientes" not in [item["title"] for item in no_source["items"]]
+
+
 def test_catalog_handles_series_without_tmdb(tmp_path):
     db = _seed(tmp_path)
     with sqlite3.connect(db) as conn:
@@ -225,8 +323,11 @@ def test_series_detail_merges_tmdb_episodes(tmp_path):
         "missing_episodes": 1,
         "published": 0,
         "library": 0,
+        "monitored": 0,
+        "covered": 0,
         "downloaded": 0,
         "downloading": 0,
+        "incomplete": 0,
         "seasons": 2,
     }
     episode = detail["seasons"][0]["episodes"][0]
@@ -246,7 +347,7 @@ def test_series_detail_merges_tmdb_episodes(tmp_path):
     assert stored == ("Piloto", "Sinopsis piloto")
 
 
-def test_library_membership_does_not_require_strm(tmp_path):
+def test_manual_request_does_not_fake_arr_membership(tmp_path):
     db = _seed(tmp_path)
     config = _config(tmp_path, db)
     result = admin.set_library(
@@ -254,11 +355,14 @@ def test_library_membership_does_not_require_strm(tmp_path):
     )
     assert result["titles"] == 2
     detail = ondemand.series_detail(db, config, 42)
-    assert detail["totals"]["library"] == 2
+    assert detail["totals"]["library"] == 0
+    assert detail["totals"]["monitored"] == 2
+    assert detail["totals"]["covered"] == 2
     assert detail["totals"]["published"] == 0
     season = detail["seasons"][0]
-    assert season["library"] == 2
-    assert all(episode["library_added"] for episode in season["episodes"])
+    assert season["library"] == 0
+    assert season["monitored"] == 2
+    assert not any(episode["library_added"] for episode in season["episodes"])
     assert all(episode["monitored"] for episode in season["episodes"])
     other = detail["seasons"][1]
     assert other["library"] == 0

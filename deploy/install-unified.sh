@@ -23,6 +23,9 @@ if [[ ! -f "$ROOT/pyproject.toml" ]]; then
   exit 1
 fi
 
+# ReadWritePaths de systemd exige que var/ exista antes de arrancar.
+install -d -o "$TOD_USER" -g "$TOD_GROUP" "$ROOT/var"
+
 # Entorno de arranque (solo si no existe).
 if [[ ! -f /etc/tod.env && ! -f /etc/catalogo.env ]]; then
   install -m 640 -o root -g "$TOD_GROUP" \

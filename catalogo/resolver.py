@@ -139,8 +139,8 @@ class Resolver:
                          THEN 1 ELSE 0 END,
                     CASE releases.health WHEN 'alive' THEN 0 WHEN 'unknown' THEN 1
                                 WHEN 'stale' THEN 2 ELSE 3 END,
-                    COALESCE(releases.size_bytes, 999999999999) ASC,
                     COALESCE(releases.seeders, 0) DESC,
+                    COALESCE(releases.size_bytes, 999999999999) ASC,
                     releases.id DESC
                 LIMIT 1
                 """,
@@ -163,8 +163,9 @@ class Resolver:
                 ORDER BY
                     CASE WHEN ss.failures > 0 AND ss.started_ok = 0
                          THEN 1 ELSE 0 END,
+                    COALESCE(releases.seeders, 0) DESC,
                     COALESCE(releases.size_bytes, 999999999999) ASC,
-                    COALESCE(releases.seeders, 0) DESC, releases.id DESC
+                    releases.id DESC
                 LIMIT 1
                 """,
                 (asset_id,),
@@ -349,8 +350,8 @@ class Resolver:
                     CASE WHEN ss.failures > 0 AND ss.started_ok = 0
                          THEN 1 ELSE 0 END,
                     CASE releases.health WHEN 'alive' THEN 0 WHEN 'unknown' THEN 1 ELSE 2 END,
-                    COALESCE(releases.size_bytes, 999999999999) ASC,
                     COALESCE(releases.seeders, 0) DESC,
+                    COALESCE(releases.size_bytes, 999999999999) ASC,
                     id DESC
                 """,
                 (asset["id"],),

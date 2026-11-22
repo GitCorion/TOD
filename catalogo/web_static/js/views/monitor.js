@@ -7,7 +7,7 @@ import { $, badge, bar, empty, icon, setHeader, status, thumb } from '../ui.js';
 function stateInfo(item) {
   switch (item.state) {
     case 'pending':
-      return status('Pendiente de estreno', 'muted');
+      return status('Sin estrenar', 'muted');
     case 'downloading':
       return `${status('Descargando', 'info')} <span class="tiny faint">${pct(item.progress)}%</span>`;
     case 'queued':
@@ -88,12 +88,12 @@ export async function renderMonitor({ query, signal }) {
   const summary = data.summary || {};
   const health = data.health || {};
   state.monitorSummary = summary;
-  setHeader('Seguimiento', 'Biblioteca');
+  setHeader('Seguimiento', 'Contenido');
 
   const chips = [
     ['', 'Todos', summary.total || 0],
     ['missing', 'Sin fuente', summary.missing || 0],
-    ['pending', 'Pendiente de estreno', summary.pending || 0],
+    ['pending', 'Sin estrenar', summary.pending || 0],
     ['downloading', 'Descargando', summary.downloading || 0],
   ];
 
@@ -138,7 +138,7 @@ export async function renderMonitor({ query, signal }) {
   const healthTone = !timersOk ? 'bad' : rssWarning || monitorWarning ? 'warn' : 'ok';
 
   $('#view').innerHTML = `
-    <div class="breadcrumb"><a href="#/catalog">Catálogo</a>${icon('chevron')}<span>Seguimiento</span></div>
+    <div class="breadcrumb"><a href="#/catalog">Biblioteca</a>${icon('chevron')}<span>Seguimiento</span></div>
 
     <div class="toolbar">
       <label class="field grow">
@@ -171,7 +171,7 @@ export async function renderMonitor({ query, signal }) {
         <div class="panel-head"><h2>RSS y seguimiento</h2>${status(healthLabel, healthTone)}</div>
         <div class="panel-body" style="padding-top:6px;padding-bottom:8px">
           ${timerLine('RSS', health.timers?.rss, rss, 2)}
-          <div class="kv"><span>Última ingesta</span><span>${jobSummary(rss, [['fetched', 'leído', 'leídos'], ['inserted', 'nuevo', 'nuevos'], ['exported_keys', 'publicado', 'publicados']])}</span></div>
+          <div class="kv"><span>Última ingesta</span><span>${jobSummary(rss, [['fetched', 'leído', 'leídos'], ['inserted', 'nuevo', 'nuevos'], ['exported_keys', 'añadido', 'añadidos']])}</span></div>
           <div class="kv"><span>Seguimientos cerrados</span><span>${rss ? fmtInt(rss.result?.unmonitored_keys || 0) : '—'}</span></div>
           ${timerLine('Barrido diario', health.timers?.monitor, monitor, 25)}
           <div class="kv"><span>Último barrido</span><span>${jobSummary(monitor, [['checked', 'revisado', 'revisados'], ['found', 'encontrado', 'encontrados'], ['waiting', 'esperando', 'esperando']])}</span></div>

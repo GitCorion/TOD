@@ -250,10 +250,15 @@ def overview(
     disks = []
     if config is not None:
         seen: set[str] = set()
+        library_roots = (
+            config.library_roots()
+            if hasattr(config, "library_roots")
+            else (getattr(config, "library_root", None),)
+        )
         for path in (
             getattr(config, "catalog_library", None),
             getattr(config, "seed_root", None),
-            getattr(config, "library_root", None),
+            *library_roots,
         ):
             if not path:
                 continue

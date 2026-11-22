@@ -1,4 +1,4 @@
-"""CLI de la construcción en la sombra."""
+"""CLI de TOD: administración, migraciones y reproducción."""
 
 from __future__ import annotations
 
@@ -6,6 +6,7 @@ import argparse
 import json
 import sys
 import time
+from datetime import datetime
 from pathlib import Path
 
 from .admission import admit, cancel_intent, list_intents
@@ -157,7 +158,6 @@ def cmd_export_strm(args, config: Config) -> int:
         base_url=args.base_url,
         limit=args.limit or None,
         key=args.key,
-        include_unavailable=args.include_unavailable,
         require_health=args.require_health,
         min_seeders=args.min_seeders,
         versions_filter=args.versions,
@@ -569,7 +569,7 @@ def cmd_qbit_sync(args, config: Config) -> int:
         client,
         radarr=radarr,
         sonarr=sonarr,
-        archive_root=str(config.library_root),
+        archive_root=config.archive_roots(),
         dry_run=args.dry_run,
         check_exists=not args.no_check_paths,
     )
@@ -1005,7 +1005,7 @@ def cmd_worker(args, config: Config) -> int:
         return qbit_sync(
             str(config.db_path), qbit_read,
             radarr=arr_radarr, sonarr=arr_sonarr,
-            archive_root=str(config.library_root),
+            archive_root=config.archive_roots(),
             check_exists=True,
         ).public()
 
@@ -1179,7 +1179,6 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--kind", choices=["movie", "series"])
     p.add_argument("--skip-library", action="store_true")
     p.add_argument("--limit", type=int, default=20)
-    p.add_argument("--include-unavailable", action="store_true")
     p.add_argument("--require-health", action="store_true")
     p.add_argument("--min-seeders", type=int, default=1)
     p.add_argument(
@@ -1459,7 +1458,13 @@ def build_parser() -> argparse.ArgumentParser:
         "restore-strm",
         help="repone .strm de contenido que ya no está en la biblioteca",
     )
-    p.add_argument("--years", default="2020,2021,2022,2023,2024,2025,2026")
+    p.add_argument(
+        "--years",
+        default=",".join(
+            str(year)
+            for year in range(datetime.now().year, datetime.now().year - 7, -1)
+        ),
+    )
     p.add_argument("--out")
     p.add_argument("--base-url", default="http://127.0.0.1:8773")
     p.add_argument("--no-series", action="store_true")

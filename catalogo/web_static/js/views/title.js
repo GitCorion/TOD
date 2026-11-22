@@ -47,7 +47,7 @@ export async function renderTitle({ params, query, signal }) {
   const seriesContext = episodeName && item.tmdb
     ? `<div class="subtitle"><a href="#/series/${item.tmdb}">${esc(item.title || 'Serie')}</a>${item.year ? ` (${item.year})` : ''}</div>`
     : '';
-  setHeader(pageLabel, 'Catálogo');
+  setHeader(pageLabel, 'Biblioteca');
   document.title = `${heading}, TOD`;
 
   const seriesLink = item.kind === 'series' && item.tmdb
@@ -66,39 +66,14 @@ export async function renderTitle({ params, query, signal }) {
         : status('Sin fuente', 'muted');
 
   const summary = `
-    <div class="grid grid-2">
-      <div class="panel">
-        <div class="panel-head"><h2>Estado</h2>${liveState}</div>
-        <div class="panel-body" style="padding-top:6px;padding-bottom:8px">
-          <div class="kv"><span>En biblioteca</span><span>${od.published ? status('Sí', 'ok') : status('No', 'muted')}</span></div>
-          <div class="kv"><span>Descargado</span><span>${od.downloaded ? status('Sí', 'ok') : status('No', 'muted')}</span></div>
-          <div class="kv"><span>Descarga on-demand</span><span>${od.download === 'descargando' ? status('Descargando', 'info') : od.download === 'pausado' ? status('Pausado', 'warn') : od.download === 'error' ? status('Error', 'bad') : od.downloaded ? status('Completada', 'ok') : status('Sin descarga', 'muted')}</span></div>
-          <div class="kv"><span>Radarr / Sonarr</span><span>${od.has_file ? status('Con fichero', 'ok') : od.in_library ? status('En biblioteca', 'info') : status('No', 'muted')}</span></div>
-          <div class="kv"><span>Puntero</span><span>${esc(statusData.source || '—')} ${statusData.reason ? `<span class="faint">(${esc(statusData.reason)})</span>` : ''}</span></div>
-          <div class="kv"><span>Calidad / audio</span><span>${esc(statusData.quality || '—')}, ${esc(statusData.audio || '—')}</span></div>
-          <div class="kv"><span>Progreso</span><span>${pct(statusData.progress || 0)} %</span></div>
-        </div>
+    <div class="panel">
+      <div class="panel-head"><h2>Detalles</h2>${liveState}</div>
+      <div class="panel-body" style="padding-top:6px;padding-bottom:8px">
+        <div class="kv"><span>Calidad</span><span>${esc(statusData.quality || '—')}</span></div>
+        <div class="kv"><span>Audio</span><span>${esc(statusData.audio || '—')}</span></div>
+        <div class="kv"><span>Origen</span><span>${od.has_file ? 'Radarr/Sonarr' : od.downloaded ? 'Descarga' : '—'}</span></div>
+        ${od.download === 'descargando' || od.download === 'pausado' || od.download === 'error' ? `<div class="kv"><span>Descarga</span><span>${od.download === 'descargando' ? status('Descargando', 'info') : od.download === 'pausado' ? status('Pausado', 'warn') : status('Error', 'bad')}</span></div>` : ''}
       </div>
-      <div class="panel">
-        <div class="panel-head"><h2>Resumen técnico</h2><span class="right tiny faint">solo lectura</span></div>
-        <div class="panel-body" style="padding-top:6px;padding-bottom:8px">
-          <div class="kv"><span>Versiones</span><span>${data.releases.length} (${data.releases.filter((release) => release.health === 'alive').length} vivas)</span></div>
-          <div class="kv"><span>Ficheros</span><span>${data.files.length + (data.library?.length || 0)} (${data.files.filter((file) => file.storage_location === 'LOCAL_DISK').length} locales, ${data.library?.length || 0} de biblioteca)</span></div>
-          <div class="kv"><span>Puntero</span><span>${data.target ? `${esc(data.target.source_kind)} ${data.target.release_id ? `release ${data.target.release_id}` : ''}` : 'auto'}</span></div>
-          <div class="kv"><span>Biblioteca</span><span>${data.library.length ? esc(data.library[0].source) : 'no'}</span></div>
-          <div class="kv"><span>Clave</span><span class="mono">${esc(item.key)}</span></div>
-          <div class="kv"><span>Actualizado</span><span>${fmtDate(item.updated_at)}</span></div>
-          <div class="kv"><span>Compromiso</span><span>${esc(statusData.seed_state || '—')} ${statusData.seed_required_until ? `<span class="faint">hasta ${fmtDate(statusData.seed_required_until)}</span>` : ''}</span></div>
-        </div>
-      </div>
-    </div>
-
-    <div class="panel flush section">
-      <div class="panel-head"><h2>Últimos eventos</h2><a class="right tiny" href="#/title/${id}?tab=historial">Ver todos</a></div>
-      ${data.events.length ? `<div class="table-wrap"><table class="table--stack">
-        <thead><tr><th>Fecha</th><th>Acción</th><th>Datos</th></tr></thead>
-        <tbody>${data.events.slice(0, 6).map((event) => `<tr><td data-label="Fecha">${fmtDate(event.ts)}</td><td data-label="Acción">${badge(eventLabel(event.kind))}</td><td data-label="Datos"><span class="event-payload">${esc(event.payload || '')}</span></td></tr>`).join('')}</tbody>
-      </table></div>` : empty('Sin eventos', 'Todavía no hay actividad para este título.')}
     </div>
   `;
 
@@ -133,11 +108,11 @@ export async function renderTitle({ params, query, signal }) {
           </tr>`).join('')}</tbody>
         </table></div>` : ''}
         ${libraryFiles.length ? `<div class="table-wrap" style="margin-top:${data.files.length ? '10px' : '0'}"><table class="table--stack">
-          <thead><tr><th>Ruta de biblioteca</th><th>Tamaño</th><th>Origen</th></tr></thead>
+          <thead><tr><th>Ruta externa</th><th>Tamaño</th><th>Origen</th></tr></thead>
           <tbody>${libraryFiles.map((file) => `<tr>
             <td data-label="Ruta"><span class="mono tiny">${esc(file.path || '—')}</span></td>
             <td data-label="Tamaño">${fmtBytes(file.size_bytes)}</td>
-            <td data-label="Origen">${badge(file.source || 'biblioteca', 'mono')}</td>
+            <td data-label="Origen">${badge(file.source || 'externo', 'mono')}</td>
           </tr>`).join('')}</tbody>
         </table></div>` : ''}
         ${!data.files.length && !libraryFiles.length ? empty('Sin ficheros', 'No hay copias locales ni de archivo indexadas.') : ''}
@@ -171,7 +146,7 @@ export async function renderTitle({ params, query, signal }) {
   `;
 
   $('#view').innerHTML = `
-    <div class="breadcrumb"><a href="#/catalog">Catálogo</a>${icon('chevron')}${seriesLink}<span>${esc(tag || item.title || 'Ficha')}</span></div>
+    <div class="breadcrumb"><a href="#/catalog">Biblioteca</a>${icon('chevron')}${seriesLink}<span>${esc(tag || item.title || 'Ficha')}</span></div>
 
     <div class="panel pad">
       <div class="detail-hero">
@@ -182,10 +157,11 @@ export async function renderTitle({ params, query, signal }) {
           <div class="row">
             ${badge(item.kind === 'movie' ? 'película' : 'episodio', 'mono')}
             ${tag ? badge(tag, 'mono') : ''}
-            ${od.library_added
-              ? status(od.published ? 'En biblioteca' : 'En biblioteca, sin enlace', od.published ? 'ok' : 'warn')
-              : status('Sin añadir', 'muted')}
-            ${item.monitored ? status(od.available === false ? 'Pendiente de estreno' : 'En seguimiento', od.available === false ? 'muted' : 'info') : ''}
+            ${od.published ? status('En Jellyfin', 'ok') : status('Sin .strm', 'muted')}
+            ${od.library_added ? status('En Radarr/Sonarr', 'info') : ''}
+            ${item.monitored
+              ? status(od.available === false ? 'Sin estrenar' : 'Monitorizado', od.available === false ? 'muted' : 'info')
+              : status('Sin monitorizar', 'muted')}
             ${od.downloaded ? status('Descargada', 'ok') : ''}
             ${od.download === 'descargando' ? status('Descargando', 'info') : ''}
           </div>
@@ -196,13 +172,13 @@ export async function renderTitle({ params, query, signal }) {
             <span class="tiny faint">${fmtInt(data.collection.parts_count || 0)} películas</span>
           </a>` : ''}
           <div class="detail-actions">
-            ${!od.library_added ? `<button class="btn btn-primary" data-action="library-title" data-id="${item.id}" data-key="${esc(item.key)}" data-title="${esc(item.title || '')}" data-releases="${data.releases.length}">${icon('plus')} Añadir a la biblioteca</button>` : ''}
-            ${od.library_added && !od.published && item.monitored ? `<button class="btn btn-danger" data-action="unmonitor-title" data-id="${item.id}">Quitar seguimiento</button>` : ''}
-            ${od.library_added && !od.published && !item.monitored ? `<button class="btn" data-action="monitor-title" data-id="${item.id}">Monitorizar</button>` : ''}
-            ${!od.downloaded && data.releases.length ? `<button class="btn" data-action="download-now" data-key="${esc(item.key)}">${icon('download')} Forzar descarga</button>` : ''}
-            ${od.library_added || od.published ? `<button class="btn btn-danger" data-action="unpublish-title" data-id="${item.id}">Quitar de la biblioteca</button>` : ''}
+            ${!od.library_added && !item.monitored ? `<button class="btn btn-primary" data-action="library-title" data-id="${item.id}" data-key="${esc(item.key)}" data-title="${esc(item.title || '')}" data-releases="${data.releases.length}">${icon('plus')} Catalogar en TOD</button>` : ''}
+            ${od.library_added && !od.published && item.monitored ? `<button class="btn btn-danger" data-action="unmonitor-title" data-id="${item.id}">Dejar de monitorizar</button>` : ''}
+            ${od.library_added && !od.published && !item.monitored && !od.has_file && !od.downloaded ? `<button class="btn" data-action="monitor-title" data-id="${item.id}">Monitorizar</button>` : ''}
+            ${!od.downloaded && data.releases.length ? `<button class="btn" data-action="download-now" data-key="${esc(item.key)}">${icon('download')} Descargar ahora</button>` : ''}
+            ${od.published ? `<button class="btn btn-danger" data-action="unpublish-title" data-id="${item.id}">Quitar de Jellyfin</button>` : ''}
             <button class="btn btn-ghost" data-action="manual-search" data-id="${item.id}" data-title="${esc(item.title || '')}">${icon('search')} Buscar manualmente</button>
-            <button class="btn btn-ghost" data-action="sync-title" data-id="${item.id}">${icon('search')} Buscar fuentes</button>
+            <button class="btn btn-ghost" data-action="sync-title" data-id="${item.id}">${icon('search')} Buscar y publicar</button>
             ${item.tmdb ? `<a class="btn btn-ghost" href="${esc(data.tmdb_url || '#')}" target="_blank" rel="noreferrer">${icon('external')} TMDB</a>` : ''}
           </div>
         </div>

@@ -125,6 +125,30 @@ def test_sync_inserts_release_with_tracker_audio(tmp_path):
     conn.close()
 
 
+class LockProbeProwlarr(FakeProwlarr):
+    """La búsqueda debe correr sin una transacción de escritura abierta."""
+
+    db = None
+
+    def search(self, query, **kwargs):
+        conn = sqlite3.connect(self.db, timeout=0.2)
+        try:
+            conn.execute("BEGIN IMMEDIATE")
+            conn.rollback()
+        finally:
+            conn.close()
+        return super().search(query, **kwargs)
+
+
+def test_sync_does_not_hold_write_lock_during_search(tmp_path):
+    db = seed_db(tmp_path)
+    client = LockProbeProwlarr([result()])
+    client.db = db
+    report = sync_sources(db, client, limit=5, delay=0)
+    assert report["errors"] == []
+    assert report["inserted"] == 1
+
+
 def test_international_tracker_without_tag_stays_unknown(tmp_path):
     db = seed_db(tmp_path)
     client = FakeProwlarr([result(indexer="TrackerInternacional (API)", guid="sd1")])

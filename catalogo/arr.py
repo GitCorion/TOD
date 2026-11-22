@@ -53,6 +53,30 @@ class _ArrClient:
     def command(self, payload: dict) -> None:
         self._request("/command", method="POST", payload=payload)
 
+    def root_folders(self) -> list[dict]:
+        data = self._request("/rootfolder")
+        return data if isinstance(data, list) else []
+
+    def quality_profiles(self) -> list[dict]:
+        data = self._request("/qualityprofile")
+        return data if isinstance(data, list) else []
+
+    def delete_queue_item(
+        self,
+        queue_id: int,
+        *,
+        remove_from_client: bool = True,
+        blocklist: bool = False,
+    ) -> None:
+        self._request(
+            f"/queue/{int(queue_id)}",
+            method="DELETE",
+            params={
+                "removeFromClient": "true" if remove_from_client else "false",
+                "blocklist": "true" if blocklist else "false",
+            },
+        )
+
     def status(self) -> dict:
         data = self._request("/system/status")
         return data if isinstance(data, dict) else {}
@@ -146,6 +170,37 @@ class RadarrClient(_ArrClient):
                 continue
         return None
 
+    def lookup_movie(self, tmdb: int) -> dict | None:
+        data = self._request(
+            "/movie/lookup", params={"term": f"tmdb:{int(tmdb)}"}
+        )
+        rows = data if isinstance(data, list) else [data] if data else []
+        return rows[0] if rows else None
+
+    def add_movie(
+        self,
+        *,
+        tmdb: int,
+        title: str,
+        year: int | None,
+        root_folder: str,
+        quality_profile_id: int,
+        monitored: bool = False,
+    ) -> dict:
+        lookup = self.lookup_movie(tmdb) or {}
+        payload = {
+            "title": title or lookup.get("title"),
+            "year": year or lookup.get("year") or 0,
+            "tmdbId": int(tmdb),
+            "qualityProfileId": int(quality_profile_id),
+            "rootFolderPath": root_folder,
+            "monitored": bool(monitored),
+            "minimumAvailability": "released",
+            "addOptions": {"searchForMovie": False},
+        }
+        data = self._request("/movie", method="POST", payload=payload)
+        return data if isinstance(data, dict) else {}
+
     def rescan_movie(self, movie_id: int) -> None:
         self.command({"name": "RescanMovie", "movieId": int(movie_id)})
 
@@ -173,6 +228,42 @@ class SonarrClient(_ArrClient):
             except (TypeError, ValueError):
                 continue
         return None
+
+    def lookup_series(self, tvdb: int | None, tmdb: int | None) -> dict | None:
+        term = f"tvdb:{int(tvdb)}" if tvdb else f"tmdb:{int(tmdb or 0)}"
+        data = self._request("/series/lookup", params={"term": term})
+        rows = data if isinstance(data, list) else [data] if data else []
+        return rows[0] if rows else None
+
+    def add_series(
+        self,
+        *,
+        tvdb: int | None,
+        tmdb: int | None,
+        title: str,
+        year: int | None,
+        root_folder: str,
+        quality_profile_id: int,
+        monitored: bool = False,
+    ) -> dict:
+        lookup = self.lookup_series(tvdb, tmdb) or {}
+        payload = {
+            "title": title or lookup.get("title"),
+            "year": year or lookup.get("year") or 0,
+            "tvdbId": int(tvdb or lookup.get("tvdbId") or 0),
+            "qualityProfileId": int(quality_profile_id),
+            "rootFolderPath": root_folder,
+            "seasonFolder": True,
+            "monitored": bool(monitored),
+            "addOptions": {
+                "ignoreEpisodesWithFiles": True,
+                "ignoreEpisodesWithoutFiles": True,
+                "searchForMissingEpisodes": False,
+                "searchForCutoffUnmetEpisodes": False,
+            },
+        }
+        data = self._request("/series", method="POST", payload=payload)
+        return data if isinstance(data, dict) else {}
 
     def episodes(self, series_id: int) -> list[dict]:
         rows = self._request("/episode", params={"seriesId": int(series_id)})

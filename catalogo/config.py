@@ -1,4 +1,4 @@
-"""Configuración de la construcción en la sombra.
+"""Configuración de TOD.
 
 Nada de aquí arranca servicios ni habla con qBittorrent/Prowlarr.
 Las rutas y credenciales se pueden sobrescribir por entorno.
@@ -29,12 +29,13 @@ def _path(name: str, default: Path) -> Path:
     return Path(_env_value(name, str(default)) or str(default)).expanduser()
 
 
-def _secret(name: str) -> str | None:
-    """Lee un secreto del entorno o de .env.
+def _optional_path(name: str) -> Path | None:
+    raw = _env_value(name)
+    return Path(raw).expanduser() if raw else None
 
-    El .env de este proyecto puede contener una única clave en crudo; en ese
-    caso se interpreta como RD_API_KEY.
-    """
+
+def _secret(name: str) -> str | None:
+    """Lee un secreto del entorno o de .env (siempre como KEY=VALUE)."""
     value = os.environ.get(name)
     if value:
         return value.strip()
@@ -51,8 +52,6 @@ def _secret(name: str) -> str | None:
             key, val = line.split("=", 1)
             if key.strip() == name:
                 return val.strip().strip('"').strip("'")
-    if name == "RD_API_KEY" and text and "=" not in text:
-        return text.strip()
     return None
 
 
@@ -127,6 +126,10 @@ class Config:
     ondemand_save_path: Path = Path("/mnt/descargas/ondemand")
     strm_roots: tuple[str, ...] = ("/mnt/catalogo",)
     playback_base_url: str = "http://127.0.0.1:8773"
+    # Radarr y Sonarr suelen usar roots distintos. Si se configuran, mandan
+    # sobre `library_root`; si no, se mantiene la raíz común histórica.
+    library_root_movies: Path | None = None
+    library_root_series: Path | None = None
 
     @classmethod
     def from_env(cls) -> "Config":
@@ -140,6 +143,12 @@ class Config:
                 "CATALOGO_LEGACY_DB", BASE_DIR / "assets.db"
             ),
             library_root=_path("CATALOGO_LIBRARY_ROOT", Path("/mnt/library")),
+            library_root_movies=_optional_path(
+                "CATALOGO_LIBRARY_ROOT_MOVIES"
+            ),
+            library_root_series=_optional_path(
+                "CATALOGO_LIBRARY_ROOT_SERIES"
+            ),
             seed_root=_path(
                 "CATALOGO_SEED_ROOT", Path("/mnt/descargas/catalogo")
             ),
@@ -216,6 +225,22 @@ class Config:
         from .app_settings import load_config
 
         return load_config(base)
+
+    def library_roots(self) -> tuple[Path, ...]:
+        """Raíces de la biblioteca existente: películas y series, o la común."""
+        specific = (
+            self.library_root_movies,
+            self.library_root_series,
+        )
+        roots = tuple(root for root in specific if root is not None)
+        return roots or (self.library_root,)
+
+    def archive_roots(self) -> tuple[Path, ...]:
+        """Raíces donde qBittorrent puede tener ficheros ya archivados."""
+        roots = list(self.library_roots())
+        if self.library_root not in roots:
+            roots.append(self.library_root)
+        return tuple(roots)
 
     def content_roots(self) -> list[str]:
         """Raíces donde buscar ficheros de torrents, según la configuración."""

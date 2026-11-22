@@ -5,16 +5,16 @@ import { state } from '../store.js';
 import { $, badge, bar, empty, icon, poster, setHeader, status } from '../ui.js';
 
 function episodeStatus(ep) {
-  if (!ep.in_catalog) return status('Sin catálogo', 'muted');
+  if (ep.published) return status('En Jellyfin', 'ok');
   if (ep.download === 'descargando') return status(`Descargando ${pct(ep.progress)}%`, 'info');
   if (ep.download === 'pausado') return status('Pausado', 'warn');
   if (ep.download === 'error') return status('Error', 'bad');
   if (ep.downloaded) return status('Descargado', 'ok');
-  if (ep.published) return status('En biblioteca', 'ok');
-  if (ep.library_added && ep.monitored && ep.available === false) return status('Pendiente de estreno', 'muted');
-  if (ep.library_added && ep.monitored) return `${status('En biblioteca, sin enlace', 'warn')} ${status('En seguimiento', 'info')}`;
-  if (ep.library_added) return status('En biblioteca, sin enlace', 'warn');
-  if (ep.publication === 'pendiente') return ep.alive ? status(`${ep.alive} fuentes`, 'info') : status('Sin verificar', 'warn');
+  if (ep.incomplete) return status('Sin fuente', 'warn');
+  if (ep.library_added && ep.monitored && ep.available === false) return status('Sin estrenar', 'muted');
+  if (ep.library_added && ep.monitored) return `${status('En Radarr/Sonarr', 'info')} ${status('Monitorizado', 'info')}`;
+  if (ep.library_added) return status('En Radarr/Sonarr', 'info');
+  if (!ep.in_catalog) return status('Sin catalogar', 'muted');
   return status('Sin fuente', 'muted');
 }
 
@@ -23,6 +23,10 @@ function still(path, title) {
     return `<img class="episode-still" src="https://image.tmdb.org/t/p/w300${esc(path)}" alt="" loading="lazy">`;
   }
   return `<span class="episode-still placeholder">${esc(String(title || '?').slice(0, 1).toUpperCase())}</span>`;
+}
+
+function totalRequested(totals) {
+  return Boolean(totals.library || totals.monitored);
 }
 
 function seasonLabel(season) {
@@ -40,39 +44,39 @@ export async function renderSeries({ params, query, signal }) {
   const defaultSeason = seasons.find((entry) => entry.season > 0)?.season ?? seasons[0]?.season ?? 1;
   const currentSeason = Number(query.get('season') || defaultSeason);
   const seasonData = seasons.find((entry) => entry.season === currentSeason) || seasons[0];
-  const actionableMissing = seasons
-    .filter((entry) => entry.season > 0)
-    .flatMap((entry) => entry.episodes || [])
-    .filter((episode) => !episode.in_catalog).length;
   const specialMissing = seasons
     .filter((entry) => entry.season === 0)
     .flatMap((entry) => entry.episodes || [])
     .filter((episode) => !episode.in_catalog).length;
-  const libraryComplete = totals.catalog_episodes > 0
-    && totals.library >= totals.catalog_episodes
-    && totals.published >= totals.library;
-  const seasonLibrary = (seasonData?.library || 0) >= (seasonData?.catalog_episodes || 0)
-    && (seasonData?.catalog_episodes || 0) > 0;
-  setHeader('Serie', 'Catálogo');
+  const allAdded = totals.catalog_episodes > 0
+    && (totals.covered || 0) >= totals.catalog_episodes;
+  const notAdded = Math.max(0, (totals.episodes || 0) - (totals.catalog_episodes || 0));
+  const seriesMode = totals.library || totals.monitored ? 'update' : 'add';
+  const seriesAction = totalRequested(totals) ? 'Catalogar episodios que faltan' : 'Catalogar serie';
+  const seasonAdded = (seasonData?.catalog_episodes || 0) > 0
+    && (seasonData?.covered || 0) >= (seasonData?.catalog_episodes || 0);
+  const seasonMode = seasonData?.library || seasonData?.monitored ? 'update' : 'add';
+  const seasonAction = seasonData?.library || seasonData?.monitored
+    ? 'Catalogar episodios que faltan'
+    : 'Catalogar temporada';
+  setHeader('Serie', 'Biblioteca');
   document.title = `${series.title || 'Serie'}, TOD`;
 
   const rows = (seasonData?.episodes || []).map((ep) => {
     const tag = `T${String(ep.season).padStart(2, '0')}E${String(ep.episode).padStart(2, '0')}`;
     const name = ep.name || `Episodio ${ep.episode}`;
     const actions = ep.in_catalog
-      ? `${!ep.library_added ? `<button class="btn btn-sm btn-ghost" data-action="library-title" data-id="${ep.id}" data-key="${esc(ep.key)}" data-title="${esc(name)}" data-releases="${ep.releases || 0}">Añadir a la biblioteca</button>` : ''}
-         ${ep.library_added && !ep.published && !ep.monitored ? `<button class="btn btn-sm btn-ghost" data-action="monitor-title" data-id="${ep.id}">Monitorizar</button>` : ''}
-         ${ep.library_added && !ep.published && ep.monitored ? `<button class="btn btn-sm btn-ghost" data-action="unmonitor-title" data-id="${ep.id}">Quitar seguimiento</button>` : ''}
-         ${!ep.downloaded && !ep.published ? `<button class="btn btn-sm" data-action="download-now" data-key="${esc(ep.key)}">Forzar descarga</button>` : ''}
+      ? `${!ep.library_added && !ep.monitored ? `<button class="btn btn-sm btn-ghost" data-action="library-title" data-id="${ep.id}" data-key="${esc(ep.key)}" data-title="${esc(name)}" data-releases="${ep.releases || 0}">Catalogar</button>` : ''}
+         ${!ep.published && !ep.monitored ? `<button class="btn btn-sm btn-ghost" data-action="monitor-title" data-id="${ep.id}">Monitorizar</button>` : ''}
+         ${!ep.published && ep.monitored ? `<button class="btn btn-sm btn-ghost" data-action="unmonitor-title" data-id="${ep.id}">Dejar de monitorizar</button>` : ''}
+         ${!ep.downloaded && !ep.published ? `<button class="btn btn-sm" data-action="download-now" data-key="${esc(ep.key)}">Descargar ahora</button>` : ''}
          <a class="btn btn-sm btn-ghost" href="#/title/${ep.id}">Abrir</a>`
-      : '<span class="tiny faint">Sin importar</span>';
+      : '<span class="faint">—</span>';
     const sources = ep.releases
       ? `${fmtInt(ep.releases)} <span class="faint">/ ${fmtInt(ep.alive)} vivos</span>`
-      : ep.published
-        ? status('Biblioteca', 'ok')
-        : ep.library_added
-          ? status('Sin enlace', 'warn')
-          : '<span class="faint">—</span>';
+      : ep.library_added
+        ? (ep.incomplete ? status('Sin fuente', 'warn') : status('En Radarr/Sonarr', 'info'))
+        : '<span class="faint">—</span>';
     return `<tr class="${ep.in_catalog ? '' : 'row-missing'}">
       <td data-label="Episodio">
         <a class="episode-title-cell" href="#/title/${ep.id}">
@@ -92,13 +96,18 @@ export async function renderSeries({ params, query, signal }) {
 
   const seasonChips = seasons.map((entry) => {
     const missing = (entry.episodes || []).filter((episode) => !episode.in_catalog).length;
+    const incomplete = (entry.episodes || []).filter((episode) => episode.incomplete).length;
+    const note = [
+      missing ? `${missing} sin catalogar` : '',
+      incomplete ? `${incomplete} sin fuente` : '',
+    ].filter(Boolean).join(', ');
     return `<button class="chip ${entry.season === currentSeason ? 'active' : ''}" data-action="series-season" data-season="${entry.season}">
-      ${esc(seasonLabel(entry))} <b>${entry.episode_count || entry.episodes.length}</b>${missing ? ` <span class="warn-dot" title="${missing} sin catálogo"></span>` : ''}
+      ${esc(seasonLabel(entry))} <b>${entry.episode_count || entry.episodes.length}</b>${note ? ` <span class="warn-dot" title="${esc(note)}"></span>` : ''}
     </button>`;
   }).join('');
 
   $('#view').innerHTML = `
-    <div class="breadcrumb"><a href="#/catalog">Catálogo</a>${icon('chevron')}<span>${esc(series.title || 'Serie')}</span></div>
+    <div class="breadcrumb"><a href="#/catalog">Biblioteca</a>${icon('chevron')}<span>${esc(series.title || 'Serie')}</span></div>
 
     <div class="panel pad">
       <div class="detail-hero">
@@ -108,17 +117,17 @@ export async function renderSeries({ params, query, signal }) {
           <div class="row">
             ${badge('serie', 'mono')}
             ${status(`${fmtInt(totals.episodes || 0)} episodios`, 'muted')}
-            ${status(`${fmtInt(totals.catalog_episodes || 0)} en catálogo`, 'info')}
-            ${status(`${fmtInt(totals.library || 0)}/${fmtInt(totals.catalog_episodes || 0)} en biblioteca`, 'ok')}
-            ${totals.library > totals.published ? status(`${fmtInt(totals.published || 0)} con enlace`, 'muted') : ''}
-            ${actionableMissing ? status(`${fmtInt(actionableMissing)} por importar`, 'warn') : ''}
+            ${status(`${fmtInt(totals.library || 0)} en Radarr/Sonarr`, 'info')}
+            ${totals.monitored ? status(`${fmtInt(totals.monitored)} en seguimiento`, 'info') : ''}
+            ${totals.incomplete ? status(`${fmtInt(totals.incomplete)} sin fuente`, 'warn') : ''}
+            ${notAdded ? status(`${fmtInt(notAdded)} sin catalogar`, 'muted') : ''}
             ${series.in_library ? badge('en Radarr/Sonarr', 'mono') : ''}
           </div>
           ${series.overview ? `<p class="overview">${esc(series.overview)}</p>` : ''}
           <div class="detail-actions">
-            ${libraryComplete ? '' : `<button class="btn btn-primary" data-action="library-series" data-tmdb="${tmdb}" data-title="${esc(series.title || '')}">${icon('plus')} ${totals.library ? 'Actualizar biblioteca' : 'Añadir toda la serie a la biblioteca'}</button>`}
-            <button class="btn" data-action="sync-series" data-tmdb="${tmdb}">${icon('search')} Buscar fuentes</button>
-            ${totals.library ? `<button class="btn btn-danger" data-action="unpublish-series" data-tmdb="${tmdb}">Quitar de la biblioteca</button>` : ''}
+            ${allAdded ? '' : `<button class="btn btn-primary" data-action="library-series" data-tmdb="${tmdb}" data-title="${esc(series.title || '')}" data-mode="${seriesMode}">${icon('plus')} ${seriesAction}</button>`}
+            <button class="btn" data-action="sync-series" data-tmdb="${tmdb}">${icon('search')} Buscar y publicar</button>
+            ${totals.library ? `<button class="btn btn-danger" data-action="unpublish-series" data-tmdb="${tmdb}">Quitar</button>` : ''}
             <a class="btn btn-ghost" href="${esc(data.tmdb_url || '#')}" target="_blank" rel="noreferrer">${icon('external')} TMDB</a>
           </div>
         </div>
@@ -130,10 +139,10 @@ export async function renderSeries({ params, query, signal }) {
 
     <div class="record-line section">
       <span><b>${fmtInt(totals.episodes || 0)}</b> episodios</span>
-      <span><b>${fmtInt(totals.catalog_episodes || 0)}</b> en catálogo</span>
-      <span><b>${fmtInt(totals.library || 0)}</b> en biblioteca</span>
-      <span><b>${fmtInt(totals.published || 0)}</b> con enlace</span>
-      <span><b>${fmtInt(actionableMissing)}</b> por importar</span>
+      <span><b>${fmtInt(totals.library || 0)}</b> en Radarr/Sonarr</span>
+      <span><b>${fmtInt(totals.monitored || 0)}</b> en seguimiento</span>
+      <span><b>${fmtInt(totals.incomplete || 0)}</b> sin fuente</span>
+      <span><b>${fmtInt(notAdded)}</b> sin catalogar</span>
       ${specialMissing ? `<span><b>${fmtInt(specialMissing)}</b> especiales</span>` : ''}
     </div>
 
@@ -141,8 +150,9 @@ export async function renderSeries({ params, query, signal }) {
       <div class="panel-head">
         <div class="chips">${seasonChips}</div>
         <div class="right row" style="gap:6px">
-          ${seasonLibrary ? '' : `<button class="btn btn-sm btn-ghost" data-action="library-season" data-season="${currentSeason}" data-tmdb="${tmdb}" data-title="${esc(series.title || '')}">${icon('plus', 'sm')} ${seasonData?.library ? 'Actualizar temporada' : 'Añadir temporada a la biblioteca'}</button>`}
-          <button class="btn btn-sm btn-ghost" data-action="sync-season" data-season="${currentSeason}">${icon('search', 'sm')} Fuentes</button>
+          ${seasonAdded ? '' : `<button class="btn btn-sm btn-ghost" data-action="library-season" data-season="${currentSeason}" data-tmdb="${tmdb}" data-title="${esc(series.title || '')}" data-mode="${seasonMode}">${icon('plus', 'sm')} ${seasonAction}</button>`}
+          <button class="btn btn-sm btn-ghost" data-action="sync-season" data-season="${currentSeason}">${icon('search', 'sm')} Buscar y publicar</button>
+          <button class="btn btn-sm btn-ghost" data-action="manual-search-season" data-season="${currentSeason}">${icon('search', 'sm')} Buscar manualmente</button>
         </div>
       </div>
       <div class="panel-body" style="padding:0">
@@ -150,8 +160,8 @@ export async function renderSeries({ params, query, signal }) {
           <span class="tiny muted">${esc(seasonLabel(seasonData || { season: currentSeason }))}</span>
           <span class="row tiny faint" style="gap:14px">
             <span>${fmtInt(seasonData?.episode_count || 0)} episodios</span>
-            <span>${fmtInt(seasonData?.catalog_episodes || 0)} en catálogo</span>
-            <span>${fmtInt(seasonData?.library || 0)} en biblioteca</span>
+            <span>${fmtInt(seasonData?.library || 0)} en Radarr/Sonarr</span>
+            ${seasonData?.incomplete ? `<span class="warn-text">${fmtInt(seasonData.incomplete)} sin fuente</span>` : ''}
           </span>
         </div>
         <div class="table-wrap">

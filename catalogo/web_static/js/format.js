@@ -96,6 +96,7 @@ export function initials(title) {
 
 export function posterUrl(path, size = 'w342') {
   if (!path) return '';
+  if (/^https?:\/\//i.test(path)) return path;
   return `https://image.tmdb.org/t/p/${size}${path}`;
 }
 

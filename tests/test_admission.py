@@ -215,6 +215,39 @@ def test_max_active_applies_across_releases(tmp_path):
     assert three.decision.reason == "max_active"
 
 
+def test_admit_creates_default_policy_for_new_private_tracker(tmp_path):
+    db = tmp_path / "catalogo.db"
+    init_db(db, MIGRATIONS)
+    conn = sqlite3.connect(db)
+    conn.execute(
+        "INSERT INTO media_items(key,kind,tmdb,title,year) VALUES(?,?,?,?,?)",
+        ("movie:tmdb:1", "movie", 1, "Test", 2020),
+    )
+    asset_id = conn.execute("SELECT id FROM media_items").fetchone()[0]
+    conn.execute(
+        "INSERT INTO releases(asset_id,tracker,title,size_bytes,health,seeders,"
+        "info_hash,privacy) VALUES(?,?,?,?,?,?,?,?)",
+        (asset_id, "NuevoPrivado", "Test.mkv", 1000, "alive", 10, "hash1",
+         "private"),
+    )
+    conn.commit()
+    conn.close()
+
+    result = admit(
+        db, "movie:tmdb:1", data_path=tmp_path,
+        reserve_bytes=0, disk_free_override=10**12, now=NOW,
+    )
+    assert result.decision.allowed
+    assert result.decision.seed_required_until == NOW + timedelta(hours=72)
+    conn = sqlite3.connect(db)
+    row = conn.execute(
+        "SELECT min_seed_hours, target_ratio, privacy FROM tracker_policies "
+        "WHERE tracker='NuevoPrivado'"
+    ).fetchone()
+    assert row == (72, 1.0, "private")
+    conn.close()
+
+
 def test_admit_blocks_without_space(tmp_path):
     db = seed_db(tmp_path)
     result = admit(

@@ -35,14 +35,18 @@ function groupItems(items) {
     if (item.poster_path && !group.poster_path) group.poster_path = item.poster_path;
   }
   return [...groups.values()].map((group) => {
-    const progress = group.size ? group.downloaded / group.size : (
-      group.items.reduce((sum, item) => sum + Number(item.progress || 0), 0) / group.items.length
-    );
-    const anyDownloading = group.items.some((item) => String(item.state || '').toLowerCase().includes('dl') || String(item.state || '').toLowerCase().includes('download'));
+    // `downloaded` de qBittorrent incluye datos desperdiciados y puede
+    // superar el tamaño. El progreso fiable es el que informa el torrent.
+    const progress = group.items.reduce(
+      (sum, item) => sum + Number(item.progress || 0), 0,
+    ) / Math.max(1, group.items.length);
+    const anyDownloading = group.items.some((item) => ['downloading', 'stalleddl', 'forceddl', 'metadl'].some((value) => String(item.state || '').toLowerCase().includes(value)));
+    const anyQueued = group.items.some((item) => String(item.state || '').toLowerCase().includes('queued'));
+    const anyMoving = group.items.some((item) => String(item.state || '').toLowerCase().includes('moving'));
     const anyPaused = group.items.some((item) => ['paused', 'stopped'].some((value) => String(item.state || '').toLowerCase().includes(value)));
     const anyError = group.items.some((item) => ['error', 'missing'].some((value) => String(item.state || '').toLowerCase().includes(value)));
     const anySeeding = group.items.some((item) => ['up', 'seed', 'upload'].some((value) => String(item.state || '').toLowerCase().includes(value)));
-    const groupState = anyError ? 'error' : anyPaused ? 'pausado' : anyDownloading ? 'descargando' : anySeeding ? 'sembrando' : 'sin_descarga';
+    const groupState = anyError ? 'error' : anyMoving ? 'moviendo' : anyPaused ? 'pausado' : anyDownloading ? 'descargando' : anyQueued ? 'en_cola' : anySeeding ? 'sembrando' : 'sin_descarga';
     return { ...group, progress, groupState };
   });
 }
@@ -50,9 +54,11 @@ function groupItems(items) {
 function groupStatus(group) {
   const map = {
     descargando: ['Descargando', 'info'],
+    en_cola: ['En cola', 'muted'],
+    moviendo: ['Moviendo a archivo', 'warn'],
     sembrando: ['Sembrando', 'ok'],
     pausado: ['Pausado', 'warn'],
-    error: ['Error', 'bad'],
+    error: ['Con error', 'bad'],
     sin_descarga: ['Sin descarga', 'muted'],
   };
   const [label, tone] = map[group.groupState] || map.sin_descarga;
@@ -97,6 +103,8 @@ export async function renderDownloads({ query, signal }) {
   const counts = {
     '': groupItems(data.items || []).length,
     descargando: groupItems(data.items || []).filter((group) => group.groupState === 'descargando').length,
+    en_cola: groupItems(data.items || []).filter((group) => group.groupState === 'en_cola').length,
+    moviendo: groupItems(data.items || []).filter((group) => group.groupState === 'moviendo').length,
     sembrando: groupItems(data.items || []).filter((group) => group.groupState === 'sembrando').length,
     pausado: groupItems(data.items || []).filter((group) => group.groupState === 'pausado').length,
     error: groupItems(data.items || []).filter((group) => group.groupState === 'error').length,
@@ -113,6 +121,11 @@ export async function renderDownloads({ query, signal }) {
   }
 
   const groups = allGroups.map((group) => {
+    // Un torrent suelto sin vínculo de catálogo no necesita una cabecera
+    // que repita su propio nombre y su propio progreso.
+    if (group.items.length === 1 && !group.media_id && !group.keyName) {
+      return `<div class="dl-group"><div class="dl-torrents">${torrentRow(group.items[0])}</div></div>`;
+    }
     const tag = group.kind === 'series' && group.season
       ? `T${String(group.season).padStart(2, '0')}E${String(group.episode || 0).padStart(2, '0')}`
       : group.kind === 'movie' ? 'Película' : '';
@@ -156,10 +169,10 @@ export async function renderDownloads({ query, signal }) {
     </div>
 
     <div class="chips section" style="margin-bottom:12px">
-      ${[['', 'Todas'], ['descargando', 'Descargando'], ['sembrando', 'Sembrando'], ['pausado', 'Pausadas'], ['error', 'Error']].map(([value, label]) => `<button class="chip ${filter === value ? 'active' : ''}" data-action="downloads-filter" data-value="${value}">${label} <b>${counts[value] || 0}</b></button>`).join('')}
+      ${[['', 'Todas'], ['descargando', 'Descargando'], ['en_cola', 'En cola'], ['moviendo', 'Moviendo'], ['sembrando', 'Sembrando'], ['pausado', 'Pausadas'], ['error', 'Con error']].map(([value, label]) => `<button class="chip ${filter === value ? 'active' : ''}" data-action="downloads-filter" data-value="${value}">${label} <b>${counts[value] || 0}</b></button>`).join('')}
       <span class="tiny faint" style="margin-left:auto">${allGroups.length} grupos, ${fmtInt(data.items?.length || 0)} torrents</span>
     </div>
 
-    ${groups || `<div class="panel pad">${empty('Sin descargas on-demand', '', `<a class="btn btn-sm btn-ghost" href="#/catalog">Abrir catálogo</a>`)}</div>`}
+    ${groups || `<div class="panel pad">${empty('Sin descargas on-demand', '', `<a class="btn btn-sm btn-ghost" href="#/catalog">Abrir biblioteca</a>`)}</div>`}
   `;
 }

@@ -43,6 +43,17 @@ DEFAULT_TASKS: tuple[TaskSpec, ...] = (
         interval=300,
     ),
     TaskSpec(
+        "attention-check", "Comprobación de estado", "attention-check",
+        "Prueba las integraciones y actualiza los avisos de Inicio.",
+        interval=300,
+    ),
+    TaskSpec(
+        "arr-mirror", "Espejo Radarr/Sonarr", "arr-mirror",
+        "Importa las altas de Radarr/Sonarr, busca fuentes y publica .strm.",
+        interval=1800,
+        params={"source_limit": 50, "publish_limit": 200, "delay": 0.2},
+    ),
+    TaskSpec(
         "qbit-limits", "Límites de qBittorrent", "qbit-limits",
         "Aplica los límites por categoría de Radarr, Sonarr y on-demand.",
         interval=60,
@@ -66,10 +77,10 @@ DEFAULT_TASKS: tuple[TaskSpec, ...] = (
         params={"limit": 100, "delay": 2},
     ),
     TaskSpec(
-        "restore-strm", "Restaurar .strm", "restore-strm",
-        "Repone los .strm que falten en la biblioteca.",
+        "restore-strm", "Reconciliar .strm", "restore-strm",
+        "Repone los .strm que falten y poda los de títulos sin fuente.",
         schedule="daily", at="04:30",
-        params={},
+        params={"prune": True, "min_seeders": 1},
     ),
     TaskSpec(
         "backfill", "Fondo antiguo", "backfill",

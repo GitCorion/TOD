@@ -98,6 +98,56 @@ def test_local_release_with_zero_seeders_is_exported(tmp_path):
     assert "download=0" in path.read_text()
 
 
+def test_dead_release_without_local_file_is_not_published(tmp_path):
+    db = tmp_path / "catalogo.db"
+    init_db(db, MIGRATIONS)
+    conn = sqlite3.connect(db)
+    conn.execute(
+        "INSERT INTO media_items(key,kind,tmdb,title,year) VALUES(?,?,?,?,?)",
+        ("movie:tmdb:10", "movie", 10, "Muerta", 2024),
+    )
+    asset_id = conn.execute("SELECT id FROM media_items").fetchone()[0]
+    conn.execute(
+        "INSERT INTO releases(asset_id,tracker,title,health,seeders) "
+        "VALUES(?,?,?,?,?)",
+        (asset_id, "Tracker", "Muerta.mkv", "dead", 0),
+    )
+    conn.commit()
+    conn.close()
+
+    out = tmp_path / "strm"
+    result = export_strm(db, out, base_url="http://127.0.0.1:8773")
+    assert result["written"] == 0
+    assert not (out / "movies" / "Muerta (2024)").exists()
+
+
+def test_local_file_without_release_is_exported(tmp_path):
+    db = tmp_path / "catalogo.db"
+    init_db(db, MIGRATIONS)
+    media = tmp_path / "Local.mkv"
+    media.write_bytes(b"x" * 10)
+    conn = sqlite3.connect(db)
+    conn.execute(
+        "INSERT INTO media_items(key,kind,tmdb,title,year) VALUES(?,?,?,?,?)",
+        ("movie:tmdb:11", "movie", 11, "Sin release", 2024),
+    )
+    asset_id = conn.execute("SELECT id FROM media_items").fetchone()[0]
+    conn.execute(
+        "INSERT INTO torrent_files(asset_id,file_index,rel_path,size_bytes,"
+        "state,storage_location,local_path) VALUES(?,?,?,?,?,?,?)",
+        (asset_id, 0, "Local.mkv", 10, "ready", "LOCAL_DISK", str(media)),
+    )
+    conn.commit()
+    conn.close()
+
+    out = tmp_path / "strm"
+    result = export_strm(db, out, base_url="http://127.0.0.1:8773")
+    assert result["written"] == 1
+    assert (
+        out / "movies" / "Sin release (2024)" / "Sin release (2024).strm"
+    ).is_file()
+
+
 def test_export_multi_version_and_stable_default(tmp_path):
     db, release_1080, release_4k = seed(tmp_path)
     out = tmp_path / "strm"
@@ -107,6 +157,7 @@ def test_export_multi_version_and_stable_default(tmp_path):
     assert result["assets"] == 2
     assert result["written"] == 2
     assert result["versions_written"] == 2
+    assert len(result["written_paths"]) == 4
 
     movie_dir = out / "movies" / "Test Movie (2020)"
     default = movie_dir / "Test Movie (2020).strm"
@@ -118,6 +169,8 @@ def test_export_multi_version_and_stable_default(tmp_path):
     assert v1080.read_text().strip().endswith(f"&release={release_1080}")
     assert v4k.read_text().strip().endswith(f"&release={release_4k}")
 
+    assert (movie_dir / "Test Movie (2020).nfo").is_file()
+    assert "tmdbid" in (movie_dir / "Test Movie (2020).nfo").read_text()
     episode = (
         out
         / "series"
@@ -128,6 +181,9 @@ def test_export_multi_version_and_stable_default(tmp_path):
     assert episode.read_text().strip() == (
         "http://127.0.0.1:8773/play?key=series%3Atmdb%3A2%3A1%3A3&download=0"
     )
+    tvshow = out / "series" / "Serie (2021)" / "tvshow.nfo"
+    assert tvshow.is_file()
+    assert "<tmdbid>2</tmdbid>" in tvshow.read_text()
     # Una sola versión: no se genera fichero de versión.
     assert len(list(episode.parent.glob("*.strm"))) == 1
     assert not (out / "movies" / "Nada (2022)").exists()

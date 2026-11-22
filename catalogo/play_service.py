@@ -99,20 +99,56 @@ class PlayService:
             self._failed[int(release_id)] = time.monotonic() + FAIL_COOLDOWN
 
     def discard_failed(self, handle: dict[str, Any]) -> None:
-        """Pausa un privado; borra un público que casi no descargó."""
+        """Libera un candidato fallido.
+
+        Un torrent que no llegó a descargar nada no debe ocupar una plaza de
+        admisión ni dejar un compromiso de seed. Si ya tenía datos, se pausa
+        (privado) o se borra (público con muy poco progreso).
+        """
         info_hash = handle.get("info_hash") or ""
-        self.mark_failed(handle.get("release_id"))
+        release_id = handle.get("release_id")
+        self.mark_failed(release_id)
         if not info_hash:
             return
         live = self._live_torrent(info_hash)
         progress = float(live.get("progress") or 0) if live else 0.0
         try:
-            if bool(handle.get("private", True)) or progress >= 0.05:
+            if progress <= 0.01:
+                self.qbit_write.delete(info_hash, delete_files=True)
+                self._forget_failed(info_hash, release_id)
+            elif bool(handle.get("private", True)) or progress >= 0.05:
                 self.qbit_write.pause(info_hash)
             else:
                 self.qbit_write.delete(info_hash, delete_files=True)
+                self._forget_failed(info_hash, release_id)
         except Exception:
             pass
+
+    def _forget_failed(self, info_hash: str, release_id: int | None) -> None:
+        from contextlib import closing
+
+        from .db import connect
+
+        with closing(connect(self.db_path)) as conn:
+            conn.execute(
+                """
+                UPDATE seed_commitments
+                SET state = 'cancelled', reason = 'play_failed',
+                    completed_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+                WHERE state IN ('approved', 'active')
+                  AND (
+                      (? IS NOT NULL AND release_id = ?)
+                      OR info_hash = ?
+                  )
+                """,
+                (release_id, release_id, info_hash),
+            )
+            conn.execute(
+                "UPDATE torrents SET state='removed', qbit_state='removed' "
+                "WHERE info_hash = ?",
+                (info_hash,),
+            )
+            conn.commit()
 
     def preflight(
         self, handle: dict[str, Any], *, timeout: float = PREFLIGHT_TIMEOUT

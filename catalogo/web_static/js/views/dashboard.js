@@ -1,16 +1,21 @@
 import { api } from '../api.js';
+import { attentionCard } from '../attention.js';
 import { esc, fmtBytes, fmtDate, fmtInt, fmtRelative } from '../format.js';
-import { capabilityLabel, downloadStatus, jobLabel, jobState } from '../labels.js';
+import { jobLabel, jobState } from '../labels.js';
 import { state } from '../store.js';
-import { $, badge, barPercent, empty, icon, poster, setHeader, status } from '../ui.js';
+import { $, badge, barPercent, empty, icon, poster, setHeader } from '../ui.js';
 
 export async function renderDashboard({ signal }) {
-  const data = await api('/api/ondemand/overview', { signal });
+  const [data, attention] = await Promise.all([
+    api('/api/ondemand/overview', { signal }),
+    api('/api/attention', { signal }).catch(() => null),
+  ]);
+  state.attention = attention;
   const activity = state.activity || await api('/api/activity', { signal }).catch(() => null);
-  const jobsData = await api('/api/jobs?limit=6', { signal }).catch(() => ({ items: [] }));
+  const jobsData = await api('/api/jobs?limit=30', { signal }).catch(() => ({ items: [] }));
   const preview = await api('/api/ondemand/catalog?publication=publicado&group=series&per_page=6&facets=0&sort=recent', { signal }).catch(() => ({ items: [] }));
-  const setup = await api('/api/setup', { signal }).catch(() => null);
-  const recentJobs = jobsData.items || [];
+  const routine = new Set(['attention-check', 'qbit-limits', 'worker-cycle']);
+  const recentJobs = (jobsData.items || []).filter((job) => !routine.has(job.kind));
   const catalog = data.catalog || {};
   const movies = catalog.movies || {};
   const series = catalog.series || {};
@@ -18,18 +23,9 @@ export async function renderDashboard({ signal }) {
   const library = data.library || {};
   const disk = data.disk || {};
   const active = activity?.running || (activity?.active || [])[0] || null;
-  const latest = activity?.latest || null;
+  const latest = recentJobs[0] || null;
 
-  setHeader('Inicio', 'Biblioteca');
-
-  const alerts = [];
-  if (!library.ok) {
-    const errors = library.errors || [];
-    alerts.push(`Radarr/Sonarr no responden${errors.length ? ` (${errors.length} avisos)` : ''}. Comprueba que los servicios estén activos.`);
-  }
-  if (downloads.paused) alerts.push(`${fmtInt(downloads.paused)} descargas on-demand están pausadas.`);
-  if (downloads.error) alerts.push(`${fmtInt(downloads.error)} descargas on-demand tienen error.`);
-  const setupMissing = setup?.missing || [];
+  setHeader('Inicio', 'Contenido');
 
   const recent = (library.recent || []).slice(0, 7).map((item) => {
     const meta = item.kind === 'movie'
@@ -65,40 +61,28 @@ export async function renderDashboard({ signal }) {
             <small>Última tarea, ${esc(jobState(latest.state).label)}, ${esc(fmtRelative(latest.finished_at || latest.created_at))}</small>
           </div>
         </div>`
-      : `<div class="job-active"><div class="info"><strong>Sin tareas recientes</strong><small>El catálogo está en reposo.</small></div><a class="btn btn-sm btn-ghost" href="#/jobs">Abrir tareas</a></div>`;
+      : `<div class="job-active"><div class="info"><strong>Sin tareas recientes</strong><small>Nada en marcha.</small></div><a class="btn btn-sm btn-ghost" href="#/jobs">Abrir tareas</a></div>`;
 
   $('#view').innerHTML = `
-    <div class="row between" style="align-items:flex-start">
-      <h2 style="margin:0;font-family:var(--serif);font-size:30px;font-weight:400;letter-spacing:-.025em">Buscar y añadir</h2>
-      <a class="btn btn-ghost" href="#/catalog">Examinar catálogo</a>
+    <div class="section" style="margin-top:0">${attentionCard(attention, { compact: true })}</div>
+
+    <div class="section">
+      <h2 style="margin:0;font-family:var(--serif);font-size:30px;font-weight:400;letter-spacing:-.025em">Añadir desde TMDB</h2>
+      <form class="row" data-form="quick-search" style="margin-top:12px">
+        <input name="q" placeholder="Película o serie…" autocomplete="off" style="flex:1;min-width:220px" aria-label="Buscar película o serie en TMDB">
+        <button class="btn btn-primary" type="submit">${icon('search')} Buscar</button>
+      </form>
     </div>
-    <form class="row" data-form="quick-search" style="margin-top:12px">
-      <input name="q" placeholder="Título de película o serie…" autocomplete="off" style="flex:1;min-width:220px" aria-label="Buscar título para añadir">
-      <button class="btn btn-primary" type="submit">${icon('search')} Buscar</button>
-    </form>
-
-    ${setupMissing.length ? `<div class="panel pad section setup-card">
-      <div class="row between" style="align-items:flex-start;gap:16px">
-        <div>
-          <strong>Termina de configurar TOD</strong>
-          <p class="muted tiny" style="margin:4px 0 0">Conecta los servicios y revisa los directorios. Sin esta configuración no se pueden buscar fuentes ni reproducir.</p>
-          <div class="row" style="margin-top:10px">${setupMissing.map((name) => badge(name === 'catalog_library' ? 'Biblioteca del catálogo' : capabilityLabel(name), 'mono')).join('')}</div>
-        </div>
-        <a class="btn btn-primary" href="#/settings">${icon('wrench', 'sm')} Configurar</a>
-      </div>
-    </div>` : ''}
-
-    ${alerts.length ? `<div class="stack section">${alerts.map((text) => `<div class="notice">${esc(text)}</div>`).join('')}</div>` : ''}
 
     <div class="record-line section">
-      <span><b>${fmtInt((movies.published || 0) + (series.published || 0))}</b> en biblioteca</span>
+      <span><b>${fmtInt((movies.published || 0) + (series.published || 0))}</b> en Jellyfin</span>
       <span><b>${fmtInt(catalog.episodes || 0)}</b> episodios</span>
       <span><b>${fmtInt(downloads.downloading || 0)}</b> descargando</span>
       <span><b>${fmtBytes(disk.free || 0)}</b> libres</span>
     </div>
 
     <div class="section">
-      <div class="section-head"><h2>En el archivo</h2><a class="right tiny" href="#/catalog">Ver catálogo</a></div>
+      <div class="section-head"><h2>En Jellyfin</h2><a class="right tiny" href="#/catalog">Ver todo</a></div>
       ${(preview.items || []).length
         ? `<div class="poster-strip">
         ${(preview.items || []).map((item) => `<a class="strip-item" href="${item.kind === 'series' ? `#/series/${item.tmdb}` : `#/title/${item.id}`}">
@@ -106,12 +90,12 @@ export async function renderDashboard({ signal }) {
           <strong>${esc(item.title || '—')}</strong>
         </a>`).join('')}
       </div>`
-        : empty('Sin títulos en el archivo', 'Añade una película o serie para empezar.', `<a class="btn btn-sm" href="#/add">Añadir contenido</a>`)}
+        : empty('No hay títulos añadidos', 'Añade una película o serie para empezar.', `<a class="btn btn-sm" href="#/add">Añadir desde TMDB</a>`)}
     </div>
 
     <div class="grid grid-2 section">
       <div class="panel">
-        <div class="panel-head"><h2>Actividad</h2>${badge(active ? 'en curso' : 'reposo', 'mono')}<a class="right tiny" href="#/jobs">Historial</a></div>
+        <div class="panel-head"><h2>Actividad</h2>${badge(active ? 'en curso' : 'reposo', 'mono')}<a class="right tiny" href="#/jobs">Ver tareas</a></div>
         ${activePanel}
         ${recentJobs.length ? `<div class="panel-body" style="padding-top:6px;padding-bottom:8px">
           ${recentJobs.filter((job) => !active || job.id !== active.id).slice(0, 5).map((job) => `<div class="kv">
@@ -133,11 +117,11 @@ export async function renderDashboard({ signal }) {
 
     <div class="grid grid-2 section">
       <div class="panel flush">
-        <div class="panel-head"><h2>Últimas incorporaciones</h2></div>
+        <div class="panel-head"><h2>Novedades en Radarr y Sonarr</h2></div>
         ${recent || empty('Sin datos de Radarr/Sonarr')}
       </div>
       <div class="panel">
-        <div class="panel-head"><h2>Biblioteca Radarr / Sonarr</h2></div>
+        <div class="panel-head"><h2>Radarr y Sonarr</h2><span class="right tiny faint">solo lectura</span></div>
         <div class="panel-body" style="padding-top:8px;padding-bottom:8px">
           <div class="kv"><span>Películas con fichero</span><span>${fmtInt(library.radarr?.movies_available || 0)}</span></div>
           <div class="kv"><span>Series con fichero</span><span>${fmtInt(library.sonarr?.series_available || 0)}</span></div>

@@ -223,6 +223,7 @@ def _upsert_release(
     season: int | None = None,
     episode: int | None = None,
     spanish_trackers: Iterable[str] | None = None,
+    privacy: str = "private",
 ) -> str:
     title = (result.get("title") or "").strip()
     size = int(result.get("size") or 0)
@@ -269,6 +270,7 @@ def _upsert_release(
         int(result.get("seeders") or 0),
         int(result.get("peers") or 0),
         now,
+        privacy,
     )
     existing = conn.execute(
         """
@@ -306,7 +308,7 @@ def _upsert_release(
                 quality=?, audio=?, audio_confidence=?, size_bytes=?, is_pack=?,
                 info_hash=?, download_url=?, info_url=?, seeders=?, peers=?,
                 health='alive', health_checked_at=?,
-                source='prowlarr', privacy='private',
+                source='prowlarr', privacy=?,
                 updated_at=strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
             WHERE id=?
             """,
@@ -322,7 +324,7 @@ def _upsert_release(
             download_url, info_url, seeders, peers, health, health_checked_at,
             source, privacy
         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'alive',
-                  ?, 'prowlarr', 'private')
+                  ?, 'prowlarr', ?)
         """,
         (asset_id,) + values[:1] + (guid,) + values[1:],
     )
@@ -372,6 +374,15 @@ def sync_sources(
         raise ValueError("ningún indexer disponible en Prowlarr")
     indexer_ids = [indexer_id for _, indexer_id in found]
     found_names = [name for name, _ in found]
+    privacy_by_name = {
+        str(item.get("name") or ""): (
+            "public"
+            if str(item.get("privacy") or "").lower() == "public"
+            else "private"
+        )
+        for item in indexer_payload
+        if item.get("name")
+    }
     spanish_trackers = spanish_trackers_from_indexers(indexer_payload)
     # Jackett se consulta en "all": cada resultado trae su indexer real.
     jackett_sources = [("all", "Jackett")] if jackett else []
@@ -405,119 +416,136 @@ def sync_sources(
         "delay": delay,
         "dry_run": dry_run,
     }
-    with closing(connect(db_path)) as conn:
-        conn.execute("BEGIN IMMEDIATE")
-        try:
-            for index, asset in enumerate(assets):
-                report["assets_checked"] += 1
-                queries = []
-                if query_override:
-                    queries = [str(query_override).strip()]
-                elif kind == "series":
-                    first = local_query(asset) or build_query(asset)
-                    if first:
-                        queries.append(first)
-                    other = build_query(asset)
-                    if other and other not in queries:
-                        queries.append(other)
-                else:
-                    primary = local_query(asset) or build_query(asset)
-                    if primary:
-                        queries.append(primary)
-                    extra = build_query(asset)
-                    if extra and extra not in queries:
-                        queries.append(extra)
-                accepted: list[dict] = []
-                asset_results = 0
-                for query in queries:
-                    report["queries"] += 1
-                    results: list[dict] = []
+    # Las búsquedas son la parte lenta. Se hacen fuera de la transacción y
+    # se guardan por lotes: así la base nunca queda bloqueada mientras
+    # Prowlarr/Jackett responden.
+    batch_size = 25
+    for batch_start in range(0, len(assets), batch_size):
+        batch = assets[batch_start:batch_start + batch_size]
+        pending: list[tuple[dict, list[dict]]] = []
+        for offset, asset in enumerate(batch):
+            index = batch_start + offset
+            report["assets_checked"] += 1
+            queries = []
+            if query_override:
+                queries = [str(query_override).strip()]
+            elif kind == "series":
+                first = local_query(asset) or build_query(asset)
+                if first:
+                    queries.append(first)
+                other = build_query(asset)
+                if other and other not in queries:
+                    queries.append(other)
+            else:
+                primary = local_query(asset) or build_query(asset)
+                if primary:
+                    queries.append(primary)
+                extra = build_query(asset)
+                if extra and extra not in queries:
+                    queries.append(extra)
+            accepted: list[dict] = []
+            asset_results = 0
+            for query in queries:
+                report["queries"] += 1
+                results: list[dict] = []
+                try:
+                    results.extend(
+                        client.search(
+                            query,
+                            media_type=media_type,
+                            indexer_ids=indexer_ids,
+                            limit=50,
+                        )
+                    )
+                except Exception as exc:
+                    report["errors"].append(f"{asset['key']}: {exc}")
+                for slug, tracker in jackett_sources:
                     try:
-                        results.extend(
-                            client.search(
-                                query,
-                                media_type=media_type,
-                                indexer_ids=indexer_ids,
-                                limit=50,
-                            )
+                        found_results = jackett.search(
+                            slug, query, media_type=media_type, limit=50
                         )
                     except Exception as exc:
-                        report["errors"].append(f"{asset['key']}: {exc}")
-                    for slug, tracker in jackett_sources:
-                        try:
-                            found_results = jackett.search(
-                                slug, query, media_type=media_type, limit=50
-                            )
-                        except Exception as exc:
-                            report["errors"].append(
-                                f"{asset['key']} [{slug}]: {exc}"
-                            )
-                            continue
-                        report["jackett_results"] += len(found_results)
-                        results.extend(
-                            _jackett_item(
-                                item,
-                                item.get("indexer") or tracker,
-                            )
-                            for item in found_results
+                        report["errors"].append(
+                            f"{asset['key']} [{slug}]: {exc}"
                         )
-                    asset_results += len(results)
-                    report["results"] += len(results)
-                    matched = [
-                        item for item in results
-                        if int(item.get("seeders") or 0) >= min_seeders
-                        and (accept_unmatched or matches_asset(asset, item, kind=kind))
-                    ]
-                    if accept_unmatched:
-                        accepted = matched
-                    elif kind == "series":
-                        exact = [
-                            item for item in matched
-                            if parse_episode(item.get("title"))
-                            == (
-                                int(asset["season"] or 0),
-                                int(asset["episode"] or 0),
-                            )
-                        ]
-                        accepted = exact or matched
-                    else:
-                        accepted = matched
-                    if accepted:
-                        break
-                report["items"].append(
-                    {
-                        "key": asset["key"],
-                        "query": queries[0] if queries else "",
-                        "results": asset_results,
-                        "accepted": len(accepted),
-                    }
-                )
-                report["accepted"] += len(accepted)
-                for item in accepted:
-                    if dry_run:
                         continue
-                    is_pack = kind == "series" and parse_episode(
-                        item.get("title")
-                    ) is None
-                    outcome = _upsert_release(
-                        conn,
-                        int(asset["id"]),
-                        item.get("indexer") or "",
-                        item,
-                        checked_at,
-                        is_pack=is_pack,
-                        season=int(asset["season"] or 0) if kind == "series" else None,
-                        episode=int(asset["episode"] or 0) if kind == "series" else None,
-                        spanish_trackers=spanish_trackers,
+                    report["jackett_results"] += len(found_results)
+                    results.extend(
+                        _jackett_item(
+                            item,
+                            item.get("indexer") or tracker,
+                        )
+                        for item in found_results
                     )
-                    report[outcome] += 1
-                if delay and index < len(assets) - 1:
-                    time.sleep(delay)
-            if dry_run:
-                conn.rollback()
-            else:
+                asset_results += len(results)
+                report["results"] += len(results)
+                matched = [
+                    item for item in results
+                    if int(item.get("seeders") or 0) >= min_seeders
+                    and (accept_unmatched or matches_asset(asset, item, kind=kind))
+                ]
+                if accept_unmatched:
+                    accepted = matched
+                elif kind == "series":
+                    exact = [
+                        item for item in matched
+                        if parse_episode(item.get("title"))
+                        == (
+                            int(asset["season"] or 0),
+                            int(asset["episode"] or 0),
+                        )
+                    ]
+                    accepted = exact or matched
+                else:
+                    accepted = matched
+                if accepted:
+                    break
+            report["items"].append(
+                {
+                    "key": asset["key"],
+                    "query": queries[0] if queries else "",
+                    "results": asset_results,
+                    "accepted": len(accepted),
+                }
+            )
+            report["accepted"] += len(accepted)
+            pending.append((asset, accepted))
+            if delay and index < len(assets) - 1:
+                time.sleep(delay)
+
+        if dry_run or not pending:
+            continue
+        with closing(connect(db_path)) as conn:
+            conn.execute("BEGIN IMMEDIATE")
+            try:
+                for asset, accepted in pending:
+                    for item in accepted:
+                        is_pack = kind == "series" and parse_episode(
+                            item.get("title")
+                        ) is None
+                        outcome = _upsert_release(
+                            conn,
+                            int(asset["id"]),
+                            item.get("indexer") or "",
+                            item,
+                            checked_at,
+                            is_pack=is_pack,
+                            season=(
+                                int(asset["season"] or 0)
+                                if kind == "series" else None
+                            ),
+                            episode=(
+                                int(asset["episode"] or 0)
+                                if kind == "series" else None
+                            ),
+                            spanish_trackers=spanish_trackers,
+                            privacy=privacy_by_name.get(
+                                item.get("indexer") or "", "private"
+                            ),
+                        )
+                        report[outcome] += 1
                 conn.commit()
-        except Exception:
-            conn.rollback()
-            raise
+            except Exception:
+                conn.rollback()
+                raise
     return report

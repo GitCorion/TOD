@@ -17,7 +17,7 @@ export async function renderCalendar({ query, signal }) {
     : 90;
   const data = await api(`/api/calendar?days=${days}`, { signal });
   const items = data.items || [];
-  setHeader('Calendario', 'Biblioteca');
+  setHeader('Calendario', 'Contenido');
 
   const groups = new Map();
   for (const item of items) {
@@ -36,7 +36,7 @@ export async function renderCalendar({ query, signal }) {
         return `<a class="media-row" href="${href}">
           <span class="poster">${poster(item.poster_path, item.title, { size: 'w92' })}</span>
           <div class="info"><strong>${esc(item.title || '—')}</strong><small>${esc(tag(item))}${item.monitored ? ', en seguimiento' : ''}</small></div>
-          ${item.library_added ? status('En biblioteca', 'ok') : status('Pendiente', 'muted')}
+          ${item.library_added ? status('En Radarr/Sonarr', 'info') : status('Sin catalogar', 'muted')}
           ${icon('chevron', 'sm')}
         </a>`;
       }).join('')}

@@ -71,11 +71,26 @@ def _iso_from_epoch(value: Any) -> str | None:
     return datetime.fromtimestamp(number, tz=timezone.utc).isoformat()
 
 
-def _storage_for(path: str | None, archive_root: str | None = None) -> str:
+def _archive_roots(value: str | tuple[str, ...] | list[str] | None) -> tuple[str, ...]:
+    if not value:
+        return ("/mnt/library",)
+    if isinstance(value, (tuple, list, set)):
+        roots = tuple(str(item) for item in value if item)
+        return roots or ("/mnt/library",)
+    return (str(value),)
+
+
+def _in_archive(path: str, value: str | tuple[str, ...] | list[str] | None) -> bool:
+    return any(path.startswith(root) for root in _archive_roots(value))
+
+
+def _storage_for(
+    path: str | None,
+    archive_root: str | tuple[str, ...] | list[str] | None = None,
+) -> str:
     if not path:
         return "NONE"
-    archive = str(archive_root or "/mnt/library")
-    if path.startswith(archive):
+    if _in_archive(path, archive_root):
         return "1FICHIER"
     if path.startswith(("/mnt/multimedia", "/mnt/descargas", "/mnt/cache")):
         return "LOCAL_DISK"
@@ -340,7 +355,7 @@ def _path_candidates(
     base_path: str | None,
     content_path: str | None,
     category: str,
-    archive_root: str | None = None,
+    archive_root: str | tuple[str, ...] | list[str] | None = None,
 ) -> list[str]:
     candidates: list[str] = []
     if content_path:
@@ -348,10 +363,12 @@ def _path_candidates(
     for base in (save_path, base_path):
         if base:
             candidates.append(str(Path(base) / rel_path))
-    archive = str(archive_root or "/mnt/library")
-    roots = [
-        archive,
-        str(Path(archive) / "descargas"),
+    roots = list(_archive_roots(archive_root))
+    roots.extend(
+        str(Path(archive) / "descargas")
+        for archive in _archive_roots(archive_root)
+    )
+    roots.extend([
         "/mnt/descargas/ondemand",
         "/mnt/descargas/radarr",
         "/mnt/descargas/tv-sonarr",
@@ -360,7 +377,7 @@ def _path_candidates(
         "/mnt/cache/tmp/radarr",
         "/mnt/cache/tmp/completo",
         "/mnt/cache/tmp/ondemand",
-    ]
+    ])
     for root in roots:
         candidates.append(str(Path(root) / rel_path))
     return list(dict.fromkeys(candidates))
@@ -381,7 +398,7 @@ def _upsert_file(
     moving: bool = False,
     content_path: str | None = None,
     category: str = "",
-    archive_root: str | None = None,
+    archive_root: str | tuple[str, ...] | list[str] | Path | None = None,
 ) -> int:
     file_index = int(item.get("index") or 0)
     rel_path = item.get("name") or ""
@@ -489,7 +506,9 @@ def _upsert_file(
 
 
 def _choose_active(
-    conn, asset_id: int, archive_root: str | None = None
+    conn,
+    asset_id: int,
+    archive_root: str | tuple[str, ...] | list[str] | None = None,
 ) -> tuple[str, int | None]:
     rows = conn.execute(
         """
@@ -525,8 +544,7 @@ def _choose_active(
             (active["torrent_id"],),
         ).fetchone()
         if torrent and (torrent["qbit_state"] or "").lower() == "moving":
-            archive = str(archive_root or "/mnt/library")
-            if (torrent["save_path"] or "").startswith(archive):
+            if _in_archive(torrent["save_path"] or "", archive_root):
                 return "MOVING_TO_1FICHIER", int(active["id"])
             return "SEEDING_LOCAL", int(active["id"])
     if active["storage_location"] == "1FICHIER" and active["library_path"]:
@@ -543,7 +561,7 @@ def sync(
     *,
     radarr=None,
     sonarr=None,
-    archive_root: str | None = None,
+    archive_root: str | tuple[str, ...] | list[str] | Path | None = None,
     dry_run: bool = False,
     check_exists: bool = True,
     now: datetime | None = None,
@@ -556,6 +574,62 @@ def sync(
     torrents = client.torrents()
     report.torrents_seen = len(torrents)
     report.by_category = dict(Counter(t.get("category") or "" for t in torrents))
+
+    # La lista de ficheros se pide a qBittorrent ANTES de abrir la
+    # transacción. Es la llamada lenta (una por torrent) y no puede mantener
+    # bloqueada la base mientras se reproduce o corre el scheduler.
+    known: dict[str, Any] = {}
+    with closing(connect(db_path)) as conn:
+        for row in conn.execute(
+            """
+            SELECT t.info_hash, t.save_path, t.content_path,
+                   t.qbit_state, t.progress, COUNT(f.id) AS files
+            FROM torrents t
+            LEFT JOIN torrent_files f ON f.torrent_id = t.id
+            GROUP BY t.id
+            """
+        ).fetchall():
+            known[(row["info_hash"] or "").lower()] = row
+
+    files_by_hash: dict[str, list[dict]] = {}
+    for torrent in torrents:
+        info_hash = (torrent.get("hash") or "").lower()
+        if not info_hash:
+            continue
+        previous = known.get(info_hash)
+        category = torrent.get("category") or ""
+        progress = float(torrent.get("progress") or 0)
+        needs_files = (
+            category in ONDEMAND_CATEGORIES
+            or progress >= 1
+            or (previous is not None and int(previous["files"] or 0) > 0)
+        )
+        if (
+            needs_files
+            and previous is not None
+            and int(previous["files"] or 0) > 0
+            and (previous["save_path"] or "") == (torrent.get("save_path") or "")
+            and (previous["content_path"] or "") == (torrent.get("content_path") or "")
+            and float(previous["progress"] or 0) == progress
+            and not (
+                (previous["qbit_state"] or "").lower()
+                != (torrent.get("state") or "").lower()
+                and (
+                    (previous["qbit_state"] or "").lower() == "moving"
+                    or (torrent.get("state") or "").lower() == "moving"
+                )
+            )
+        ):
+            # Ya está indexado y no se ha movido ni cambiado de estado: no
+            # hace falta repetir la llamada más cara de qBittorrent.
+            needs_files = False
+        if not needs_files:
+            continue
+        try:
+            files_by_hash[info_hash] = client.files(info_hash)
+            report.files_fetched += len(files_by_hash[info_hash])
+        except Exception as exc:
+            report.errors.append(f"{info_hash[:12]}: {exc}")
 
     with closing(connect(db_path)) as conn:
         conn.execute("BEGIN IMMEDIATE")
@@ -583,15 +657,11 @@ def sync(
                         "SELECT COUNT(*) FROM torrent_files WHERE torrent_id = ?",
                         (torrent_id,),
                     ).fetchone()[0]
-                    need_files = (
-                        category in ONDEMAND_CATEGORIES
-                        or progress >= 1
-                        or bool(existing_files)
-                    )
-                    if not need_files:
+                    # Si no se pidieron ficheros, se conserva lo que ya hay
+                    # en la base; no se reescribe ni se pierde el mapeo.
+                    files = files_by_hash.get(info_hash)
+                    if files is None:
                         continue
-                    files = client.files(info_hash)
-                    report.files_fetched += len(files)
                     complete = progress >= 1
                     moving = complete and (torrent.get("state") or "").lower() == "moving"
                     cloud = (

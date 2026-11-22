@@ -1,7 +1,14 @@
 """Puente catálogo → Radarr/Sonarr.
 
-Copia el fichero que ya descargó el catálogo a la carpeta que el *arr ya
-tiene para ese título y dispara un reescaneo. El catálogo conserva su copia.
+Cuando TOD descarga algo bajo demanda, lo registra en el *arr correspondiente
+para que no vuelva a bajarlo:
+
+- si el título no existe, lo añade sin lanzar búsqueda;
+- coloca el fichero en la carpeta del *arr (hardlink si se puede);
+- fuerza un reescaneo;
+- cancela la entrada de cola duplicada.
+
+El catálogo conserva su copia y sigue sembrando según su política.
 """
 
 from __future__ import annotations
@@ -10,6 +17,7 @@ import os
 import shutil
 from contextlib import closing
 from pathlib import Path
+from typing import Any
 
 from .db import connect
 from .strm import safe_name
@@ -23,11 +31,64 @@ def _source(row) -> Path | None:
     return None
 
 
-def _copy(src: Path, dst: Path) -> None:
+def _place(src: Path, dst: Path) -> str:
+    """Coloca el fichero sin duplicar disco cuando es posible."""
     dst.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        os.link(src, dst)
+        return "hardlink"
+    except OSError:
+        pass
     temporary = dst.with_name(dst.name + ".part")
     shutil.copyfile(src, temporary)
     os.replace(temporary, dst)
+    return "copy"
+
+
+def _first_path(rows: list[dict]) -> str | None:
+    for row in rows:
+        path = str(row.get("path") or "").strip()
+        if path and row.get("accessible", True):
+            return path
+    return None
+
+
+def _first_profile(rows: list[dict]) -> int | None:
+    try:
+        return int(rows[0]["id"]) if rows else None
+    except (KeyError, TypeError, ValueError):
+        return None
+
+
+def _cancel_queue(client, *, movie_id: int | None = None,
+                  episode_id: int | None = None) -> int:
+    if movie_id is None and episode_id is None:
+        return 0
+    try:
+        data = client.queue()
+        records = data.get("records") or [] if isinstance(data, dict) else []
+    except Exception:
+        return 0
+    removed = 0
+    for record in records:
+        try:
+            if movie_id is not None:
+                match = int(record.get("movieId") or 0) == int(movie_id)
+            else:
+                match = int(record.get("episodeId") or 0) == int(
+                    episode_id or 0
+                )
+            if not match:
+                continue
+            client.delete_queue_item(
+                int(record["id"]),
+                remove_from_client=True,
+                blocklist=False,
+            )
+            removed += 1
+        except Exception:
+            continue
+    return removed
 
 
 def bridge_downloads(
@@ -38,7 +99,7 @@ def bridge_downloads(
     limit: int = 1,
     dry_run: bool = True,
 ) -> dict:
-    report: dict = {
+    report: dict[str, Any] = {
         "checked": 0,
         "bridged": [],
         "skipped": [],
@@ -49,8 +110,9 @@ def bridge_downloads(
         rows = conn.execute(
             """
             SELECT DISTINCT t.id AS torrent_id, t.info_hash,
-                   m.id AS asset_id, m.key, m.kind, m.tmdb, m.title, m.year,
-                   m.season, m.episode, f.local_path, f.library_path
+                   m.id AS asset_id, m.key, m.kind, m.tmdb, m.tvdb_id,
+                   m.title, m.year, m.season, m.episode,
+                   f.local_path, f.library_path
             FROM torrents t
             JOIN torrent_files f ON f.torrent_id = t.id
             JOIN media_items m ON m.id = f.asset_id
@@ -63,6 +125,28 @@ def bridge_downloads(
             """,
             (max(50, int(limit) * 20),),
         ).fetchall()
+
+    radarr_root: str | None = None
+    radarr_profile: int | None = None
+    sonarr_root: str | None = None
+    sonarr_profile: int | None = None
+
+    def movie_defaults() -> tuple[str | None, int | None]:
+        nonlocal radarr_root, radarr_profile
+        if radarr_root is None:
+            radarr_root = _first_path(radarr.root_folders())
+        if radarr_profile is None:
+            radarr_profile = _first_profile(radarr.quality_profiles())
+        return radarr_root, radarr_profile
+
+    def series_defaults() -> tuple[str | None, int | None]:
+        nonlocal sonarr_root, sonarr_profile
+        if sonarr_root is None:
+            sonarr_root = _first_path(sonarr.root_folders())
+        if sonarr_profile is None:
+            sonarr_profile = _first_profile(sonarr.quality_profiles())
+        return sonarr_root, sonarr_profile
+
     bridged_count = 0
     for row in rows:
         if bridged_count >= int(limit):
@@ -84,6 +168,7 @@ def bridge_downloads(
                 {"key": asset["key"], "reason": "sin_tmdb"}
             )
             continue
+
         if asset["kind"] == "movie":
             if radarr is None:
                 report["skipped"].append(
@@ -92,71 +177,132 @@ def bridge_downloads(
                 continue
             try:
                 movie = radarr.movie_by_tmdb(tmdb)
-            except Exception as exc:
-                report["errors"].append(
-                    f"{asset['key']}: {str(exc)[:150]}"
-                )
-                continue
-            if movie is None:
-                report["skipped"].append(
-                    {"key": asset["key"], "reason": "no_en_radarr"}
-                )
-                continue
-            if movie.get("hasFile"):
-                report["skipped"].append(
-                    {"key": asset["key"], "reason": "ya_en_radarr"}
-                )
-                continue
-            title = safe_name(movie.get("title") or asset["title"] or "Sin titulo")
-            year = movie.get("year") or asset["year"]
-            suffix = f" ({year})" if year else ""
-            destination = Path(movie["path"]) / f"{title}{suffix}{source.suffix}"
-            if destination.exists():
-                report["skipped"].append(
-                    {"key": asset["key"], "reason": "destino_existe"}
-                )
-                continue
-            if dry_run:
-                report["bridged"].append(
-                    {"key": asset["key"], "to": str(destination)}
-                )
-                bridged_count += 1
-                continue
-            try:
-                _copy(source, destination)
-                radarr.rescan_movie(movie["id"])
-            except Exception as exc:
-                report["errors"].append(
-                    f"{asset['key']}: {str(exc)[:150]}"
-                )
-                continue
-            report["bridged"].append(
-                {"key": asset["key"], "to": str(destination)}
-            )
-            bridged_count += 1
-        else:
-            if sonarr is None:
-                report["skipped"].append(
-                    {"key": asset["key"], "reason": "sin_sonarr"}
-                )
-                continue
-            try:
-                series = sonarr.series_by_tmdb(tmdb)
-                if series is None:
+                added = False
+                if movie is None:
+                    root, profile = movie_defaults()
+                    if not root or not profile:
+                        report["skipped"].append(
+                            {"key": asset["key"], "reason": "sin_root_o_perfil"}
+                        )
+                        continue
+                    if dry_run:
+                        report["bridged"].append(
+                            {
+                                "key": asset["key"],
+                                "action": "add",
+                                "title": asset["title"],
+                            }
+                        )
+                        bridged_count += 1
+                        continue
+                    created = radarr.add_movie(
+                        tmdb=tmdb,
+                        title=asset["title"] or "",
+                        year=asset["year"],
+                        root_folder=root,
+                        quality_profile_id=profile,
+                        monitored=False,
+                    )
+                    movie = radarr.movie_by_tmdb(tmdb) or created
+                    added = True
+                if not movie:
                     report["skipped"].append(
-                        {"key": asset["key"], "reason": "no_en_sonarr"}
+                        {"key": asset["key"], "reason": "no_en_radarr"}
                     )
                     continue
-                episode = sonarr.episode(
-                    series["id"],
-                    int(asset["season"] or 0),
-                    int(asset["episode"] or 0),
+                if movie.get("hasFile"):
+                    report["skipped"].append(
+                        {"key": asset["key"], "reason": "ya_en_radarr"}
+                    )
+                    continue
+                movie_path = str(movie.get("path") or "").strip()
+                if not movie_path:
+                    report["skipped"].append(
+                        {"key": asset["key"], "reason": "radarr_sin_ruta"}
+                    )
+                    continue
+                title = safe_name(
+                    movie.get("title") or asset["title"] or "Sin titulo"
                 )
+                year = movie.get("year") or asset["year"]
+                suffix = f" ({year})" if year else ""
+                destination = Path(movie_path) / f"{title}{suffix}{source.suffix}"
+                if destination.exists():
+                    report["skipped"].append(
+                        {"key": asset["key"], "reason": "destino_existe"}
+                    )
+                    continue
+                if dry_run:
+                    report["bridged"].append(
+                        {"key": asset["key"], "to": str(destination),
+                         "action": "add" if added else "copy"}
+                    )
+                    bridged_count += 1
+                    continue
+                action = _place(source, destination)
+                radarr.rescan_movie(int(movie["id"]))
+                removed = _cancel_queue(radarr, movie_id=int(movie["id"]))
+                report["bridged"].append(
+                    {
+                        "key": asset["key"],
+                        "to": str(destination),
+                        "action": "added" if added else action,
+                        "queue_removed": removed,
+                    }
+                )
+                bridged_count += 1
             except Exception as exc:
                 report["errors"].append(
                     f"{asset['key']}: {str(exc)[:150]}"
                 )
+            continue
+
+        if sonarr is None:
+            report["skipped"].append(
+                {"key": asset["key"], "reason": "sin_sonarr"}
+            )
+            continue
+        try:
+            series = sonarr.series_by_tmdb(tmdb)
+            added = False
+            if series is None:
+                root, profile = series_defaults()
+                if not root or not profile:
+                    report["skipped"].append(
+                        {"key": asset["key"], "reason": "sin_root_o_perfil"}
+                    )
+                    continue
+                if dry_run:
+                    report["bridged"].append(
+                        {
+                            "key": asset["key"],
+                            "action": "add",
+                            "title": asset["title"],
+                        }
+                    )
+                    bridged_count += 1
+                    continue
+                created = sonarr.add_series(
+                    tvdb=asset.get("tvdb_id"),
+                    tmdb=tmdb,
+                    title=asset["title"] or "",
+                    year=asset["year"],
+                    root_folder=root,
+                    quality_profile_id=profile,
+                    monitored=False,
+                )
+                series = sonarr.series_by_tmdb(tmdb) or created
+                added = True
+            if not series:
+                report["skipped"].append(
+                    {"key": asset["key"], "reason": "no_en_sonarr"}
+                )
                 continue
+            episode = sonarr.episode(
+                series["id"],
+                int(asset["season"] or 0),
+                int(asset["episode"] or 0),
+            )
             if episode is None:
                 report["skipped"].append(
                     {"key": asset["key"], "reason": "episodio_no_en_sonarr"}
@@ -165,6 +311,12 @@ def bridge_downloads(
             if episode.get("hasFile"):
                 report["skipped"].append(
                     {"key": asset["key"], "reason": "ya_en_sonarr"}
+                )
+                continue
+            series_path = str(series.get("path") or "").strip()
+            if not series_path:
+                report["skipped"].append(
+                    {"key": asset["key"], "reason": "sonarr_sin_ruta"}
                 )
                 continue
             season = int(asset["season"] or 0)
@@ -176,7 +328,7 @@ def bridge_downloads(
                 episode.get("title") or f"S{season:02d}E{number:02d}"
             )
             destination = (
-                Path(series["path"])
+                Path(series_path)
                 / f"Season {season}"
                 / f"{series_title} - S{season:02d}E{number:02d} - "
                   f"{episode_title}{source.suffix}"
@@ -188,20 +340,27 @@ def bridge_downloads(
                 continue
             if dry_run:
                 report["bridged"].append(
-                    {"key": asset["key"], "to": str(destination)}
+                    {"key": asset["key"], "to": str(destination),
+                     "action": "add" if added else "copy"}
                 )
                 bridged_count += 1
                 continue
-            try:
-                _copy(source, destination)
-                sonarr.rescan_series(series["id"])
-            except Exception as exc:
-                report["errors"].append(
-                    f"{asset['key']}: {str(exc)[:150]}"
-                )
-                continue
+            action = _place(source, destination)
+            sonarr.rescan_series(int(series["id"]))
+            removed = _cancel_queue(
+                sonarr, episode_id=episode.get("id")
+            )
             report["bridged"].append(
-                {"key": asset["key"], "to": str(destination)}
+                {
+                    "key": asset["key"],
+                    "to": str(destination),
+                    "action": "added" if added else action,
+                    "queue_removed": removed,
+                }
             )
             bridged_count += 1
+        except Exception as exc:
+            report["errors"].append(
+                f"{asset['key']}: {str(exc)[:150]}"
+            )
     return report
