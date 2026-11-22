@@ -872,7 +872,9 @@ def tmdb_poster(config: Config, kind: str, tmdb_id: int) -> str | None:
         return None
 
 
-def add_movie(config: Config, tmdb_id: int) -> dict[str, Any]:
+def add_movie(
+    config: Config, tmdb_id: int, *, origin: str | None = None
+) -> dict[str, Any]:
     client = _tmdb(config)
     raw = client.movie_details(int(tmdb_id))
     item = movie_item(raw)
@@ -882,7 +884,9 @@ def add_movie(config: Config, tmdb_id: int) -> dict[str, Any]:
         item["aliases"] = client.alternative_titles("movie", int(tmdb_id))
     except Exception:
         pass
-    report = upsert_movies(config.db_path, [item], source="tmdb")
+    report = upsert_movies(
+        config.db_path, [item], source="tmdb", origin=origin or "tmdb"
+    )
     key = f"movie:tmdb:{int(tmdb_id)}"
     asset_id = None
     from contextlib import closing
@@ -911,6 +915,8 @@ def add_series(
     config: Config,
     tmdb_id: int,
     seasons: list[int],
+    *,
+    origin: str | None = None,
 ) -> dict[str, Any]:
     client = _tmdb(config)
     raw = client.tv_details(int(tmdb_id))
@@ -928,7 +934,15 @@ def add_series(
         payload = client.season_details(int(tmdb_id), season)
         episodes = episode_items(season, payload)
         if episodes:
-            reports.append(upsert_episodes(config.db_path, series, episodes))
+            reports.append(
+                upsert_episodes(
+                    config.db_path,
+                    series,
+                    episodes,
+                    source="tmdb",
+                    origin=origin or "tmdb",
+                )
+            )
             episodes_total += len(episodes)
             episode_keys.extend(
                 f"series:tmdb:{int(tmdb_id)}:{season}:{int(item['episode'])}"

@@ -24,7 +24,8 @@ const ROUTES = {
   collection: { title: 'Saga', kicker: 'Biblioteca', render: renderCollection },
   series: { title: 'Serie', kicker: 'Biblioteca', render: renderSeries },
   title: { title: 'Ficha', kicker: 'Biblioteca', render: renderTitle },
-  add: { title: 'Añadir desde TMDB', kicker: 'Contenido', render: renderAdd },
+  add: { title: 'Añadir', kicker: '', render: renderAdd },
+  intake: { title: 'Añadir', kicker: '', render: renderAdd },
   downloads: { title: 'Descargas', kicker: 'Actividad', render: renderDownloads },
   jobs: { title: 'Tareas', kicker: 'Actividad', render: renderJobs },
   history: { title: 'Historial', kicker: 'Actividad', render: renderHistory },
@@ -108,7 +109,11 @@ export async function route() {
   state.query = parsed.query;
   setActiveNav(parsed.view);
   setHeader(definition.title, definition.kicker);
-  $('#view').innerHTML = `<div class="panel pad"><div class="skeleton skeleton-block"></div><div class="skeleton" style="height:12px;width:40%;margin-top:12px"></div></div>`;
+  $('#view').innerHTML = `<div class="view-loading" aria-busy="true" aria-label="Cargando">
+    <div class="skeleton" style="height:34px;width:100%"></div>
+    <div class="skeleton" style="height:28px;width:44%;margin-top:4px"></div>
+    ${Array.from({ length: 7 }, () => '<div class="skeleton" style="height:38px;width:100%"></div>').join('')}
+  </div>`;
   const signal = beginRequest();
   const previousFocus = focusKey();
   try {

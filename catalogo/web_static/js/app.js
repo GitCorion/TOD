@@ -3,6 +3,7 @@ import { attentionCard, attentionCount } from './attention.js';
 import { esc, fmtBytes, fmtDate, fmtDuration, fmtEta, fmtInt, pct, debounce } from './format.js';
 import { healthStatus, jobLabel, jobState, qbitState, taskDef } from './labels.js';
 import { navigate, parseRoute, route, updateQuery } from './router.js';
+import { addSearchResult, submitAdd, uploadTorrent } from './views/add.js';
 import { state, toggleSelection } from './store.js';
 import {
   $, $$, closeModal, confirmModal, icon, openModal, poster, restoreFocus, setLive,
@@ -14,7 +15,7 @@ function syncThemeButton() {
   const use = $('#themeIcon use');
   const button = $('#themeToggle');
   const meta = document.querySelector('meta[name="theme-color"]');
-  if (meta) meta.setAttribute('content', theme === 'dark' ? '#14120f' : '#f2f0ea');
+  if (meta) meta.setAttribute('content', theme === 'dark' ? '#0f1114' : '#eef0f3');
   if (use) use.setAttribute('href', theme === 'dark' ? '#i-sun' : '#i-moon');
   if (button) {
     button.setAttribute(
@@ -30,7 +31,7 @@ function toggleTheme() {
   document.documentElement.dataset.theme = next;
   try { localStorage.setItem('catalogo-theme', next); } catch (_) { /* sin almacenamiento */ }
   const meta = document.querySelector('meta[name="theme-color"]');
-  if (meta) meta.setAttribute('content', next === 'dark' ? '#14120f' : '#f2f0ea');
+  if (meta) meta.setAttribute('content', next === 'dark' ? '#0f1114' : '#eef0f3');
   syncThemeButton();
 }
 
@@ -74,7 +75,7 @@ async function boot() {
 function clearCatalogSelectionUI() {
   state.selection.clear();
   $$('[data-action="catalog-select"]').forEach((input) => { input.checked = false; });
-  $$('.media-card.selected, .media-row.selected').forEach((node) => node.classList.remove('selected'));
+  $$('.media-card.selected, .media-row.selected, .catalog-table tr.selected').forEach((node) => node.classList.remove('selected'));
   renderSelectionBar();
 }
 
@@ -419,7 +420,7 @@ function openActivePaletteItem() {
     const text = $('#paletteInput').value.trim();
     if (text) {
       closePalette();
-      navigate('add', [], { q: text, kind: 'movie' });
+      navigate('add', [], { q: text });
     }
     return;
   }
@@ -1026,7 +1027,7 @@ document.addEventListener('click', async (event) => {
     if (action === 'palette-add') {
       const text = $('#paletteInput').value.trim();
       closePalette();
-      navigate('add', [], { q: text, kind: 'movie' });
+      navigate('add', [], { q: text });
       return;
     }
     if (action === 'detail-tab') {
@@ -1051,7 +1052,7 @@ document.addEventListener('click', async (event) => {
         if (allSelected) state.selection.delete(key);
         else state.selection.add(key);
         box.checked = !allSelected;
-        box.closest('.media-card, .media-row')?.classList.toggle('selected', !allSelected);
+        box.closest('.media-card, .media-row, .catalog-table tr')?.classList.toggle('selected', !allSelected);
       }
       renderSelectionBar();
       return;
@@ -1098,19 +1099,12 @@ document.addEventListener('click', async (event) => {
       updateQuery({ season: element.dataset.season }, { resetPage: false });
       return;
     }
-    if (action === 'add-kind') {
-      const current = parseRoute().query;
-      navigate('add', [], { kind: element.dataset.kind, q: current.get('q') || '', year: current.get('year') || '' });
+    if (action === 'add-result') {
+      await addSearchResult(element);
       return;
     }
-    if (action === 'add-page') {
-      const current = parseRoute().query;
-      navigate('add', [], {
-        kind: state.tmdb.kind,
-        q: current.get('q') || '',
-        year: current.get('year') || '',
-        page: element.dataset.page,
-      });
+    if (action === 'torrent-pick') {
+      $('#torrentFile')?.click();
       return;
     }
     if (action === 'save-limit') {
@@ -1291,7 +1285,7 @@ document.addEventListener('click', async (event) => {
     }
     if (action === 'catalog-select') {
       const selected = toggleSelection(element.dataset.key);
-      const card = element.closest('.media-card, .media-row');
+      const card = element.closest('.media-card, .media-row, .catalog-table tr');
       if (card) card.classList.toggle('selected', selected);
       renderSelectionBar();
       return;
@@ -1833,6 +1827,11 @@ document.addEventListener('input', (event) => {
   else if (key === 'downloads-q') debouncedDownloads(input.value);
 });
 
+document.addEventListener('change', async (event) => {
+  if (event.target.id !== 'torrentFile') return;
+  await uploadTorrent(event.target.files?.[0]);
+});
+
 document.addEventListener('submit', async (event) => {
   const form = event.target;
   if (!(form instanceof HTMLFormElement)) return;
@@ -1840,19 +1839,9 @@ document.addEventListener('submit', async (event) => {
   event.preventDefault();
   if (form.dataset.form === 'quick-search') {
     const values = formValues(form);
-    navigate('add', [], { q: values.q || '', kind: 'movie' });
-  } else if (form.dataset.form === 'add-search') {
-    const values = formValues(form);
-    navigate('add', [], {
-      kind: state.tmdb.kind,
-      q: values.q || '',
-      year: values.year || '',
-    });
-  } else if (form.dataset.form === 'tmdb-direct') {
-    const values = formValues(form);
-    if (!values.tmdb) return;
-    if (values.kind === 'series') await addSeries(Number(values.tmdb), `TMDB ${values.tmdb}`);
-    else await addMovie(Number(values.tmdb), `TMDB ${values.tmdb}`);
+    navigate('add', [], { q: values.q || '' });
+  } else if (form.dataset.form === 'add-submit') {
+    await submitAdd(form);
   } else if (form.dataset.form === 'technical') {
     const values = formValues(form);
     navigate('technical', [], values);

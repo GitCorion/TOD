@@ -14,6 +14,26 @@ const PUBLICATION = {
   sin_fuente: { label: 'Sin fuente', tone: 'muted' },
 };
 
+const ORIGIN = {
+  tmdb: 'TMDB',
+  radarr: 'Radarr',
+  sonarr: 'Sonarr',
+  rss: 'Novedades RSS',
+  import: 'Importación',
+  link: 'Enlace pegado',
+  torrent: 'Torrent manual',
+  backfill: 'Fondo antiguo',
+  qbit: 'qBittorrent',
+  collection: 'Saga',
+  auto: 'Seguimiento',
+  legacy: 'Catálogo anterior',
+  mixed: 'Varios orígenes',
+};
+
+export function originLabel(value) {
+  return ORIGIN[value] || 'Sin procedencia';
+}
+
 const JOB_STATE = {
   queued: { label: 'En cola', tone: 'warn' },
   running: { label: 'Ejecutando', tone: 'info' },
@@ -58,6 +78,7 @@ export const EVENT_LABELS = {
   'web.ondemand_acquire': 'Añadir / descargar',
   'web.ondemand_publish': 'Añadir',
   'web.ondemand_download': 'Descargar ahora',
+  'web.intake_import': 'Importación de lista',
   'web.ondemand_limit': 'Cambio de límite',
   'web.manual_search': 'Búsqueda manual de fuentes',
   'web.collection_add': 'Añadir colección',

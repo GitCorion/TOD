@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="color-scheme" content="dark light">
-  <meta name="theme-color" content="#14120f">
+  <meta name="theme-color" content="#0f1114">
   <title>TOD</title>
   <link rel="icon" href="/static/tod-mark.svg" type="image/svg+xml">
   <link rel="apple-touch-icon" href="/static/tod-mark.png">
@@ -20,6 +20,7 @@
     <symbol id="i-grid" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></symbol>
     <symbol id="i-list" viewBox="0 0 24 24"><path d="M8 6h13M8 12h13M8 18h13"/><path d="M3 6h.01M3 12h.01M3 18h.01"/></symbol>
     <symbol id="i-download" viewBox="0 0 24 24"><path d="M12 3v12"/><path d="m7 11 5 5 5-5"/><path d="M4 21h16"/></symbol>
+    <symbol id="i-upload" viewBox="0 0 24 24"><path d="M12 21V9"/><path d="m7 13 5-5 5 5"/><path d="M4 3h16"/></symbol>
     <symbol id="i-jobs" viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h10"/><circle cx="19" cy="18" r="2.5"/></symbol>
     <symbol id="i-seed" viewBox="0 0 24 24"><path d="M12 21V9"/><path d="M12 9C12 5 9 3 5 3c0 4 3 6 7 6Z"/><path d="M12 13c0-3 2.5-5 6-5 0 3-2.5 5-6 5Z"/></symbol>
     <symbol id="i-server" viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="7" rx="2"/><rect x="3" y="14" width="18" height="7" rx="2"/><path d="M7 6.5h.01M7 17.5h.01"/></symbol>
@@ -60,6 +61,7 @@
       <nav class="nav" id="nav">
         <span class="nav-label">Contenido</span>
         <a href="#/dashboard" data-route="dashboard"><svg class="icon"><use href="#i-home"/></svg><span>Inicio</span></a>
+        <a href="#/add" data-route="add"><svg class="icon"><use href="#i-plus"/></svg><span>Añadir</span></a>
         <a href="#/catalog" data-route="catalog"><svg class="icon"><use href="#i-grid"/></svg><span>Biblioteca</span></a>
         <a href="#/calendar" data-route="calendar"><svg class="icon"><use href="#i-calendar"/></svg><span>Calendario</span></a>
         <a href="#/monitor" data-route="monitor"><svg class="icon"><use href="#i-search"/></svg><span>Seguimiento</span><em class="nav-count" id="navMonitor"></em></a>
@@ -95,7 +97,7 @@
           <span>Buscar en la biblioteca…</span>
           <kbd>Ctrl K</kbd>
         </button>
-        <a class="btn btn-primary top-add" href="#/add" data-action="add-open"><svg class="icon"><use href="#i-plus"/></svg> Añadir</a>
+        <a class="btn btn-primary top-add" href="#/add"><svg class="icon"><use href="#i-plus"/></svg> Añadir</a>
         <div class="top-actions">
           <button class="btn btn-icon" id="themeToggle" data-action="theme" aria-label="Cambiar a tema claro" title="Cambiar tema">
             <svg class="icon" id="themeIcon"><use href="#i-sun"/></svg>
@@ -143,7 +145,7 @@
       <footer class="palette-foot">
         <span><kbd>↑</kbd><kbd>↓</kbd> moverse</span>
         <span><kbd>Enter</kbd> abrir</span>
-        <a href="#/add" data-action="palette-add">Buscar en TMDB</a>
+        <a href="#/add" data-action="palette-add">Añadir</a>
       </footer>
     </div>
   </div>

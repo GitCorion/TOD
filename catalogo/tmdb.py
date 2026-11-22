@@ -201,6 +201,9 @@ class TmdbClient:
     def collection_details(self, collection_id: int) -> dict:
         return self._get(f"collection/{int(collection_id)}")
 
+    def list_details(self, list_id: int, *, page: int = 1) -> dict:
+        return self._get(f"list/{int(list_id)}", page=page)
+
     def search_movie(
         self, query: str, *, year: int | None = None, page: int = 1
     ) -> dict:

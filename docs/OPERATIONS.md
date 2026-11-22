@@ -68,6 +68,25 @@ sale de Radarr/Sonarr, vuelve a seguimiento; si entra, deja de perseguirse
 desde TOD. Los títulos que ya tienen fichero local/torrent también se marcan
 al importarse, para que no queden fuera de la reconciliación.
 
+## Añadir y procedencia
+
+**Añadir** es una sola caja. Acepta:
+
+- un título suelto (`Matrix`, `Breaking Bad`), que se busca en TMDB;
+- una URL de TMDB, una clave (`movie:tmdb:...`, `series:tmdb:...:S:E`), un ID;
+- una lista de enlaces o IDs, una por línea;
+- un `.torrent` manual, que se envía a qBittorrent. Es un atajo explícito:
+  no pasa por admisión ni crea un compromiso de seed.
+
+El botón **Añadir a Seguimiento** decide si los títulos nuevos se buscan y se
+publican cuando haya fuente. Sin esa marca solo se crea la identidad.
+
+Añadir no descarga ni ocupa disco. Cada lote queda en
+`intake_batches`/`intake_items` con el resultado de cada línea, aunque falle.
+`media_items.origin` guarda de dónde vino el título (`import`, `radarr`,
+`sonarr`, `rss`, `tmdb`, `backfill`, `torrent`, `legacy`…). La primera
+procedencia no se pisa al actualizar metadatos.
+
 ## Reproducción
 
 `.strm` estable:

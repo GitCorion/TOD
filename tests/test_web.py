@@ -1,3 +1,4 @@
+import base64
 import json
 import socket
 import sqlite3
@@ -269,6 +270,83 @@ def test_web_endpoints_local_and_csrf(tmp_path):
             base, "/api/overview", headers={"Host": "evil.example:80"}
         )
         assert status == 403
+    finally:
+        server.shutdown()
+        server.server_close()
+        server.app.runner.stop()
+
+
+def test_web_intake_reception_and_missing_tmdb(tmp_path):
+    db, _movie_id, _ = seed(tmp_path)
+    config = config_for(tmp_path, db)
+    from catalogo.web import make_server
+
+    server = make_server("127.0.0.1", 0, config)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    base = f"http://127.0.0.1:{server.server_address[1]}"
+    try:
+        status, payload = _request(base, "/api/intake")
+        assert status == 200
+        assert payload["batches"] == []
+        assert payload["limits"]["max_lines"] == 200
+        assert len(payload["flows"]) == 5
+
+        status, payload = _request(base, "/api/intake/batches/999")
+        assert status == 404
+
+        status, payload = _request(
+            base,
+            "/api/intake/preflight",
+            method="POST",
+            body={"text": "https://www.themoviedb.org/movie/603"},
+            headers={"X-Catalogo": "web"},
+        )
+        assert status == 400
+        assert "TMDB" in payload["error"]
+    finally:
+        server.shutdown()
+        server.server_close()
+        server.app.runner.stop()
+
+
+def test_web_intake_torrent_route(tmp_path, monkeypatch):
+    db, _movie_id, _ = seed(tmp_path)
+    config = config_for(tmp_path, db)
+    called = {}
+
+    def fake_add_torrent(config, *, filename, raw, requested_by=None):
+        called.update(filename=filename, raw=raw, requested_by=requested_by)
+        return {
+            "batch_id": 3,
+            "name": "Test",
+            "info_hash": "a" * 40,
+            "save_path": str(tmp_path / "ondemand"),
+        }
+
+    monkeypatch.setattr("catalogo.web.intake.add_torrent", fake_add_torrent)
+    from catalogo.web import make_server
+
+    server = make_server("127.0.0.1", 0, config)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    base = f"http://127.0.0.1:{server.server_address[1]}"
+    raw = b"d4:infod4:name4:Test6:lengthi10eee"
+    try:
+        status, payload = _request(
+            base,
+            "/api/intake/torrent",
+            method="POST",
+            body={
+                "filename": "test.torrent",
+                "data": base64.b64encode(raw).decode(),
+            },
+            headers={"X-Catalogo": "web"},
+        )
+        assert status == 200
+        assert payload["name"] == "Test"
+        assert called["filename"] == "test.torrent"
+        assert called["raw"] == raw
     finally:
         server.shutdown()
         server.server_close()

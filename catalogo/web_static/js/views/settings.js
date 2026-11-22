@@ -232,14 +232,14 @@ export async function renderSettings({ signal, query } = {}) {
         </div>
       </div>
       ${data.restart_required?.length ? `<div class="notice">Requieren reinicio: ${data.restart_required.map((key) => esc(items.find((item) => item.key === key)?.label || key)).join(', ')}</div>` : ''}
-      <nav class="chips settings-nav" aria-label="Secciones de configuración">
-        <button class="chip" data-action="settings-jump" data-target="settings-integrations">Integraciones</button>
-        <button class="chip" data-action="settings-jump" data-target="settings-directories">Directorios</button>
-        <button class="chip" data-action="settings-jump" data-target="settings-playback">Reproducción</button>
-        <button class="chip" data-action="settings-jump" data-target="settings-security">Seguridad</button>
-        <button class="chip" data-action="settings-jump" data-target="settings-language">Idioma</button>
-        <button class="chip" data-action="settings-jump" data-target="settings-seed">Siembra</button>
-        <button class="chip" data-action="settings-jump" data-target="settings-scheduler">Tareas</button>
+      <nav class="settings-nav" aria-label="Secciones de configuración">
+        <button class="settings-tab" data-action="settings-jump" data-target="settings-integrations">Integraciones</button>
+        <button class="settings-tab" data-action="settings-jump" data-target="settings-directories">Directorios</button>
+        <button class="settings-tab" data-action="settings-jump" data-target="settings-playback">Reproducción</button>
+        <button class="settings-tab" data-action="settings-jump" data-target="settings-security">Seguridad</button>
+        <button class="settings-tab" data-action="settings-jump" data-target="settings-language">Idioma</button>
+        <button class="settings-tab" data-action="settings-jump" data-target="settings-seed">Siembra</button>
+        <button class="settings-tab" data-action="settings-jump" data-target="settings-scheduler">Tareas</button>
       </nav>
     </div>
 

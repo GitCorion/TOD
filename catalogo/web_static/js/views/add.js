@@ -1,123 +1,475 @@
-import { api } from '../api.js';
-import { esc, fmtInt } from '../format.js';
-import { updateQuery } from '../router.js';
+import { api, apiPost } from '../api.js';
+import { esc, fmtInt, fmtRelative } from '../format.js';
+import { originLabel } from '../labels.js';
 import { state } from '../store.js';
-import { $, badge, empty, icon, poster, setHeader, status } from '../ui.js';
+import { $, badge, empty, icon, poster, setHeader, status, thumb, toast } from '../ui.js';
 
-export async function renderAdd({ query, signal }) {
-  const kind = query.get('kind') === 'series' ? 'series' : 'movie';
-  const text = query.get('q') || '';
-  const year = query.get('year') || '';
-  const page = Math.max(1, Number(query.get('page')) || 1);
-  state.tmdb.kind = kind;
-  state.tmdb.query = text;
-  state.tmdb.year = year;
-  setHeader('Añadir desde TMDB', 'Contenido');
+const MAX_TORRENT_BYTES = 600000;
 
-  const params = new URLSearchParams({ kind, q: text, year, page: String(page) });
-  let data;
-  try {
-    data = await api(`/api/tmdb/search?${params}`, { signal });
-  } catch (error) {
-    if (error.name === 'AbortError') throw error;
-    const offline = error.status === 0;
-    $('#view').innerHTML = `<div class="panel pad">${empty(
-      offline ? 'Sin conexión' : 'No se puede buscar en TMDB',
-      offline
-        ? 'No se puede conectar con el servidor. Reintenta en unos segundos.'
-        : 'Revisa la API key de TMDB en Configuración. Sin ella no se pueden añadir títulos nuevos.',
-      offline
-        ? '<button class="btn btn-primary" data-action="refresh">Reintentar</button>'
-        : '<a class="btn btn-primary" href="#/settings?section=integraciones&focus=tmdb_api_key">Abrir configuración</a>',
+function countLabel(value, one, many) {
+  const count = Number(value) || 0;
+  return `${fmtInt(count)} ${count === 1 ? one : many}`;
+}
+
+function typeLabel(row) {
+  if (row.kind === 'movie') return 'Película';
+  if (row.kind === 'torrent') return 'Torrent';
+  if (row.kind !== 'series') return '—';
+  if (row.season && row.episode) {
+    return `Serie · T${String(row.season).padStart(2, '0')}E${String(row.episode).padStart(2, '0')}`;
+  }
+  if (row.season) return `Serie · T${String(row.season).padStart(2, '0')}`;
+  return 'Serie';
+}
+
+function rowState(row) {
+  switch (row.state) {
+    case 'added': return status('Añadido', 'ok');
+    case 'ready': return status('Listo', 'ok');
+    case 'duplicate': return status('Ya está', 'info');
+    case 'needs_range': return status('Elige temporada', 'warn');
+    case 'error': return status('Error', 'bad');
+    default: return status('No encontrado', 'muted');
+  }
+}
+
+function batchSummary(batch) {
+  const parts = [];
+  if (batch.added) parts.push(countLabel(batch.added, 'añadido', 'añadidos'));
+  if (batch.duplicate) parts.push(countLabel(batch.duplicate, 'ya estaba', 'ya estaban'));
+  if (batch.needs_range) parts.push(countLabel(batch.needs_range, 'sin temporada', 'sin temporada'));
+  if (batch.unknown) parts.push(countLabel(batch.unknown, 'sin identificar', 'sin identificar'));
+  if (batch.errors) parts.push(countLabel(batch.errors, 'con error', 'con error'));
+  return parts.join(' · ') || 'Sin líneas';
+}
+
+function batchState(batch) {
+  if (batch.state === 'running') return status('En curso', 'info');
+  if (batch.state === 'error') return status('Con error', 'bad');
+  if (batch.state === 'partial') return status('Parcial', 'warn');
+  return status('Completado', 'ok');
+}
+
+function lines(text) {
+  return String(text || '')
+    .split('\n')
+    .map((line) => line.trim())
+    .filter((line) => line && !line.startsWith('#'));
+}
+
+function isStructuredLine(line) {
+  return /themoviedb\.org/i.test(line)
+    || /^(movie|series):/i.test(line)
+    || /^(tmdb|id),/i.test(line)
+    || /^\d{1,9}$/.test(line);
+}
+
+function looksLikeList(text) {
+  const items = lines(text);
+  if (items.length > 1) return true;
+  return items.some((line) => /themoviedb\.org/i.test(line)
+    || /^(movie|series):/i.test(line)
+    || /^(tmdb|id),/i.test(line));
+}
+
+function resultTable(items) {
+  const rows = (items || []).map((item) => {
+    const title = item.title || item.raw || '—';
+    const href = item.kind === 'torrent'
+      ? '#/downloads'
+      : item.media_id
+        ? `#/title/${item.media_id}`
+        : item.kind === 'series' && item.tmdb
+          ? `#/series/${item.tmdb}`
+          : '';
+    return `<tr>
+      <td data-label="Título">
+        <div class="episode-title-cell">
+          ${thumb(item.poster_path, title)}
+          <div class="cell-title">
+            <strong>${esc(title)}</strong>
+            <small>${esc(item.title ? (item.raw || '') : '')}</small>
+          </div>
+        </div>
+      </td>
+      <td data-label="Tipo">${esc(typeLabel(item))}</td>
+      <td data-label="Estado">${rowState(item)}</td>
+      <td data-label="Detalle"><span class="tiny muted">${esc(item.detail || '—')}</span></td>
+      <td class="actions" data-label="">
+        ${href ? `<a class="btn btn-sm btn-ghost" href="${href}">Abrir</a>` : ''}
+      </td>
+    </tr>`;
+  }).join('');
+  return rows
+    ? `<div class="table-wrap"><table class="table--stack">
+        <thead><tr><th>Título</th><th>Tipo</th><th>Estado</th><th>Detalle</th><th></th></tr></thead>
+        <tbody>${rows}</tbody>
+      </table></div>`
+    : '';
+}
+
+function renderBatch(result) {
+  const target = $('#addResult');
+  if (!target) return;
+  const added = Number(result.added || 0);
+  const title = added ? 'Añadido' : 'Sin cambios';
+  const items = result.items || [];
+  const shown = items.slice(0, 12);
+  const rest = items.length - shown.length;
+  target.innerHTML = `
+    <div class="section-head">
+      <h2>${esc(title)}</h2>
+      <span>${esc(batchSummary(result))}</span>
+      ${result.id ? `<a class="right tiny" href="#/add/${result.id}">Ver lote</a>` : ''}
+    </div>
+    ${resultTable(shown)}
+    ${rest ? `<p class="tiny faint" style="margin:10px 0 0">Mostrando ${fmtInt(shown.length)} de ${fmtInt(items.length)}. <a href="#/add/${result.id}">Ver el lote completo</a>.</p>` : ''}
+  `;
+}
+
+function renderSearch(items) {
+  const target = $('#addResult');
+  if (!target) return;
+  state.addResults = items;
+  if (!items.length) {
+    target.innerHTML = `<div class="panel pad">${empty(
+      'Sin resultados',
+      'Prueba otro título o pega el enlace de TMDB.',
     )}</div>`;
     return;
   }
-  const results = data.results || [];
-  state.tmdb.results = results;
-
-  const cards = results.map((item) => {
-    const isSeries = kind === 'series';
-    const href = isSeries ? `#/series/${item.tmdb}` : `#/title/${item.asset_id}`;
-    const catalogCount = item.catalog_episodes || 0;
-    const libraryCount = item.library_added || item.published_episodes || 0;
-    let stateLine = status('Sin catalogar', 'muted');
-    if (item.status === 'downloaded') stateLine = status(isSeries ? `${item.downloaded_episodes || 0}/${catalogCount} descargados` : 'Descargado', 'ok');
-    else if (item.status === 'library') stateLine = status(isSeries ? `${libraryCount}/${catalogCount} en Radarr/Sonarr` : 'En Radarr/Sonarr', 'info');
-    else if (item.status === 'catalog') stateLine = status('En TOD', 'info');
-    const action = item.already
-      ? `<a class="btn btn-sm btn-ghost" href="${href}">Abrir</a>
-         <button class="btn btn-sm btn-ghost" data-action="${isSeries ? 'add-sources' : 'sync-title'}" ${isSeries ? `data-tmdb="${item.tmdb}" data-title="${esc(item.title)}"` : `data-id="${item.asset_id}"`}>${icon('search', 'sm')} Fuentes</button>`
-      : `<button class="btn btn-sm btn-primary" data-action="${isSeries ? 'add-series' : 'add-movie'}" data-tmdb="${item.tmdb}" data-title="${esc(item.title)}">${icon('plus', 'sm')} Añadir</button>`;
-    const link = item.already
-      ? `data-href="${href}" role="link" tabindex="0"`
-      : `data-preview="${item.tmdb}" data-kind="${kind}" data-title="${esc(item.title)}" role="link" tabindex="0"`;
-    return `<article class="media-card" ${link}>
-      <div class="poster">${poster(item.poster_path, item.title)}</div>
-      <div class="meta">
-        <strong>${esc(item.title)} ${item.year ? `<span class="faint">(${item.year})</span>` : ''}</strong>
-        ${stateLine}
-        <p class="tiny muted" style="margin:2px 0 0;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden">${esc(item.overview || 'Sin sinopsis en TMDB.')}</p>
-        <div class="row" style="margin-top:auto;padding-top:4px">
-          <span style="margin-left:auto">${action}</span>
-        </div>
-      </div>
-    </article>`;
+  const rows = items.map((item, index) => {
+    const kind = item.kind === 'series' ? 'Serie' : 'Película';
+    const meta = `${item.year || '—'} · ${kind}${item.already ? ' · En TOD' : ''}`;
+    const posterHtml = `<span class="add-result-poster">${poster(item.poster_path, item.title, { size: 'w92' })}</span>`;
+    const main = `<span class="add-result-main"><strong>${esc(item.title || '—')}</strong><small>${esc(meta)}</small></span>`;
+    if (item.already) {
+      const href = item.kind === 'series' ? `#/series/${item.tmdb}` : `#/title/${item.asset_id}`;
+      return `<div class="add-result">${posterHtml}${main}<a class="btn btn-sm btn-ghost" href="${href}">Abrir</a></div>`;
+    }
+    return `<button class="add-result" type="button" data-action="add-result" data-index="${index}">
+      ${posterHtml}${main}
+      <span class="add-result-action">${icon('plus', 'sm')} Añadir</span>
+    </button>`;
   }).join('');
-
-  $('#view').innerHTML = `
-    <div class="tabs" role="tablist">
-      <button class="${kind === 'movie' ? 'active' : ''}" data-action="add-kind" data-kind="movie" role="tab" aria-selected="${kind === 'movie'}">Películas</button>
-      <button class="${kind === 'series' ? 'active' : ''}" data-action="add-kind" data-kind="series" role="tab" aria-selected="${kind === 'series'}">Series</button>
-    </div>
-
-    <form class="toolbar" data-form="add-search">
-      <label class="field grow">
-        <span>Buscar en TMDB</span>
-        <input name="q" data-input="add-q" value="${esc(text)}" placeholder="Título original o internacional" autocomplete="off" aria-label="Buscar en TMDB">
-      </label>
-      <label class="field" style="width:110px">
-        <span>Año</span>
-        <input name="year" data-input="add-year" value="${esc(year)}" type="number" min="1900" max="2100" placeholder="Opcional" aria-label="Año">
-      </label>
-      <button class="btn btn-primary" type="submit">${icon('search')} Buscar</button>
-    </form>
-
-    <div class="row between section" style="margin-bottom:10px">
-      <div class="tiny faint">${text ? `${fmtInt(data.results?.length || 0)} resultados para «${esc(text)}»` : 'Tendencias en TMDB'}</div>
-      ${data.total_pages > 1 ? `<div class="row">
-        <button class="btn btn-sm btn-ghost" data-action="add-page" data-page="${page - 1}" ${page <= 1 ? 'disabled' : ''}>Anterior</button>
-        <span class="tiny faint">Página ${page} de ${fmtInt(data.total_pages)}</span>
-        <button class="btn btn-sm btn-ghost" data-action="add-page" data-page="${page + 1}" ${page >= data.total_pages ? 'disabled' : ''}>Siguiente</button>
-      </div>` : ''}
-    </div>
-
-    ${results.length
-      ? `<div class="poster-grid">${cards}</div>`
-      : `<div class="panel pad">${empty('Sin resultados', 'Prueba otro título, otro año o el título original.')}</div>`}
-
-    <details class="fold section">
-      <summary>Avanzado: alta directa y captura por lotes</summary>
-      <div class="grid grid-2">
-        <div class="panel">
-          <div class="panel-head"><h2>Alta directa por TMDB</h2></div>
-          <div class="panel-body">
-            <form class="form-grid" data-form="tmdb-direct">
-              <label class="field"><span>Tipo</span><select name="kind">
-                <option value="movie" ${kind === 'movie' ? 'selected' : ''}>Película</option>
-                <option value="series" ${kind === 'series' ? 'selected' : ''}>Serie</option>
-              </select></label>
-              <label class="field"><span>ID de TMDB</span><input name="tmdb" type="number" min="1" required></label>
-              <label class="field"><span>&nbsp;</span><button class="btn" type="submit">Dar de alta</button></label>
-            </form>
-          </div>
-        </div>
-        <div class="panel">
-          <div class="panel-head"><h2>Captura por lotes</h2></div>
-          <div class="panel-body">
-            <a class="btn btn-ghost" href="#/jobs">Abrir tareas</a>
-          </div>
-        </div>
-      </div>
-    </details>
+  target.innerHTML = `
+    <div class="section-head"><h2>Resultados</h2><span>Elige qué añadir</span></div>
+    <div class="add-results">${rows}</div>
   `;
+}
+
+function renderError(error) {
+  const target = $('#addResult');
+  if (!target) return;
+  const message = error?.message || String(error);
+  const tmdb = /TMDB/i.test(message);
+  target.innerHTML = `<div class="panel pad">${empty(
+    'No se pudo añadir',
+    message,
+    tmdb ? '<a class="btn btn-sm" href="#/settings?section=integraciones&focus=tmdb_api_key">Abrir configuración</a>' : '',
+  )}</div>`;
+}
+
+function recentInner(data) {
+  const batches = (data.batches || []).slice(0, 4);
+  if (!batches.length) {
+    return `<div class="empty">Todavía no has añadido nada.</div>`;
+  }
+  return `<div class="add-recent">${batches.map((batch) => `
+    <a class="add-recent-row" href="#/add/${batch.id}">
+      <span class="badge mono">${esc(originLabel(batch.source))}</span>
+      <span class="add-recent-main">
+        <strong>${esc(batch.label || 'Añadido')}</strong>
+        <small>${esc(fmtRelative(batch.created_at))} · ${esc(batchSummary(batch))}</small>
+      </span>
+      ${batchState(batch)}
+    </a>`).join('')}</div>`;
+}
+
+async function refreshRecent() {
+  try {
+    const data = await api('/api/intake?flows=0');
+    const host = $('#addRecent');
+    if (host) {
+      host.innerHTML = recentInner(data);
+      return;
+    }
+    if ((data.batches || []).length) {
+      $('#view').insertAdjacentHTML(
+        'beforeend',
+        `<details class="fold section" id="addRecent"><summary>Últimas entradas</summary>${recentInner(data)}</details>`,
+      );
+    }
+  } catch (_) {
+    /* la recepción es secundaria */
+  }
+}
+
+function syncSubmitLabel() {
+  const button = $('#addSubmit');
+  if (!button || button.disabled) return;
+  const text = String($('#addText')?.value || '').trim();
+  button.textContent = text && !looksLikeList(text) ? 'Buscar' : 'Añadir';
+}
+
+async function searchTitles(text) {
+  const button = $('#addSubmit');
+  const previous = button?.textContent || 'Añadir';
+  if (button) {
+    button.disabled = true;
+    button.textContent = 'Buscando…';
+  }
+  try {
+    const query = encodeURIComponent(text);
+    const [movies, series] = await Promise.all([
+      api(`/api/tmdb/search?kind=movie&q=${query}`).catch(() => ({ results: [] })),
+      api(`/api/tmdb/search?kind=series&q=${query}`).catch(() => ({ results: [] })),
+    ]);
+    const items = [...(movies.results || []), ...(series.results || [])]
+      .filter((item) => item && item.tmdb)
+      .sort((a, b) => (Number(b.popularity) || 0) - (Number(a.popularity) || 0))
+      .slice(0, 8);
+    renderSearch(items);
+  } finally {
+    if (button) {
+      button.disabled = false;
+      button.textContent = previous;
+      syncSubmitLabel();
+    }
+  }
+}
+
+async function importList(text) {
+  const button = $('#addSubmit');
+  const previous = button?.textContent || 'Añadir';
+  const follow = Boolean($('#addFollow')?.checked);
+  if (button) {
+    button.disabled = true;
+    button.textContent = 'Añadiendo…';
+  }
+  try {
+    const result = await apiPost('/api/intake/import', {
+      text,
+      kind: 'movie',
+      follow,
+    });
+    renderBatch(result);
+    const added = Number(result.added || 0);
+    const duplicate = Number(result.duplicate || 0);
+    toast(
+      added
+        ? `${countLabel(added, 'título añadido', 'títulos añadidos')}${duplicate ? `, ${countLabel(duplicate, 'ya estaba', 'ya estaban')}` : ''}`
+        : 'No se añadió ningún título',
+      added ? 'ok' : 'warn',
+    );
+    await refreshRecent();
+  } catch (error) {
+    renderError(error);
+  } finally {
+    if (button) {
+      button.disabled = false;
+      button.textContent = previous;
+      syncSubmitLabel();
+    }
+  }
+}
+
+export async function submitAdd(form) {
+  const text = String(form.elements.text?.value || '').trim();
+  if (!text) {
+    form.elements.text?.focus();
+    toast('Escribe un título o pega un enlace', 'warn');
+    return;
+  }
+  const items = lines(text);
+  if (items.length > 1 && !items.some(isStructuredLine)) {
+    renderError(new Error(
+      'Para añadir varios títulos, pega enlaces o IDs de TMDB, uno por línea. Para uno solo, escribe su nombre.',
+    ));
+    return;
+  }
+  if (looksLikeList(text)) await importList(text);
+  else await searchTitles(text);
+}
+
+export async function addSearchResult(element) {
+  const item = state.addResults?.[Number(element.dataset.index)];
+  if (!item) return;
+  const follow = Boolean($('#addFollow')?.checked);
+  const action = element.querySelector('.add-result-action');
+  const previous = action?.innerHTML || '';
+  element.disabled = true;
+  if (action) action.textContent = 'Añadiendo…';
+  try {
+    if (item.kind === 'series') {
+      const detail = await api(`/api/tmdb/seasons/${item.tmdb}`);
+      const seasons = (detail.seasons || [])
+        .filter((season) => Number(season.season) > 0)
+        .map((season) => Number(season.season));
+      if (!seasons.length) throw new Error('La serie no tiene temporadas');
+      const result = await apiPost('/api/titles', {
+        kind: 'series',
+        tmdb: item.tmdb,
+        seasons,
+        origin: 'import',
+        follow,
+      });
+      toast(
+        `${item.title}: ${fmtInt(result.episodes || 0)} episodios añadidos${follow ? '' : ' sin seguimiento'}`,
+        'ok',
+      );
+    } else {
+      await apiPost('/api/titles', {
+        kind: 'movie',
+        tmdb: item.tmdb,
+        origin: 'import',
+        follow,
+      });
+      toast(`${item.title} añadido${follow ? '' : ' sin seguimiento'}`, 'ok');
+    }
+    if (action) action.innerHTML = `${icon('check', 'sm')} Añadido`;
+    element.disabled = true;
+  } catch (error) {
+    element.disabled = false;
+    if (action) action.innerHTML = previous;
+    renderError(error);
+  }
+}
+
+function readBase64(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const result = String(reader.result || '');
+      resolve(result.includes(',') ? result.split(',', 2)[1] : result);
+    };
+    reader.onerror = () => reject(new Error('No se pudo leer el archivo'));
+    reader.readAsDataURL(file);
+  });
+}
+
+export async function uploadTorrent(file) {
+  if (!file) return;
+  if (file.size > MAX_TORRENT_BYTES) {
+    toast('El .torrent es demasiado grande', 'error');
+    return;
+  }
+  const button = $('[data-action="torrent-pick"]');
+  const previous = button?.innerHTML || 'Subir .torrent';
+  if (button) {
+    button.disabled = true;
+    button.textContent = 'Subiendo…';
+  }
+  try {
+    const data = await readBase64(file);
+    const result = await apiPost('/api/intake/torrent', {
+      filename: file.name,
+      data,
+    });
+    const target = $('#addResult');
+    if (target) {
+      target.innerHTML = `<div class="add-torrent-result">
+        <div>
+          <strong>${esc(result.name || file.name)}</strong>
+          <small>${esc((result.info_hash || '').slice(0, 12))} · ${esc(result.save_path || '')}</small>
+        </div>
+        <a class="btn btn-sm" href="#/downloads">Ver descargas</a>
+      </div>`;
+    }
+    toast(`Torrent añadido: ${result.name || file.name}`, 'ok');
+    await refreshRecent();
+  } catch (error) {
+    toast(error.message, 'error');
+  } finally {
+    if (button) {
+      button.disabled = false;
+      button.innerHTML = previous;
+    }
+    const input = $('#torrentFile');
+    if (input) input.value = '';
+  }
+}
+
+function batchDetailView(data) {
+  const items = data.items || [];
+  return `
+    <div class="row between" style="margin-bottom:14px">
+      <a class="tiny" href="#/add">${icon('arrow-left', 'sm')} Añadir</a>
+      <span class="tiny faint">${esc(fmtRelative(data.created_at))}</span>
+    </div>
+    <div class="panel section">
+      <div class="panel-head">
+        <h2>${esc(data.label || 'Añadido')}</h2>
+        ${batchState(data)}
+      </div>
+      <div class="panel-body">
+        <div class="add-batch-summary">${esc(batchSummary(data))}</div>
+      </div>
+    </div>
+    <div class="panel flush section">
+      ${resultTable(items) || empty('Lote vacío', 'No se registró ninguna línea.')}
+    </div>
+  `;
+}
+
+export async function renderAdd({ query, params, signal }) {
+  const batchId = Number(params[0] || 0);
+  if (batchId) {
+    const data = await api(`/api/intake/batches/${batchId}`, { signal });
+    setHeader(`Lote #${batchId}`, 'Añadir');
+    $('#view').innerHTML = batchDetailView(data);
+    return;
+  }
+
+  setHeader('Añadir', '');
+  const recent = await api('/api/intake?flows=0', { signal }).catch(() => ({ batches: [] }));
+  const initial = query.get('q') || '';
+  $('#view').innerHTML = `
+    <div class="add-layout">
+      <form class="panel" data-form="add-submit">
+        <div class="panel-head">
+          <h2>Añadir a TOD</h2>
+          <span class="right tiny faint">título, lista de TMDB o .torrent</span>
+        </div>
+        <div class="panel-body">
+          <label class="field">
+            <span>Qué quieres añadir</span>
+            <textarea id="addText" name="text" rows="4" spellcheck="false"
+              placeholder="Matrix, Breaking Bad, un enlace de TMDB o una lista, una por línea"
+              aria-describedby="addHelp">${esc(initial)}</textarea>
+          </label>
+          <div class="add-controls">
+            <label class="inline check" title="Busca fuentes y publica el .strm cuando haya">
+              <input type="checkbox" id="addFollow" checked> Añadir a Seguimiento
+            </label>
+            <div class="row">
+              <button type="button" class="btn btn-ghost" data-action="torrent-pick">
+                ${icon('upload', 'sm')} Subir .torrent
+              </button>
+              <button type="submit" class="btn btn-primary" id="addSubmit">Añadir</button>
+            </div>
+          </div>
+          <input type="file" id="torrentFile" accept=".torrent,application/x-bittorrent" class="hidden">
+          <p class="tiny faint add-help" id="addHelp">
+            Un título se busca. Un enlace de TMDB o una lista de enlaces o IDs se añade directamente.
+            El .torrent se envía a qBittorrent.
+          </p>
+        </div>
+      </form>
+
+      <div class="panel">
+        <div class="panel-head"><h2>Últimas entradas</h2></div>
+        <div class="panel-body flush" id="addRecent">${recentInner(recent)}</div>
+      </div>
+    </div>
+
+    <div id="addResult" class="add-result-host" aria-live="polite"></div>
+  `;
+  const textarea = $('#addText');
+  textarea?.addEventListener('input', syncSubmitLabel);
+  syncSubmitLabel();
+  if (initial) {
+    if (looksLikeList(initial)) await importList(initial);
+    else await searchTitles(initial);
+  }
 }

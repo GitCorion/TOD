@@ -50,8 +50,15 @@ def _aliases_json(value) -> str | None:
     return json.dumps(list(value), ensure_ascii=False)
 
 
-def upsert_movies(db_path, items, *, source: str = "tmdb") -> dict:
-    """Inserta o actualiza películas por `movie:tmdb:<id>`."""
+def upsert_movies(
+    db_path, items, *, source: str = "tmdb", origin: str | None = None
+) -> dict:
+    """Inserta o actualiza películas por `movie:tmdb:<id>`.
+
+    `origin` es la procedencia visible en la ficha ("import", "rss", ...).
+    La primera procedencia gana: una actualización nunca la pisa.
+    """
+    origin = origin or source
     inserted = 0
     updated = 0
     skipped = 0
@@ -88,6 +95,8 @@ def upsert_movies(db_path, items, *, source: str = "tmdb") -> dict:
                         overview = COALESCE(?, overview),
                         vote_average = COALESCE(?, vote_average),
                         external_source = COALESCE(external_source, ?),
+                        origin = COALESCE(origin, ?),
+                        origin_at = COALESCE(origin_at, strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
                         updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
                     WHERE id = ?
                     """,
@@ -105,6 +114,7 @@ def upsert_movies(db_path, items, *, source: str = "tmdb") -> dict:
                         item.get("overview"),
                         item.get("vote_average"),
                         source,
+                        origin,
                         int(existing["id"]),
                     ),
                 )
@@ -117,8 +127,9 @@ def upsert_movies(db_path, items, *, source: str = "tmdb") -> dict:
                         original_title, original_language, original_country,
                         aliases, popularity,
                         poster_path, backdrop_path, overview, vote_average,
-                        external_source
-                    ) VALUES(?, 'movie', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        external_source, origin, origin_at
+                    ) VALUES(?, 'movie', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+                             strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
                     """,
                     (
                         key,
@@ -136,6 +147,7 @@ def upsert_movies(db_path, items, *, source: str = "tmdb") -> dict:
                         item.get("overview"),
                         item.get("vote_average"),
                         source,
+                        origin,
                     ),
                 )
                 inserted += 1
@@ -152,8 +164,11 @@ def upsert_movies(db_path, items, *, source: str = "tmdb") -> dict:
     }
 
 
-def upsert_episodes(db_path, series, episodes, *, source: str = "tmdb") -> dict:
+def upsert_episodes(
+    db_path, series, episodes, *, source: str = "tmdb", origin: str | None = None
+) -> dict:
     """Inserta o actualiza episodios de una serie por su clave estable."""
+    origin = origin or source
     try:
         tmdb = int(series.get("tmdb") or 0)
     except (TypeError, ValueError):
@@ -199,6 +214,8 @@ def upsert_episodes(db_path, series, episodes, *, source: str = "tmdb") -> dict:
                         overview = COALESCE(?, overview),
                         vote_average = COALESCE(?, vote_average),
                         external_source = COALESCE(external_source, ?),
+                        origin = COALESCE(origin, ?),
+                        origin_at = COALESCE(origin_at, strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
                         updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
                     WHERE id = ?
                     """,
@@ -219,6 +236,7 @@ def upsert_episodes(db_path, series, episodes, *, source: str = "tmdb") -> dict:
                         series.get("overview"),
                         series.get("vote_average"),
                         source,
+                        origin,
                         int(existing["id"]),
                     ),
                 )
@@ -232,8 +250,9 @@ def upsert_episodes(db_path, series, episodes, *, source: str = "tmdb") -> dict:
                         original_title, original_language, original_country,
                         popularity,
                         poster_path, backdrop_path, overview, vote_average,
-                        external_source
-                    ) VALUES(?, 'series', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        external_source, origin, origin_at
+                    ) VALUES(?, 'series', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+                             strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
                     """,
                     (
                         key,
@@ -254,6 +273,7 @@ def upsert_episodes(db_path, series, episodes, *, source: str = "tmdb") -> dict:
                         series.get("overview"),
                         series.get("vote_average"),
                         source,
+                        origin,
                     ),
                 )
                 inserted += 1

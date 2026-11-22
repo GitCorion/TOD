@@ -19,6 +19,7 @@ catalogo/
 ├── arr.py            clientes Radarr/Sonarr (lectura y altas puntuales)
 ├── arr_mirror.py     espejo Radarr/Sonarr → catálogo
 ├── bridge.py         TOD → Radarr/Sonarr tras una descarga
+├── intake.py         añadir, preflight, torrent manual y recepción
 ├── qbit_sync.py      inventario de qBittorrent en solo lectura
 ├── strm.py           generación de .strm multiversión
 └── web_static/       SPA sin dependencias
@@ -69,7 +70,8 @@ principales:
 
 | Tabla | Contenido |
 |---|---|
-| `media_items` | películas y episodios con clave estable |
+| `media_items` | películas y episodios con clave estable y `origin` |
+| `intake_batches`, `intake_items` | lotes de entrada y estado de cada línea |
 | `releases` | candidatos de Prowlarr/Jackett |
 | `torrents`, `torrent_files` | estado real de qBittorrent |
 | `library_files` | ficheros de Radarr/Sonarr vía API |
@@ -88,6 +90,9 @@ principales:
 | `/api/overview`, `/api/activity` | panel |
 | `/api/attention`, `/api/attention/check` | avisos de estado y comprobación bajo demanda |
 | `/api/ondemand/*` | catálogo, añadir, descargar |
+| `/api/intake`, `/api/intake/preflight`, `/api/intake/import` | recepción, análisis y alta de listas |
+| `/api/intake/torrent` | `.torrent` manual a qBittorrent |
+| `/api/intake/batches/{id}` | detalle de un lote |
 | `/api/settings` | leer y guardar configuración |
 | `/api/integrations/{name}/test` | probar conexión |
 | `/api/scheduler` | tareas y próxima ejecución |
@@ -101,6 +106,8 @@ principales:
 - Precedencia de configuración: base de datos > entorno > valores por defecto.
 - Los cambios se aplican en caliente; las reproducciones activas conservan su
   instancia anterior.
+- La procedencia es un dato, no una inferencia: `media_items.origin` se escribe
+  en el alta y no se pisa al actualizar metadatos.
 - El scheduler usa `jobs`, que serializa tareas y evita solapamientos.
 - Las integraciones se prueban antes de guardar y nunca se accede a las bases
   de datos de Radarr/Sonarr.

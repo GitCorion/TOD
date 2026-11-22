@@ -43,6 +43,25 @@ def _decode(data: bytes, index: int) -> tuple[Any, int]:
     raise BencodeError(f"marcador inválido: {marker!r}")
 
 
+def torrent_name(raw: bytes) -> str | None:
+    """Nombre visible del torrent, sin descargar nada."""
+    if not raw.startswith(b"d"):
+        return None
+    try:
+        payload, _ = _decode(raw, 0)
+    except (BencodeError, ValueError, IndexError):
+        return None
+    if not isinstance(payload, dict):
+        return None
+    info = payload.get(b"info")
+    if not isinstance(info, dict):
+        return None
+    name = info.get(b"name")
+    if isinstance(name, bytes):
+        return name.decode("utf-8", "replace").strip() or None
+    return None
+
+
 def info_dict_bytes(raw: bytes) -> bytes | None:
     """Devuelve los bytes exactos del diccionario `info` de un .torrent."""
     if not raw.startswith(b"d"):

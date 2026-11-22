@@ -50,8 +50,9 @@ export async function api(path, options = {}) {
   }
   if (!response.ok) {
     setLive(true);
-    const detail = data && data.detail !== undefined
-      ? (typeof data.detail === 'string' ? data.detail : JSON.stringify(data.detail))
+    const rawDetail = data && data.detail;
+    const detail = rawDetail !== undefined && rawDetail !== null && rawDetail !== ''
+      ? (typeof rawDetail === 'string' ? rawDetail : JSON.stringify(rawDetail))
       : '';
     throw new ApiError(
       `${(data && data.error) || `HTTP ${response.status}`}${detail ? `: ${detail}` : ''}`,

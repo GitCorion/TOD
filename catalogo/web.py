@@ -8,6 +8,7 @@
 
 from __future__ import annotations
 
+import base64
 import hashlib
 import hmac
 import json
@@ -27,7 +28,17 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any
 
-from . import app_settings, admin, attention, integrations, jellyfin, jobs, ondemand, queries
+from . import (
+    app_settings,
+    admin,
+    attention,
+    integrations,
+    intake,
+    jellyfin,
+    jobs,
+    ondemand,
+    queries,
+)
 from . import language_settings, policy, seed_settings, settings, strm_inventory
 from . import strm as strm_module
 from .arr_data import ArrData
@@ -989,6 +1000,9 @@ class Handler(PlaybackHandler):
                 return self._json(200, detail, head=head)
             raise WebError(404, "no encontrado")
 
+        if parts and parts[0] == "intake":
+            return self._intake(parts, params, body, head=head, mutate=mutate)
+
         if parts and parts[0] == "ondemand":
             return self._ondemand(parts, params, body, head=head, mutate=mutate)
 
@@ -1567,6 +1581,8 @@ class Handler(PlaybackHandler):
                 tmdb = self._int(body.get("tmdb"), 0)
                 if not tmdb:
                     raise WebError(400, "falta tmdb")
+                origin = str(body.get("origin") or "tmdb")[:40]
+                follow = bool(body.get("follow", True))
                 if kind == "series":
                     seasons = body.get("seasons") or []
                     if not isinstance(seasons, list) or not seasons:
@@ -1575,14 +1591,24 @@ class Handler(PlaybackHandler):
                     seasons = [value for value in seasons if value > 0]
                     if not seasons:
                         raise WebError(400, "temporadas inválidas")
-                    result = admin.add_series(app.config, tmdb, seasons)
+                    result = admin.add_series(
+                        app.config, tmdb, seasons, origin=origin
+                    )
+                    intake.set_follow(db, result.get("keys") or [], follow)
                     app.audit("web.add_series", payload={
                         "tmdb": tmdb, "seasons": seasons,
                         "episodes": result.get("episodes"),
+                        "origin": origin, "follow": follow,
                     })
                 else:
-                    result = admin.add_movie(app.config, tmdb)
-                    app.audit("web.add_movie", payload={"tmdb": tmdb, "key": result.get("key")})
+                    result = admin.add_movie(
+                        app.config, tmdb, origin=origin
+                    )
+                    intake.set_follow(db, [result.get("key")], follow)
+                    app.audit("web.add_movie", payload={
+                        "tmdb": tmdb, "key": result.get("key"),
+                        "origin": origin, "follow": follow,
+                    })
                 return self._json(200, result, head=head)
             return self._json(
                 200,
@@ -1799,6 +1825,113 @@ class Handler(PlaybackHandler):
 
         raise WebError(404, "no encontrado")
 
+    def _intake(
+        self,
+        parts: list[str],
+        params: dict[str, str],
+        body: dict[str, Any],
+        *,
+        head: bool,
+        mutate: bool,
+    ) -> None:
+        app = self.app
+        db = app.db_path
+
+        if parts in (["intake"], ["intake", "reception"]) and not mutate:
+            return self._json(
+                200,
+                intake.reception(
+                    db,
+                    limit=self._int(params.get("limit"), 8),
+                    include_flows=params.get("flows", "1") != "0",
+                ),
+                head=head,
+            )
+
+        if parts == ["intake", "preflight"]:
+            if not mutate:
+                raise WebError(405, "usa POST")
+            try:
+                result = intake.preflight(
+                    app.config,
+                    str(body.get("text") or ""),
+                    kind=str(body.get("kind") or "movie"),
+                )
+            except intake.IntakeError as exc:
+                raise WebError(400, str(exc)) from exc
+            return self._json(200, result, head=head)
+
+        if parts == ["intake", "import"]:
+            if not mutate:
+                raise WebError(405, "usa POST")
+            try:
+                result = intake.confirm(
+                    app.config,
+                    str(body.get("text") or ""),
+                    kind=str(body.get("kind") or "movie"),
+                    label=str(body.get("label") or "") or None,
+                    requested_by=self.client_address[0],
+                    follow=bool(body.get("follow", True)),
+                )
+            except intake.IntakeError as exc:
+                raise WebError(400, str(exc)) from exc
+            app.audit(
+                "web.intake_import",
+                payload={
+                    "batch_id": result.get("id"),
+                    "added": result.get("added"),
+                    "duplicate": result.get("duplicate"),
+                    "unknown": result.get("unknown"),
+                    "errors": result.get("errors"),
+                },
+            )
+            return self._json(200, result, head=head)
+
+        if parts == ["intake", "torrent"]:
+            if not mutate:
+                raise WebError(405, "usa POST")
+            filename = str(body.get("filename") or "manual.torrent")[:200]
+            encoded = str(body.get("data") or "")
+            try:
+                raw = base64.b64decode(encoded, validate=True)
+            except Exception as exc:
+                raise WebError(400, "archivo inválido") from exc
+            if len(raw) > intake.MAX_TORRENT_BYTES:
+                raise WebError(413, "el .torrent es demasiado grande")
+            try:
+                result = intake.add_torrent(
+                    app.config,
+                    filename=filename,
+                    raw=raw,
+                    requested_by=self.client_address[0],
+                )
+            except intake.IntakeError as exc:
+                raise WebError(400, str(exc)) from exc
+            app.audit(
+                "web.intake_torrent",
+                payload={
+                    "batch_id": result.get("batch_id"),
+                    "name": result.get("name"),
+                    "info_hash": result.get("info_hash"),
+                },
+            )
+            return self._json(200, result, head=head)
+
+        if (
+            len(parts) == 3
+            and parts[1] == "batches"
+            and not mutate
+        ):
+            batch_id = self._int(parts[2], 0)
+            if batch_id <= 0:
+                raise WebError(400, "lote inválido")
+            result = intake.batch_detail(db, batch_id)
+            if result is None:
+                raise WebError(404, "lote no encontrado")
+            return self._json(200, result, head=head)
+
+        raise WebError(404, "no encontrado")
+
     def _ondemand(
         self,
         parts: list[str],
@@ -1835,6 +1968,7 @@ class Handler(PlaybackHandler):
                     publication=params.get("publication") or "",
                     download=params.get("download") or "",
                     library=params.get("library") or "",
+                    origin=params.get("origin") or "",
                     incomplete=params.get("incomplete") == "1",
                     page=self._int(params.get("page"), 1),
                     per_page=self._int(params.get("per_page"), 25),

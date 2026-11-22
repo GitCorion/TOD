@@ -1,6 +1,6 @@
 import { api } from '../api.js';
 import { esc, episodeTag, fmtBytes, fmtDate, fmtInt, pct } from '../format.js';
-import { eventLabel, healthStatus } from '../labels.js';
+import { eventLabel, healthStatus, originLabel } from '../labels.js';
 import { updateQuery } from '../router.js';
 import { state } from '../store.js';
 import { $, badge, bar, empty, icon, poster, setHeader, status } from '../ui.js';
@@ -71,7 +71,8 @@ export async function renderTitle({ params, query, signal }) {
       <div class="panel-body" style="padding-top:6px;padding-bottom:8px">
         <div class="kv"><span>Calidad</span><span>${esc(statusData.quality || '—')}</span></div>
         <div class="kv"><span>Audio</span><span>${esc(statusData.audio || '—')}</span></div>
-        <div class="kv"><span>Origen</span><span>${od.has_file ? 'Radarr/Sonarr' : od.downloaded ? 'Descarga' : '—'}</span></div>
+        <div class="kv"><span>Procedencia</span><span>${esc(originLabel(item.origin))}${item.origin_detail ? `<span class="tiny faint"> · ${esc(item.origin_detail)}</span>` : ''}</span></div>
+        <div class="kv"><span>Custodia</span><span>${od.has_file ? 'Radarr/Sonarr' : od.downloaded ? 'Descarga' : '—'}</span></div>
         ${od.download === 'descargando' || od.download === 'pausado' || od.download === 'error' ? `<div class="kv"><span>Descarga</span><span>${od.download === 'descargando' ? status('Descargando', 'info') : od.download === 'pausado' ? status('Pausado', 'warn') : status('Error', 'bad')}</span></div>` : ''}
       </div>
     </div>

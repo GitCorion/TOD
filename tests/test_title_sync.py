@@ -86,6 +86,28 @@ def test_upsert_movies_skips_invalid_and_stores_aliases(tmp_path):
     conn.close()
 
 
+def test_upsert_movies_keeps_first_origin(tmp_path):
+    db = seed_db(tmp_path)
+    upsert_movies(
+        db,
+        [{"tmdb": 9, "title": "Con procedencia", "year": 2024}],
+        origin="import",
+    )
+    upsert_movies(
+        db,
+        [{"tmdb": 9, "title": "Con procedencia", "year": 2024}],
+        source="rss",
+        origin="rss",
+    )
+    conn = sqlite3.connect(db)
+    origin, detail = conn.execute(
+        "SELECT origin, origin_detail FROM media_items WHERE key='movie:tmdb:9'"
+    ).fetchone()
+    conn.close()
+    assert origin == "import"
+    assert detail is None
+
+
 def test_upsert_episodes_inserts_and_updates(tmp_path):
     from catalogo.title_sync import upsert_episodes
 

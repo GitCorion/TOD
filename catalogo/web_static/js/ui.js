@@ -233,7 +233,7 @@ export function setActiveNav(route) {
       || (route === 'title' && name === 'catalog')
       || (route === 'collection' && name === 'catalog')
       || (route === 'series' && name === 'catalog')
-      || (route === 'add' && name === 'catalog')
+      || (route === 'intake' && name === 'add')
       || (route === 'history' && name === 'jobs')
       || (route === 'technical' && name === 'system');
     link.classList.toggle('active', active);

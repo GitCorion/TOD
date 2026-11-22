@@ -23,6 +23,9 @@ Las URLs y API keys se introducen en la web y TOD aplica el resto. En Docker,
 ## Qué puedes hacer
 
 - **Buscar y añadir** películas y series desde TMDB.
+- **Añadir desde una sola caja**: un título, un enlace de TMDB, un ID o una
+  lista. Se puede marcar «Añadir a Seguimiento» y el resultado queda registrado.
+  También puedes subir un `.torrent` manual a qBittorrent.
 - **Publicar `.strm` multiversión** para Jellyfin: un `.strm` principal y una
   variante por versión reproducible.
 - **Reproducir bajo demanda** desde qBittorrent con rangos HTTP reales (206).

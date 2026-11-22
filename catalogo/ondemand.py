@@ -256,6 +256,7 @@ def catalog(
     publication: str = "",
     download: str = "",
     library: str = "",
+    origin: str = "",
     incomplete: bool = False,
     page: int = 1,
     per_page: int = PAGE_SIZE,
@@ -300,6 +301,7 @@ def catalog(
                    m.episode, m.status, m.updated_at, m.created_at,
                    m.library_added_at, m.poster_path, m.overview,
                    m.vote_average, m.library_added, m.release_date, m.air_date,
+                   m.origin, m.origin_detail, m.origin_at,
                    COALESCE(m.popularity,0) AS popularity,
                    (SELECT COUNT(*) FROM releases r WHERE r.asset_id=m.id)
                        AS releases,
@@ -441,6 +443,8 @@ def catalog(
     facet_data = _facets(facet_source) if facets else None
 
     def keep(item: dict[str, Any]) -> bool:
+        if origin and item.get("origin") != origin:
+            return False
         if publication and item.get("publication") != publication:
             return False
         if download:
@@ -651,6 +655,16 @@ def _group_series(items, series_library) -> list[dict[str, Any]]:
                 "poster_path": poster,
                 "overview": overview,
                 "vote_average": vote,
+                "origin": (
+                    first.get("origin")
+                    if all(row.get("origin") == first.get("origin") for row in rows)
+                    else "mixed"
+                ),
+                "origin_detail": first.get("origin_detail"),
+                "origin_at": max(
+                    (str(row.get("origin_at") or "") for row in rows),
+                    default="",
+                ),
             }
         )
     return output
@@ -666,11 +680,14 @@ def _facets(items: list[dict[str, Any]]) -> dict[str, Any]:
         "sin_descarga": 0,
     }
     kinds = {"movie": 0, "series": 0}
+    origins: dict[str, int] = {}
     incomplete = 0
     for item in items:
         publication[item.get("publication") or "sin_fuente"] = (
             publication.get(item.get("publication") or "sin_fuente", 0) + 1
         )
+        origin = item.get("origin") or "legacy"
+        origins[origin] = origins.get(origin, 0) + 1
         if item.get("kind") in kinds:
             kinds[item["kind"]] += 1
         if item.get("incomplete"):
@@ -699,6 +716,9 @@ def _facets(items: list[dict[str, Any]]) -> dict[str, Any]:
         "publication": publication,
         "download": downloads,
         "kind": kinds,
+        "origin": dict(
+            sorted(origins.items(), key=lambda item: item[1], reverse=True)
+        ),
         "incomplete": incomplete,
     }
 

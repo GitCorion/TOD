@@ -1,7 +1,9 @@
 """Escritura controlada en qBittorrent.
 
-Este cliente solo debe usarse desde `backend.prepare_download`, que exige
-un `play_intent` y un `seed_commitment` aprobado. No hay atajos.
+- `backend.prepare_download`: descargas admitidas con `play_intent` y
+  `seed_commitment` aprobado.
+- `intake.add_torrent`: atajo manual explícito del usuario. No pasa por
+  admisión ni crea compromiso de seed.
 """
 
 from __future__ import annotations
