@@ -49,6 +49,7 @@ def upsert_movies(db_path, items, *, source: str = "tmdb") -> dict:
                         year = COALESCE(?, year),
                         release_date = COALESCE(?, release_date),
                         original_language = COALESCE(?, original_language),
+                        original_country = COALESCE(?, original_country),
                         aliases = COALESCE(?, aliases),
                         popularity = COALESCE(?, popularity),
                         poster_path = COALESCE(?, poster_path),
@@ -65,6 +66,7 @@ def upsert_movies(db_path, items, *, source: str = "tmdb") -> dict:
                         item.get("year"),
                         item.get("release_date"),
                         item.get("original_language"),
+                        item.get("original_country"),
                         aliases,
                         item.get("popularity"),
                         item.get("poster_path"),
@@ -81,10 +83,11 @@ def upsert_movies(db_path, items, *, source: str = "tmdb") -> dict:
                     """
                     INSERT INTO media_items(
                         key, kind, tmdb, title, year, release_date,
-                        original_title, original_language, aliases, popularity,
+                        original_title, original_language, original_country,
+                        aliases, popularity,
                         poster_path, backdrop_path, overview, vote_average,
                         external_source
-                    ) VALUES(?, 'movie', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    ) VALUES(?, 'movie', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     (
                         key,
@@ -94,6 +97,7 @@ def upsert_movies(db_path, items, *, source: str = "tmdb") -> dict:
                         item.get("release_date"),
                         item.get("original_title"),
                         item.get("original_language"),
+                        item.get("original_country"),
                         aliases,
                         item.get("popularity"),
                         item.get("poster_path"),
@@ -152,6 +156,7 @@ def upsert_episodes(db_path, series, episodes, *, source: str = "tmdb") -> dict:
                         season = ?, episode = ?,
                         air_date = COALESCE(?, air_date),
                         original_language = COALESCE(?, original_language),
+                        original_country = COALESCE(?, original_country),
                         popularity = COALESCE(?, popularity),
                         poster_path = COALESCE(?, poster_path),
                         backdrop_path = COALESCE(?, backdrop_path),
@@ -171,6 +176,7 @@ def upsert_episodes(db_path, series, episodes, *, source: str = "tmdb") -> dict:
                         episode,
                         item.get("air_date"),
                         series.get("original_language"),
+                        series.get("original_country"),
                         series.get("popularity"),
                         series.get("poster_path"),
                         series.get("backdrop_path"),
@@ -187,10 +193,11 @@ def upsert_episodes(db_path, series, episodes, *, source: str = "tmdb") -> dict:
                     INSERT INTO media_items(
                         key, kind, tmdb, title, episode_title, episode_overview,
                         year, season, episode, air_date,
-                        original_title, original_language, popularity,
+                        original_title, original_language, original_country,
+                        popularity,
                         poster_path, backdrop_path, overview, vote_average,
                         external_source
-                    ) VALUES(?, 'series', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    ) VALUES(?, 'series', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     (
                         key,
@@ -204,6 +211,7 @@ def upsert_episodes(db_path, series, episodes, *, source: str = "tmdb") -> dict:
                         item.get("air_date"),
                         series.get("original_title"),
                         series.get("original_language"),
+                        series.get("original_country"),
                         series.get("popularity"),
                         series.get("poster_path"),
                         series.get("backdrop_path"),

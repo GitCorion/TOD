@@ -181,6 +181,7 @@ def _versions(
                 release["audio"],
                 preference,
                 asset.get("original_language"),
+                asset.get("original_country"),
             )
             is None
         ):

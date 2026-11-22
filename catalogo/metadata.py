@@ -50,9 +50,25 @@ def _fetch(client, kind: str, tmdb: int) -> dict:
     )
     if not isinstance(payload, dict):
         raise ValueError("respuesta vacía de TMDB")
+    raw_countries = (
+        payload.get("origin_country")
+        if kind == "series"
+        else payload.get("production_countries")
+    )
+    codes = []
+    for entry in raw_countries or []:
+        code = (
+            entry.get("iso_3166_1") if isinstance(entry, dict) else entry
+        )
+        code = str(code or "").strip().upper()
+        if code and code not in codes:
+            codes.append(code)
     return {
         "kind": kind,
         "tmdb": tmdb,
+        "original_language": (payload.get("original_language") or "").strip()
+        or None,
+        "original_country": ",".join(codes) or None,
         "poster_path": (payload.get("poster_path") or "").strip() or None,
         "backdrop_path": (payload.get("backdrop_path") or "").strip() or None,
         "overview": (payload.get("overview") or "").strip() or None,
@@ -106,6 +122,8 @@ def backfill(
                             backdrop_path = COALESCE(?, backdrop_path),
                             overview = COALESCE(?, overview),
                             vote_average = COALESCE(?, vote_average),
+                            original_language = COALESCE(?, original_language),
+                            original_country = COALESCE(?, original_country),
                             metadata_at = ?
                         WHERE kind = ? AND tmdb = ?
                         """,
@@ -114,6 +132,8 @@ def backfill(
                             item["backdrop_path"],
                             item["overview"],
                             item["vote_average"],
+                            item["original_language"],
+                            item["original_country"],
                             _now(),
                             item["kind"],
                             item["tmdb"],

@@ -35,6 +35,20 @@ def save(db_path: str | Path, value: str) -> str:
     return value
 
 
+LATAM = {
+    "AR", "BO", "BR", "CL", "CO", "CR", "CU", "DO", "EC", "GT", "HN",
+    "MX", "NI", "PA", "PE", "PR", "PY", "SV", "US", "UY", "VE",
+}
+
+
+def _codes(value: str | None) -> set[str]:
+    return {
+        code.strip().upper()
+        for code in str(value or "").split(",")
+        if code.strip()
+    }
+
+
 def _is_spanish_original(original_language: str | None) -> bool:
     return (original_language or "").strip().lower() in (
         "es",
@@ -49,26 +63,39 @@ def rank(
     audio: str | None,
     preference: str,
     original_language: str | None = None,
+    original_country: str | None = None,
 ) -> int | None:
-    """0 castellano, 1 V.O. española, 2 VOSE, 3 desconocido, 4 otro.
+    """0 V.O. preferente, 1 doblaje aceptable, 2 VOSE, 3 desconocido, 4 otro.
 
-    ``None`` significa excluido. El latino doblado nunca entra; el latino
-    original en español se acepta como V.O.
+    ``None`` significa excluido. Si el título es originalmente español y el
+    país es latinoamericano, el latino es la V.O. y el castellano es doblaje.
+    Si es español de España, el latino doblado queda fuera.
     """
     if preference == "any":
         return 0
     tag = (audio or "unknown").strip().lower()
     if preference == "only_castellano":
         return 0 if tag in ("castellano", "espanol") else None
+    spanish_original = _is_spanish_original(original_language)
+    countries = _codes(original_country)
+    # España manda si participa: una coproducción hispano-mexicana sigue
+    # siendo castellano. El latino solo es V.O. si no hay producción española.
+    latam_original = (
+        spanish_original
+        and "ES" not in countries
+        and bool(countries & LATAM)
+    )
     if tag == "latino":
-        if not _is_spanish_original(original_language):
-            return None
-        return 1
+        if latam_original:
+            return 0
+        if spanish_original and not countries:
+            # Sin país no se puede demostrar que sea doblaje: se acepta
+            # como V.O. pero después del castellano.
+            return 1
+        return None
     if tag in ("castellano", "espanol"):
-        return 0
-    if tag == "spanish_unverified":
-        return 2
-    if tag == "vose":
+        return 1 if latam_original else 0
+    if tag in ("spanish_unverified", "vose"):
         return 2
     if tag in ("", "unknown"):
         return 3

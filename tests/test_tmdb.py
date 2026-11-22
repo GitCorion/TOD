@@ -25,6 +25,7 @@ def test_movie_item_normalizes_spanish_title_and_original():
         "original_title": "Heart of the Beast",
         "year": 2026,
         "original_language": "en",
+        "original_country": None,
         "popularity": 123.4,
         "release_date": "2026-09-19",
         "overview": None,
@@ -32,6 +33,40 @@ def test_movie_item_normalizes_spanish_title_and_original():
         "backdrop_path": None,
         "vote_average": None,
     }
+
+
+def test_movie_item_keeps_origin_countries():
+    item = movie_item(
+        {
+            "id": 2,
+            "title": "Película colombiana",
+            "original_title": "Película colombiana",
+            "release_date": "2024-01-01",
+            "original_language": "es",
+            "production_countries": [
+                {"iso_3166_1": "co"},
+                {"iso_3166_1": "CO"},
+                {"iso_3166_1": "us"},
+            ],
+        }
+    )
+    assert item["original_country"] == "CO,US"
+
+
+def test_tv_item_uses_origin_country():
+    from catalogo.tmdb import tv_item
+
+    series = tv_item(
+        {
+            "id": 3,
+            "name": "Serie",
+            "original_name": "Serie",
+            "first_air_date": "2024-01-01",
+            "original_language": "es",
+            "origin_country": ["ES"],
+        }
+    )
+    assert series["original_country"] == "ES"
 
 
 def test_movie_item_requires_tmdb_and_title():

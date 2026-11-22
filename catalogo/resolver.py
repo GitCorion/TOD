@@ -126,12 +126,34 @@ class Resolver:
         preference = language_settings.load(self.db_path)
         if preference == "any":
             return "(SELECT 0)", ""
+        spanish = (
+            "lower(COALESCE(m.original_language,'')) IN "
+            "('es','spa','spanish','español','espanol')"
+        )
+        latam_codes = (
+            "AR", "BO", "BR", "CL", "CO", "CR", "CU", "DO", "EC", "GT",
+            "HN", "MX", "NI", "PA", "PE", "PR", "PY", "SV", "US", "UY",
+            "VE",
+        )
+        latam = "(" + " OR ".join(
+            "(',' || upper(COALESCE(m.original_country,'')) || ',') "
+            f"LIKE '%,{code},%'"
+            for code in latam_codes
+        ) + ")"
+        spain = (
+            "(',' || upper(COALESCE(m.original_country,'')) || ',') "
+            "LIKE '%,ES,%'"
+        )
+        latam_vo = f"{spanish} AND NOT ({spain}) AND {latam}"
+        no_country = "COALESCE(m.original_country,'') = ''"
         rank = (
             "CASE "
-            "WHEN releases.audio IN ('castellano','espanol') THEN 0 "
-            "WHEN releases.audio = 'latino' "
-            " AND lower(COALESCE(m.original_language,'')) IN "
-            "     ('es','spa','spanish','español','espanol') THEN 1 "
+            f"WHEN releases.audio = 'latino' AND {latam_vo} THEN 0 "
+            "WHEN releases.audio IN ('castellano','espanol') "
+            f" AND NOT ({latam_vo}) THEN 0 "
+            "WHEN releases.audio IN ('castellano','espanol') THEN 1 "
+            f"WHEN releases.audio = 'latino' AND {spanish} "
+            f" AND {no_country} THEN 1 "
             "WHEN releases.audio IN ('spanish_unverified','vose') THEN 2 "
             "WHEN releases.audio IS NULL OR releases.audio = 'unknown' THEN 3 "
             "ELSE 4 END"
@@ -139,10 +161,11 @@ class Resolver:
         if preference == "only_castellano":
             only = " AND releases.audio IN ('castellano','espanol')"
         else:
+            # «Castellano primero» admite V.O./VOSE/desconocido como respaldo;
+            # solo descarta el latino que no sea V.O. real.
             only = (
                 " AND NOT (releases.audio = 'latino' "
-                "AND lower(COALESCE(m.original_language,'')) NOT IN "
-                "('es','spa','spanish','español','espanol'))"
+                f"AND NOT ({latam_vo} OR ({spanish} AND {no_country})))"
             )
         return rank, only
 
@@ -389,10 +412,11 @@ class Resolver:
             ).fetchall()
         preference = language_settings.load(self.db_path)
         original_language = asset["original_language"]
+        original_country = asset["original_country"]
         ranked: list[tuple[int, dict[str, Any]]] = []
         for row in rows:
             rank = language_settings.rank(
-                row["audio"], preference, original_language
+                row["audio"], preference, original_language, original_country
             )
             if rank is None:
                 continue
@@ -406,6 +430,7 @@ class Resolver:
                         "quality": row["quality"],
                         "audio": row["audio"],
                         "original_language": original_language,
+                        "original_country": original_country,
                         "size_bytes": row["size_bytes"],
                         "seeders": row["seeders"],
                         "health": row["health"],

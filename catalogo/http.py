@@ -813,6 +813,7 @@ class CatalogHandler(BaseHTTPRequestHandler):
                 source.get("audio"),
                 preference,
                 source.get("original_language"),
+                source.get("original_country"),
             )
             return (
                 audio if audio is not None else 9,

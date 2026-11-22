@@ -188,6 +188,8 @@ comprobación de integraciones, con enlaces a la sección que los arregla.
   bibliotecas de Radarr (películas) y Sonarr (series) se configuran por separado.
 - **Reproducción**: descargas simultáneas, tamaño máximo y URL base de `.strm`.
 - **Idioma**: cualquier idioma, castellano primero (V.O. como respaldo) o solo castellano.
+  En títulos originalmente españoles manda el país de origen: castellano en
+  España y latino en Latinoamérica; el doblaje latino del resto queda fuera.
 - **Siembra**: mínimo de días/ratio, force-start, políticas por tracker y borrado opcional desde TOD.
 - **Seguridad**: token web y hosts permitidos.
 - **Tareas programadas**: activar, cambiar cadencia, ver la próxima ejecución y lanzar ahora.

@@ -293,10 +293,12 @@ export async function renderSettings({ signal, query } = {}) {
           </label>
         </div>
         <p class="muted tiny" style="margin:10px 0 0">
-          «Castellano primero» elige castellano de España. Si no hay, usa V.O.
-          original o VOSE; nunca un doblaje latino. «Solo castellano» solo acepta
-          castellano de España. Esto no pausa indexers: para eso usa Seguimiento
-          → Indexers.
+          «Castellano primero» usa el país de origen cuando el título es
+          originalmente español: castellano si es de España y latino si es de
+          Latinoamérica. En el resto de títulos prefiere castellano de España,
+          luego V.O./VOSE, y nunca un doblaje latino. «Solo castellano» solo
+          acepta castellano de España. Esto no pausa indexers: para eso usa
+          Seguimiento → Indexers.
         </p>
       </div>
     </div>

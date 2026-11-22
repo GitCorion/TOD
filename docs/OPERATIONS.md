@@ -115,6 +115,22 @@ tod qbit-limits
 tod policies
 ```
 
+## Idioma
+
+Se configura en **Configuración → Idioma de las fuentes**:
+
+- **Cualquier idioma**: no filtra por audio.
+- **Castellano primero**: si el título es originalmente español, manda el
+  país de origen (`production_countries`/`origin_country` de TMDB). Un título
+  español de España usa castellano; uno latinoamericano usa latino como V.O.
+  En el resto de títulos prefiere castellano, luego V.O./VOSE, y descarta el
+  doblaje latino.
+- **Solo castellano**: solo acepta castellano de España.
+
+Una coproducción con España se considera castellano. Si TMDB no da país, el
+latino de un título originalmente español se acepta como V.O. pero después del
+castellano. Los títulos sin idioma detectado solo entran como último respaldo.
+
 ## Almacenamiento
 
 Valores por defecto en una instalación systemd:

@@ -26,6 +26,20 @@ def year_of_date(value: str | None) -> int | None:
     return None
 
 
+def _countries(result: dict, *, tv: bool = False) -> str | None:
+    raw = result.get("origin_country") if tv else result.get("production_countries")
+    codes: list[str] = []
+    for entry in raw or []:
+        if isinstance(entry, dict):
+            code = entry.get("iso_3166_1")
+        else:
+            code = entry
+        code = str(code or "").strip().upper()
+        if code and code not in codes:
+            codes.append(code)
+    return ",".join(codes) or None
+
+
 def movie_item(result: dict) -> dict | None:
     """Normaliza un resultado de TMDB a una fila de catálogo."""
     try:
@@ -45,6 +59,7 @@ def movie_item(result: dict) -> dict | None:
         "year": year_of_date(result.get("release_date")),
         "original_language": (result.get("original_language") or "").strip()
         or None,
+        "original_country": _countries(result),
         "popularity": float(result.get("popularity") or 0),
         "release_date": (result.get("release_date") or "").strip() or None,
         "overview": (result.get("overview") or "").strip() or None,
@@ -72,6 +87,7 @@ def tv_item(result: dict) -> dict | None:
         "year": year_of_date(result.get("first_air_date")),
         "original_language": (result.get("original_language") or "").strip()
         or None,
+        "original_country": _countries(result, tv=True),
         "popularity": float(result.get("popularity") or 0),
         "release_date": (result.get("first_air_date") or "").strip() or None,
         "overview": (result.get("overview") or "").strip() or None,
