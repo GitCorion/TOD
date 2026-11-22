@@ -1780,18 +1780,53 @@ document.addEventListener('click', async (event) => {
     if (action === 'tracker-block') {
       const blocked = element.dataset.blocked === '1';
       const tracker = element.dataset.tracker;
-      const ok = await confirmModal({
-        title: blocked ? 'Bloquear tracker' : 'Desbloquear tracker',
-        message: blocked
-          ? `Se marcarán todos los releases de ${tracker} como bloqueados y se deshabilitará su política. No se tocan las descargas activas.`
-          : `Se devolverán los releases de ${tracker} a estado desconocido y se habilitará su política.`,
-        confirm: blocked ? 'Bloquear' : 'Desbloquear',
-        danger: blocked,
+      if (!blocked) {
+        const ok = await confirmModal({
+          title: 'Desbloquear tracker',
+          message: `Se devolverán los releases de ${tracker} a estado desconocido y se habilitará su política.`,
+          confirm: 'Desbloquear',
+        });
+        if (!ok) return;
+        const result = await apiPost('/api/trackers/block', {
+          tracker, blocked: false,
+        });
+        toast(`${tracker}: ${result.releases} releases afectados`, 'ok');
+        await route();
+        return;
+      }
+
+      const choice = await new Promise((resolve) => {
+        openModal(
+          'Bloquear tracker',
+          `<p class="muted" style="margin-top:0">Se marcarán todos los releases de <strong>${esc(tracker)}</strong> como bloqueados y se deshabilitará su política. No se tocan las descargas activas.</p>
+           <label class="inline check" style="margin-top:10px">
+             <input type="checkbox" id="trackerDeleteStrm">
+             Eliminar también los .strm de este tracker
+           </label>
+           <p class="tiny faint" style="margin:6px 0 0">Se borrarán las versiones que apuntan a sus releases. El .strm principal solo se elimina si el título se queda sin otra fuente ni fichero local.</p>`,
+          `<button class="btn btn-ghost" data-action="modal-close">Cancelar</button>
+           <button class="btn btn-danger" data-action="tracker-block-start" data-tracker="${esc(tracker)}">Bloquear</button>`,
+          { slim: true, resolve },
+        );
       });
-      if (!ok) return;
-      const result = await apiPost('/api/trackers/block', { tracker, blocked });
-      toast(`${tracker}: ${result.releases} releases afectados`, 'ok');
+      if (!choice) return;
+
+      const result = await apiPost('/api/trackers/block', {
+        tracker,
+        blocked: true,
+        delete_strm: Boolean(choice.delete_strm),
+      });
+      const removed = Number(result.strm?.total || 0);
+      toast(
+        `${tracker}: ${result.releases} releases bloqueados${removed ? ` · ${removed} .strm ${removed === 1 ? 'eliminado' : 'eliminados'}` : ''}`,
+        'ok',
+      );
       await route();
+      return;
+    }
+    if (action === 'tracker-block-start') {
+      const deleteStrm = Boolean($('#trackerDeleteStrm')?.checked);
+      closeModal({ delete_strm: deleteStrm });
       return;
     }
     if (action === 'go-title') {

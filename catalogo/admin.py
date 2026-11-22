@@ -54,7 +54,7 @@ from .seeding import normalize_completed
 from .strm import export_strm
 from .title_sync import monitor_if_not_in_arr, upsert_episodes, upsert_movies
 from .tmdb import TmdbClient, TmdbError, episode_items, movie_item, tv_item, year_of_date
-from .tracker_block import set_tracker_blocked
+from .tracker_block import delete_tracker_strm, set_tracker_blocked
 from .trackers import GENERAL_TRACKERS
 from .worker import run_once
 
@@ -979,16 +979,26 @@ def block_tracker(
     blocked: bool,
     reason: str = "downloads_broken",
     dry_run: bool = False,
+    delete_strm: bool = False,
 ) -> dict[str, Any]:
     if not (tracker or "").strip():
         raise JobError("falta el tracker")
-    return set_tracker_blocked(
+    name = tracker.strip()
+    report = set_tracker_blocked(
         str(config.db_path),
-        tracker.strip(),
+        name,
         blocked=bool(blocked),
         reason=reason or "downloads_broken",
         dry_run=dry_run,
     )
+    if blocked and delete_strm:
+        report["strm"] = delete_tracker_strm(
+            str(config.db_path),
+            config.catalog_library,
+            name,
+            dry_run=dry_run,
+        )
+    return report
 
 
 def set_target(

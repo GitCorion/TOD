@@ -67,3 +67,95 @@ def test_block_dry_run_changes_nothing(tmp_path):
         "SELECT COUNT(*) FROM releases WHERE health='blocked'"
     ).fetchone()[0] == 0
     conn.close()
+
+
+def _strm_setup(tmp_path, *, other_source=True, local_file=False):
+    db = tmp_path / "catalogo.db"
+    init_db(db, MIGRATIONS)
+    conn = sqlite3.connect(db)
+    conn.execute(
+        "INSERT INTO media_items(key,kind,tmdb,title,year) VALUES(?,?,?,?,?)",
+        ("movie:tmdb:1", "movie", 1, "Test", 2020),
+    )
+    asset_id = conn.execute("SELECT id FROM media_items").fetchone()[0]
+    conn.execute(
+        "INSERT INTO releases(asset_id,tracker,title,health,seeders) "
+        "VALUES(?,?,?,?,?)",
+        (asset_id, "TrackerA", "a.mkv", "alive", 5),
+    )
+    release_a = conn.execute("SELECT id FROM releases").fetchone()[0]
+    if other_source:
+        conn.execute(
+            "INSERT INTO releases(asset_id,tracker,title,health,seeders) "
+            "VALUES(?,?,?,?,?)",
+            (asset_id, "TrackerB", "b.mkv", "alive", 5),
+        )
+    if local_file:
+        conn.execute(
+            "INSERT INTO torrent_files(asset_id,release_id,file_index,rel_path,"
+            "size_bytes,state,storage_location,local_path) VALUES(?,?,?,?,?,?,?,?)",
+            (asset_id, release_a, 0, "a.mkv", 1000, "ready", "LOCAL_DISK",
+             str(tmp_path / "a.mkv")),
+        )
+    conn.commit()
+    conn.close()
+
+    out = tmp_path / "strm"
+    title_dir = out / "movies" / "Test (2020)"
+    title_dir.mkdir(parents=True)
+    main = title_dir / "Test (2020).strm"
+    main.write_text("http://127.0.0.1:8773/play?key=movie%3Atmdb%3A1\n")
+    variant = title_dir / "Test (2020) - 1080p.strm"
+    variant.write_text(
+        "http://127.0.0.1:8773/play?key=movie%3Atmdb%3A1"
+        f"&release={release_a}\n"
+    )
+    return db, out, main, variant
+
+
+def test_delete_tracker_strm_keeps_main_with_other_source(tmp_path):
+    from catalogo.tracker_block import delete_tracker_strm
+
+    db, out, main, variant = _strm_setup(tmp_path, other_source=True)
+    report = delete_tracker_strm(str(db), out, "TrackerA")
+    assert report["variants"] == 1
+    assert report["main"] == 0
+    assert report["kept"] == 1
+    assert not variant.exists()
+    assert main.exists()
+
+
+def test_delete_tracker_strm_removes_main_without_other_source(tmp_path):
+    from catalogo.tracker_block import delete_tracker_strm
+
+    db, out, main, variant = _strm_setup(tmp_path, other_source=False)
+    report = delete_tracker_strm(str(db), out, "TrackerA")
+    assert report["variants"] == 1
+    assert report["main"] == 1
+    assert report["total"] == 2
+    assert not variant.exists()
+    assert not main.exists()
+    assert not (out / "movies" / "Test (2020)").exists()
+
+
+def test_delete_tracker_strm_keeps_main_with_local_file(tmp_path):
+    from catalogo.tracker_block import delete_tracker_strm
+
+    db, out, main, variant = _strm_setup(
+        tmp_path, other_source=False, local_file=True
+    )
+    report = delete_tracker_strm(str(db), out, "TrackerA")
+    assert report["variants"] == 1
+    assert report["main"] == 0
+    assert report["kept"] == 1
+    assert main.exists()
+
+
+def test_delete_tracker_strm_dry_run_keeps_files(tmp_path):
+    from catalogo.tracker_block import delete_tracker_strm
+
+    db, out, main, variant = _strm_setup(tmp_path, other_source=False)
+    report = delete_tracker_strm(str(db), out, "TrackerA", dry_run=True)
+    assert report["total"] == 2
+    assert variant.exists()
+    assert main.exists()

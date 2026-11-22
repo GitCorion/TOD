@@ -1557,6 +1557,7 @@ class Handler(PlaybackHandler):
                 blocked=bool(body.get("blocked", True)),
                 reason=str(body.get("reason") or "downloads_broken"),
                 dry_run=bool(body.get("dry_run")),
+                delete_strm=bool(body.get("delete_strm")),
             )
             app.audit("web.tracker_block", payload=result)
             return self._json(200, result, head=head)
