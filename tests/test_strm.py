@@ -2,7 +2,7 @@ import sqlite3
 from pathlib import Path
 
 from catalogo.db import init_db
-from catalogo.strm import export_strm, safe_name
+from catalogo.strm import _available_release_ids, export_strm, safe_name
 
 MIGRATIONS = Path(__file__).resolve().parents[1] / "catalogo" / "migrations"
 
@@ -324,6 +324,37 @@ def test_export_filters_by_kind(tmp_path):
     assert result["kind"] == "series"
     assert (out / "series" / "Serie (2021)").is_dir()
     assert not (out / "movies" / "Test Movie (2020)").exists()
+
+
+def test_available_release_ids_trusts_qbit_state(tmp_path):
+    db = tmp_path / "catalogo.db"
+    init_db(db, MIGRATIONS)
+    conn = sqlite3.connect(db)
+    conn.execute(
+        "INSERT INTO media_items(key,kind,tmdb,title,year) VALUES(?,?,?,?,?)",
+        ("movie:tmdb:7", "movie", 7, "Archivada", 2024),
+    )
+    asset_id = conn.execute("SELECT id FROM media_items").fetchone()[0]
+    release_id = conn.execute(
+        "INSERT INTO releases(asset_id,tracker,title,health) "
+        "VALUES(?,?,?,?)",
+        (asset_id, "Tracker", "Película.mkv", "alive"),
+    ).lastrowid
+    conn.execute(
+        "INSERT INTO torrent_files(asset_id,release_id,file_index,library_path,"
+        "size_bytes,state) VALUES(?,?,?,?,?,?)",
+        (
+            asset_id,
+            release_id,
+            0,
+            "/mnt/fichier/Peliculas/Archivada (2024)/Archivada.mkv",
+            1000,
+            "archived",
+        ),
+    )
+    conn.commit()
+    assert _available_release_ids(conn) == {release_id}
+    conn.close()
 
 
 def test_export_writes_strm_for_library_only(tmp_path):

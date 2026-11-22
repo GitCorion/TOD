@@ -136,7 +136,11 @@ def _audio(value: str | None) -> str:
 
 
 def _available_release_ids(conn) -> set[int]:
-    """Releases con un fichero local/archivo que existe de verdad."""
+    """Releases con un fichero local/archivo presente según qBittorrent.
+
+    El estado de `torrent_files` lo mantiene `qbit-sync`; no se recorre el
+    disco. En una biblioteca de red eso duplicaría el trabajo del *arr.
+    """
     rows = conn.execute(
         """
         SELECT release_id, local_path, library_path
@@ -145,14 +149,11 @@ def _available_release_ids(conn) -> set[int]:
           AND state NOT IN ('evicted', 'missing')
         """
     ).fetchall()
-    result: set[int] = set()
-    for row in rows:
-        for column in ("local_path", "library_path"):
-            path = row[column]
-            if path and Path(path).is_file():
-                result.add(int(row["release_id"]))
-                break
-    return result
+    return {
+        int(release_id)
+        for release_id, local_path, library_path in rows
+        if local_path or library_path
+    }
 
 
 def _versions(

@@ -153,6 +153,16 @@ contenedor, montados desde `./data/`.
 Las rutas se cambian en **Configuración → Directorios**. TOD valida que
 existan y sean escribibles; no mueve datos por su cuenta.
 
+TOD **no recorre las bibliotecas de Radarr/Sonarr**. `library_files` se
+reconstruye desde sus APIs y `qbit-sync` mantiene el estado de los torrents;
+las rutas de archivo se dan por buenas sin hacer `stat` por red. Solo se
+comprueba el disco local de descargas y el fichero concreto cuando se sirve
+una reproducción. Así no se duplica el trabajo del *arr.
+
+Si Radarr y Sonarr comparten un directorio padre, ponlo en **Carpeta común**
+(por ejemplo `/mnt/fichier`). TOD lo usa para reconocer todo lo que vive en la
+biblioteca de red, incluidas las descargas que qBittorrent guarda allí.
+
 ## Copias
 
 La base y las claves están en `var/tod.db` (en Docker, `/config/tod.db`). Con

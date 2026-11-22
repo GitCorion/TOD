@@ -214,6 +214,29 @@ def test_library_file_is_preferred(tmp_path):
     assert result.size == 10
 
 
+def test_library_file_is_trusted_from_arr_without_stat(tmp_path, monkeypatch):
+    db, _asset_id, *_ = seed(tmp_path)
+    missing = "/mnt/fichier/Peliculas/No existe (2020)/No existe.mkv"
+    conn = sqlite3.connect(db)
+    conn.execute(
+        "INSERT INTO library_files(kind,tmdb,season,episode,path,size_bytes,"
+        "source) VALUES(?,?,?,?,?,?,?)",
+        ("movie", 1, 0, 0, missing, 4242, "radarr"),
+    )
+    conn.commit()
+    conn.close()
+
+    def fail(*_args, **_kwargs):
+        raise AssertionError("no debe tocar el disco al resolver biblioteca")
+
+    monkeypatch.setattr(Path, "is_file", fail)
+    monkeypatch.setattr(Path, "stat", fail)
+    result = Resolver(db).resolve("movie:tmdb:1")
+    assert result.source == "library"
+    assert result.path == missing
+    assert result.size == 4242
+
+
 def test_partial_local_file_is_torrent_not_local_seed(tmp_path):
     db, _asset_id, _release_id, *_ = seed(tmp_path)
     conn = sqlite3.connect(db)

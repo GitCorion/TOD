@@ -11,7 +11,6 @@ la clave ni el .strm.
 
 from __future__ import annotations
 
-import os
 from contextlib import closing
 from dataclasses import dataclass
 from pathlib import Path
@@ -61,22 +60,14 @@ class Resolution:
         }
 
 
-def _etag(path: Path) -> tuple[str, str]:
-    stat = path.stat()
-    mtime = stat.st_mtime_ns
-    return f'"{stat.st_size:x}-{mtime:x}"', f"{mtime}"
-
-
 class Resolver:
     def __init__(
         self,
         db_path: Path | str,
         *,
-        check_exists: bool = True,
         max_size_bytes: int | None = None,
     ):
         self.db_path = Path(db_path)
-        self.check_exists = check_exists
         self.max_size_bytes = (
             DEFAULT_MAX_STREAM_BYTES if max_size_bytes is None else max_size_bytes
         )
@@ -279,18 +270,16 @@ class Resolver:
             file_state = (row["state"] or "").lower()
             if file_state not in ("ready", "archived", "seeding", "complete"):
                 return None
+        # `library` lo mantiene el *arr vía `library_files`/`qbit-sync`: no se
+        # recorre la red. `local_seed` es disco local y sí se comprueba.
         file_path = Path(path)
-        if self.check_exists and not file_path.is_file():
-            return None
         size = row["size_bytes"]
         etag = None
         last_modified = None
-        try:
-            if file_path.is_file():
+        if source == "local_seed":
+            try:
                 size = file_path.stat().st_size
-                etag, last_modified = _etag(file_path)
-        except OSError:
-            if self.check_exists:
+            except OSError:
                 return None
         return Resolution(
             key=key,
@@ -336,19 +325,12 @@ class Resolver:
                 ).fetchone()
         if row is None:
             return None
+        # `library_files` lo reconstruye `sync-library` desde Radarr/Sonarr:
+        # si está ahí, el *arr ha dicho que existe. No se duplica el stat.
         path = Path(row["path"])
-        if self.check_exists and not path.is_file():
-            return None
         size = int(row["size_bytes"] or 0) or None
         etag = None
         last_modified = None
-        try:
-            if path.is_file():
-                size = path.stat().st_size
-                etag, last_modified = _etag(path)
-        except OSError:
-            if self.check_exists:
-                return None
         return Resolution(
             key=asset["key"],
             asset_id=int(asset["id"]),
@@ -744,7 +726,3 @@ class Resolver:
                 "seed_commitments": conn.execute("SELECT COUNT(*) FROM seed_commitments").fetchone()[0],
                 "play_intents": conn.execute("SELECT COUNT(*) FROM play_intents").fetchone()[0],
             }
-
-
-def path_exists(path: str | None) -> bool:
-    return bool(path) and os.path.isfile(path)

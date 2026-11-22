@@ -146,7 +146,7 @@ SETTINGS: tuple[Setting, ...] = (
         "library_root", "library_root", "directorios",
         "Carpeta común (opcional)", kind="path",
         env="CATALOGO_LIBRARY_ROOT", default="/mnt/library",
-        help="Solo si las carpetas anteriores comparten un padre. También sirve de base para el archivo de torrents privados.",
+        help="Solo si las carpetas anteriores comparten un padre. También sirve de base para el archivo de torrents privados; con él TOD reconoce qué rutas son de red y no las recorre.",
     ),
     Setting(
         "seed_root", "seed_root", "directorios", "Raíz de semillas",

@@ -189,9 +189,7 @@ class PlayService:
     ) -> list[int]:
         """Candidatos ordenados: salud, tamaño ascendente y seeds."""
         try:
-            sources = Resolver(
-                self.db_path, check_exists=False
-            ).sources(media_id)
+            sources = Resolver(self.db_path).sources(media_id)
         except Exception:
             sources = []
         ordered: list[int] = []

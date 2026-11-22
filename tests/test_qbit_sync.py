@@ -343,6 +343,48 @@ def test_ondemand_removed_early_is_left_to_qbittorrent(tmp_path):
     conn.close()
 
 
+def test_sync_trusts_archive_without_stat(tmp_path):
+    db, _asset_id = seed_db(tmp_path)
+    report = sync(
+        db, FakeQbit(), radarr=FakeRadarrAPI(), sonarr=FakeSonarrAPI(),
+        archive_root="/mnt/library", dry_run=False, check_exists=True, now=NOW,
+    )
+    assert report.errors == []
+    conn = sqlite3.connect(db)
+    conn.row_factory = sqlite3.Row
+    row = conn.execute(
+        "SELECT f.* FROM torrent_files f JOIN torrents t ON t.id=f.torrent_id "
+        "WHERE t.info_hash='comp1'"
+    ).fetchone()
+    assert row["storage_location"] == "1FICHIER"
+    assert row["library_path"] == "/mnt/library/archive/Comp.mkv"
+    assert row["local_path"] is None
+    assert row["state"] == "archived"
+    conn.close()
+
+
+def test_normalize_storage_reclassifies_old_archive_rows(tmp_path):
+    from catalogo.qbit_sync import _normalize_storage
+
+    db = tmp_path / "catalogo.db"
+    init_db(db, MIGRATIONS)
+    conn = sqlite3.connect(db)
+    conn.row_factory = sqlite3.Row
+    file_id = conn.execute(
+        "INSERT INTO torrent_files(local_path, storage_location, state) "
+        "VALUES(?,?,?)",
+        ("/mnt/library/archive/Test.mkv", "NONE", "ready"),
+    ).lastrowid
+    _normalize_storage(conn, "/mnt/library")
+    row = conn.execute(
+        "SELECT * FROM torrent_files WHERE id=?", (file_id,)
+    ).fetchone()
+    assert row["local_path"] is None
+    assert row["library_path"] == "/mnt/library/archive/Test.mkv"
+    assert row["storage_location"] == "1FICHIER"
+    conn.close()
+
+
 def test_choose_active_prefers_healthy_spanish_over_larger_blocked(tmp_path):
     from catalogo.qbit_sync import _choose_active
 

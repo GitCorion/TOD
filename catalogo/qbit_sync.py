@@ -96,6 +96,77 @@ def _storage_for(
     return "NONE"
 
 
+def _file_exists(
+    path: str | None,
+    archive_root: str | tuple[str, ...] | list[str] | None,
+    check_exists: bool,
+    *,
+    trust_archive: bool = True,
+) -> bool:
+    """Existencia según qBittorrent, sin hacer stat en la biblioteca del *arr.
+
+    `check_exists` solo comprueba rutas locales. Las rutas de archivo las
+    mantiene Radarr/Sonarr; recorrerlas por red duplicaría su trabajo.
+    """
+    if not path:
+        return False
+    if _in_archive(path, archive_root):
+        # Mientras se mueve no se puede dar por archivado todavía.
+        return bool(trust_archive)
+    if not check_exists:
+        return True
+    return Path(path).is_file()
+
+
+def _normalize_storage(conn, archive_root) -> None:
+    """Corrige filas antiguas sin tocar el disco.
+
+    Reclasifica según la ruta: archivo (`library_path`) o descarga local
+    (`local_path`). Así una fila antigua guardada como local pero situada en
+    `/mnt/fichier` deja de comprobarse por red.
+    """
+    rows = conn.execute(
+        "SELECT id, local_path, library_path, storage_location "
+        "FROM torrent_files"
+    ).fetchall()
+    for row in rows:
+        local_path = row["local_path"]
+        library_path = row["library_path"]
+        if not local_path and not library_path:
+            continue
+        if local_path and library_path:
+            # Nunca se pierde la copia de archivo si existe.
+            if _in_archive(library_path, archive_root):
+                local, library = None, library_path
+                storage = "1FICHIER"
+            elif _in_archive(local_path, archive_root):
+                local, library = local_path, None
+                storage = "1FICHIER"
+            else:
+                local, library = local_path, library_path
+                storage = _storage_for(library_path, archive_root)
+        else:
+            path = local_path or library_path
+            storage = _storage_for(path, archive_root)
+            if storage == "1FICHIER":
+                local, library = None, path
+            elif storage == "LOCAL_DISK":
+                local, library = path, None
+            else:
+                local, library = local_path, library_path
+        if (
+            local == local_path
+            and library == library_path
+            and storage == row["storage_location"]
+        ):
+            continue
+        conn.execute(
+            "UPDATE torrent_files SET local_path=?, library_path=?, "
+            "storage_location=? WHERE id=?",
+            (local, library, storage, int(row["id"])),
+        )
+
+
 def _qbit_state_to_db(state: str | None, progress: float) -> str:
     text = (state or "").lower()
     if "error" in text or "missing" in text:
@@ -415,7 +486,12 @@ def _upsert_file(
             archive_root=archive_root,
         )
         path = next(
-            (candidate for candidate in candidates if Path(candidate).is_file()),
+            (
+                candidate
+                for candidate in candidates
+                if not _in_archive(candidate, archive_root)
+                and Path(candidate).is_file()
+            ),
             None,
         )
         if path is None and not check_exists:
@@ -424,7 +500,9 @@ def _upsert_file(
         if path is None and save_path:
             path = str(Path(save_path) / rel_path)
         storage = _storage_for(path, archive_root)
-        exists = bool(path) if not check_exists else bool(path and Path(path).is_file())
+        exists = _file_exists(
+            path, archive_root, check_exists, trust_archive=False
+        )
         if storage == "1FICHIER" and exists:
             local_path = None
             library_path = path
@@ -440,14 +518,14 @@ def _upsert_file(
         base = save_path if complete else base_path
         path = str(Path(base) / rel_path) if base else None
         storage = _storage_for(base, archive_root)
-        exists = bool(path) if not check_exists else bool(path and Path(path).is_file())
+        exists = _file_exists(path, archive_root, check_exists)
         if complete and not exists and check_exists:
             report.missing_files += 1
         if storage == "1FICHIER":
             local_path = None
-            library_path = path if exists or not check_exists else None
+            library_path = path if exists else None
         else:
-            local_path = path if exists or not check_exists else None
+            local_path = path if exists else None
             library_path = None
         if complete and exists:
             state = "archived" if storage == "1FICHIER" else "ready"
@@ -783,7 +861,10 @@ def sync(
                             file_row["local_path"],
                             file_row["library_path"],
                         )
-                        if path and Path(path).is_file()
+                        if path and (
+                            _in_archive(path, archive_root)
+                            or Path(path).is_file()
+                        )
                     ]
                     if paths:
                         # El torrent desapareció, pero el fichero sigue en
@@ -832,6 +913,9 @@ def sync(
                         (current.isoformat(), int(commitment["id"])),
                     )
                 report.torrents_removed += 1
+
+            # Corrige clasificaciones antiguas antes de recalcular punteros.
+            _normalize_storage(conn, archive_root)
 
             # Recalcular estado/puntero de los media tocados.
             for row in conn.execute(
