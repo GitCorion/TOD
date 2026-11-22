@@ -104,8 +104,16 @@ def default_policy(
     """
     public = (privacy or "").lower() == "public"
     hours = (
-        0 if public
-        else max(0, int(min_seed_hours if min_seed_hours is not None else 72))
+        0
+        if public
+        else max(
+            0,
+            int(
+                min_seed_hours
+                if min_seed_hours is not None
+                else 50 * 24
+            ),
+        )
     )
     ratio = (
         0.0 if public

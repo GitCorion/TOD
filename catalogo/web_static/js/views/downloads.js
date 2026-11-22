@@ -68,7 +68,7 @@ function groupStatus(group) {
   return status(label, tone);
 }
 
-function torrentRow(item) {
+function torrentRow(item, canDelete = false) {
   const stateLabel = qbitState(item.state);
   const selected = state.torrentSelection.has(item.info_hash);
   return `<div class="dl-torrent">
@@ -82,6 +82,7 @@ function torrentRow(item) {
     <div class="actions">
       ${status(stateLabel.label, stateLabel.tone)}
       <button class="btn btn-sm btn-ghost" data-action="qbit" data-hash="${esc(item.info_hash)}" data-qaction="${String(item.state || '').toLowerCase().includes('paus') || String(item.state || '').toLowerCase().includes('stop') ? 'resume' : 'pause'}" aria-label="${String(item.state || '').toLowerCase().includes('paus') ? 'Reanudar' : 'Pausar'}">${icon(String(item.state || '').toLowerCase().includes('paus') ? 'play' : 'pause', 'sm')}</button>
+      ${canDelete ? `<button class="btn btn-sm btn-ghost" data-action="qbit-delete" data-hash="${esc(item.info_hash)}" aria-label="Borrar torrent">${icon('trash', 'sm')}</button>` : ''}
     </div>
   </div>`;
 }
@@ -90,10 +91,12 @@ export async function renderDownloads({ query, signal }) {
   const text = query.get('q') || '';
   const filter = query.get('state') || '';
   const sort = query.get('sort') || 'recent';
-  const [data, settings] = await Promise.all([
+  const [data, settings, seed] = await Promise.all([
     api('/api/downloads?category=ondemand', { signal }),
     api('/api/ondemand/settings', { signal }).catch(() => ({ max_active: 4, min: 1, max: 10 })),
+    api('/api/seed', { signal }).catch(() => null),
   ]);
+  const canDelete = Boolean(seed?.defaults?.allow_delete);
   setHeader('Descargas', 'Operación');
 
   const allGroups = groupItems(data.items || []).filter((group) => {
@@ -126,7 +129,7 @@ export async function renderDownloads({ query, signal }) {
     // Un torrent suelto sin vínculo de catálogo no necesita una cabecera
     // que repita su propio nombre y su propio progreso.
     if (group.items.length === 1 && !group.media_id && !group.keyName) {
-      return `<div class="dl-group"><div class="dl-torrents">${torrentRow(group.items[0])}</div></div>`;
+      return `<div class="dl-group"><div class="dl-torrents">${torrentRow(group.items[0], canDelete)}</div></div>`;
     }
     const tag = group.kind === 'series' && group.season
       ? `T${String(group.season).padStart(2, '0')}E${String(group.episode || 0).padStart(2, '0')}`
@@ -142,7 +145,7 @@ export async function renderDownloads({ query, signal }) {
         <div class="progress">${bar(group.progress, group.progress >= 1 ? 'green' : '')}</div>
         <div class="side">${groupStatus(group)}${group.media_id ? `<a class="btn btn-sm btn-ghost" href="#/title/${group.media_id}">Abrir</a>` : ''}</div>
       </summary>
-      <div class="dl-torrents">${group.items.map(torrentRow).join('')}</div>
+      <div class="dl-torrents">${group.items.map((item) => torrentRow(item, canDelete)).join('')}</div>
     </details>`;
   }).join('');
 

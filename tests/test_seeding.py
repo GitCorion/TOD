@@ -71,7 +71,7 @@ def test_seed_settings_roundtrip(tmp_path):
     db = tmp_path / "catalogo.db"
     init_db(db, MIGRATIONS)
     values = save_seed(str(db), min_hours=24, ratio=0.5, force=False)
-    assert values == {"min_hours": 24, "ratio": 0.5, "force": False}
+    assert values == {"min_hours": 24, "ratio": 0.5, "force": False, "allow_delete": False}
     assert load_seed(str(db)) == values
 
 

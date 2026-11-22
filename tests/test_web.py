@@ -188,6 +188,27 @@ def test_delete_is_left_to_qbittorrent(tmp_path):
         )
 
 
+def test_delete_from_tod_when_enabled(tmp_path, monkeypatch):
+    from catalogo.seed_settings import save as save_seed
+
+    db, _, _ = seed(tmp_path)
+    config = config_for(tmp_path, db)
+    save_seed(str(db), min_hours=1200, ratio=1.0, force=True, allow_delete=True)
+
+    class Qbit:
+        def __init__(self):
+            self.deleted = []
+
+        def delete(self, info_hash, delete_files=False):
+            self.deleted.append((info_hash, delete_files))
+
+    qbit = Qbit()
+    monkeypatch.setattr(admin, "_qb_write", lambda _config: qbit)
+    result = admin.qbit_action(config, "hash1", "delete", delete_files=False)
+    assert result["delete_files"] is False
+    assert qbit.deleted == [("hash1", False)]
+
+
 def _request(base, path, *, method="GET", body=None, headers=None, token=None):
     data = None
     headers = dict(headers or {})

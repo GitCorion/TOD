@@ -97,13 +97,13 @@ export async function renderSeeds({ signal }) {
     </div>
 
     <div class="panel section">
-      <div class="panel-head"><h2>Mantenimiento</h2><span class="right tiny faint">TOD no borra torrents ni ficheros</span></div>
+      <div class="panel-head"><h2>Mantenimiento</h2><span class="right tiny faint">Borrado opcional en Configuración</span></div>
       <div class="panel-body">
         <div class="chips">
           <button class="chip" data-action="open-task" data-kind="seeding">${icon('refresh', 'sm')} Mantener siembra mínima</button>
           <a class="chip" href="#/settings?section=siembra">Ajustes de siembra</a>
         </div>
-        <p class="muted tiny" style="margin:12px 0 0">TOD fuerza el seed hasta cumplir horas y ratio. Después lo suelta y qBittorrent aplica sus propias reglas; TOD no elimina el torrent ni su contenido.</p>
+        <p class="muted tiny" style="margin:12px 0 0">TOD fuerza el seed hasta cumplir horas y ratio. Después lo suelta y qBittorrent aplica sus reglas. Por defecto TOD no elimina; puedes permitir el borrado desde TOD en Configuración → Siembra.</p>
       </div>
     </div>
 

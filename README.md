@@ -27,7 +27,7 @@ Las URLs y API keys se introducen en la web y TOD aplica el resto. En Docker,
   variante por versión reproducible.
 - **Reproducir bajo demanda** desde qBittorrent con rangos HTTP reales (206).
 - **Sembrar con reglas** por tracker: mínimo de horas y ratio con force-start.
-  Al cumplirse, TOD lo suelta y qBittorrent decide si borra el torrent.
+  Al cumplirse, TOD lo suelta y, por defecto, qBittorrent decide si borra el torrent. El borrado desde TOD es una opción desactivada.
 - **Descubrir fuentes** en Prowlarr, Jackett o ambos, sin listas de trackers escritas a mano.
 - **Leer Radarr/Sonarr por API**, nunca tocando sus bases de datos.
 - **Automatizar** RSS, seguimiento, backfill, puente, restauración y límites de qBittorrent.
@@ -187,7 +187,7 @@ comprobación de integraciones, con enlaces a la sección que los arregla.
 - **Directorios** con comprobación de existencia, escritura y espacio. Las
   bibliotecas de Radarr (películas) y Sonarr (series) se configuran por separado.
 - **Reproducción**: descargas simultáneas, tamaño máximo y URL base de `.strm`.
-- **Siembra**: mínimo de horas y ratio, force-start y políticas por tracker.
+- **Siembra**: mínimo de días/ratio, force-start, políticas por tracker y borrado opcional desde TOD.
 - **Seguridad**: token web y hosts permitidos.
 - **Tareas programadas**: activar, cambiar cadencia, ver la próxima ejecución y lanzar ahora.
 

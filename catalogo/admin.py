@@ -1108,19 +1108,30 @@ def qbit_action(
     *,
     delete_files: bool = False,
 ) -> dict[str, Any]:
-    if action not in ("pause", "resume", "recheck"):
-        raise JobError(
-            "el borrado de torrents y ficheros lo decide qBittorrent; "
-            "TOD no elimina contenido"
-        )
+    if action not in ("pause", "resume", "recheck", "delete"):
+        raise JobError("acción no válida")
+    if action == "delete":
+        from .seed_settings import load as load_seed_settings
+
+        if not load_seed_settings(config.db_path)["allow_delete"]:
+            raise JobError(
+                "el borrado desde TOD está desactivado; actívalo en "
+                "Configuración → Siembra o usa qBittorrent"
+            )
     client = _qb_write(config)
     if action == "pause":
         client.pause(info_hash)
     elif action == "resume":
         client.resume(info_hash)
-    else:
+    elif action == "recheck":
         client.recheck(info_hash)
-    return {"info_hash": info_hash, "action": action, "delete_files": False}
+    else:
+        client.delete(info_hash, delete_files=bool(delete_files))
+    return {
+        "info_hash": info_hash,
+        "action": action,
+        "delete_files": bool(delete_files) if action == "delete" else False,
+    }
 
 
 def apply_qbit_limits(

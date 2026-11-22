@@ -1059,6 +1059,7 @@ class Handler(PlaybackHandler):
                     min_hours=body.get("min_hours"),
                     ratio=body.get("ratio"),
                     force=body.get("force"),
+                    allow_delete=body.get("allow_delete"),
                 )
             except (TypeError, ValueError) as exc:
                 raise WebError(400, str(exc)[:200])

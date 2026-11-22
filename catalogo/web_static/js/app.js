@@ -1133,6 +1133,10 @@ document.addEventListener('click', async (event) => {
         const key = input.dataset.seedField;
         values[key] = input.type === 'checkbox' ? input.checked : input.value;
       });
+      if (values.min_days !== undefined) {
+        values.min_hours = Number(values.min_days) * 24;
+        delete values.min_days;
+      }
       await apiPost('/api/seed', values);
       state.settingsDirty = false;
       toast('Siembra actualizada', 'ok');
@@ -1146,6 +1150,10 @@ document.addEventListener('click', async (event) => {
         const key = input.dataset.seedField;
         values[key] = input.type === 'checkbox' ? input.checked : input.value;
       });
+      if (values.min_days !== undefined) {
+        values.min_seed_hours = Number(values.min_days) * 24;
+        delete values.min_days;
+      }
       await apiPost('/api/seed/policies', values);
       toast(`Política de ${tracker} actualizada`, 'ok');
       await route();
@@ -1694,6 +1702,39 @@ document.addEventListener('click', async (event) => {
       await apiPost(`/api/downloads/${element.dataset.hash}/action`, { action: element.dataset.qaction });
       toast(`Torrent ${element.dataset.hash.slice(0, 10)}… actualizado`, 'ok');
       await route();
+      return;
+    }
+    if (action === 'qbit-delete') {
+      const hash = element.dataset.hash;
+      openModal(
+        'Borrar torrent',
+        `<p class="muted" style="margin-top:0">Elige si quieres quitar solo el torrent de qBittorrent o borrar también sus ficheros. Esta acción no se puede deshacer.</p>
+         <div class="notice">En trackers privados, borrar ficheros puede incumplir el mínimo de seed.</div>`,
+        `<button class="btn btn-ghost" data-action="modal-close">Cancelar</button>
+         <button class="btn" data-action="qbit-delete-run" data-hash="${esc(hash)}" data-delete-files="0">Quitar torrent</button>
+         <button class="btn btn-danger" data-action="qbit-delete-run" data-hash="${esc(hash)}" data-delete-files="1">Borrar con ficheros</button>`,
+        { slim: true },
+      );
+      return;
+    }
+    if (action === 'qbit-delete-run') {
+      const hash = element.dataset.hash;
+      const deleteFiles = element.dataset.deleteFiles === '1';
+      element.disabled = true;
+      try {
+        await apiPost(`/api/downloads/${hash}/action`, {
+          action: 'delete',
+          delete_files: deleteFiles,
+        });
+        state.torrentSelection.delete(hash);
+        toast(deleteFiles ? 'Torrent y ficheros borrados' : 'Torrent quitado', 'ok');
+        closeModal();
+        await route();
+      } catch (error) {
+        toast(error.message, 'error');
+      } finally {
+        element.disabled = false;
+      }
       return;
     }
     if (action === 'qbit-bulk') {
