@@ -168,12 +168,13 @@ function diskLine(item, key) {
 }
 
 export async function renderSettings({ signal, query } = {}) {
-  const [data, schedule, attention, seed, language] = await Promise.all([
+  const [data, schedule, attention, seed, language, system] = await Promise.all([
     api('/api/settings', { signal }),
     api('/api/scheduler', { signal }),
     api('/api/attention', { signal }).catch(() => null),
     api('/api/seed', { signal }).catch(() => null),
     api('/api/language', { signal }).catch(() => null),
+    api('/api/system', { signal }).catch(() => null),
   ]);
   state.attention = attention;
   const languagePreference = language?.preference || 'any';
@@ -189,31 +190,49 @@ export async function renderSettings({ signal, query } = {}) {
   const policyByTracker = new Map(
     (seed?.policies || []).map((item) => [item.tracker, item]),
   );
+  const systemTrackers = new Map(
+    (system?.trackers || []).map((item) => [item.tracker, item]),
+  );
   const seedTrackers = [
     ...new Set([
       ...(seed?.known || []).map((item) => item.tracker),
       ...(seed?.policies || []).map((item) => item.tracker),
+      ...systemTrackers.keys(),
     ]),
   ].filter(Boolean).sort((a, b) => a.localeCompare(b, 'es'));
   const trackerRows = seedTrackers.map((tracker) => {
     const current = policyByTracker.get(tracker) || {};
     const known = (seed?.known || []).find((item) => item.tracker === tracker) || {};
+    const stats = systemTrackers.get(tracker) || {};
     const hours = current.min_seed_hours ?? seedDefaults.min_hours;
     const days = Math.round((Number(hours) / 24) * 100) / 100;
     const ratio = current.target_ratio ?? seedDefaults.ratio;
     const enabled = current.enabled !== false;
+    const isBlocked = stats.enabled === 0;
+    const hardBlocked = isBlocked && Number(stats.blocked || 0) > 0;
+    const detail = [
+      stats.privacy || known.privacy || current.privacy || '',
+      stats.releases !== undefined
+        ? `${fmtInt(stats.releases)} releases`
+        : known.releases ? `${fmtInt(known.releases)} releases` : '',
+      stats.alive !== undefined ? `${fmtInt(stats.alive)} vivos` : '',
+      stats.blocked ? `${fmtInt(stats.blocked)} bloqueados` : '',
+    ].filter(Boolean).join(' · ');
     return `<tr>
       <td data-label="Tracker"><strong>${esc(tracker)}</strong>
-        <div class="tiny faint">${esc(known.privacy || current.privacy || '')}${known.releases ? ` · ${fmtInt(known.releases)} releases` : ''}</div>
+        <div class="tiny faint">${esc(detail)}</div>
       </td>
       <td data-label="Días"><input class="input input-sm" type="number" min="0" max="365" step="0.5"
         data-seed-tracker="${esc(tracker)}" data-seed-field="min_days" value="${esc(days)}"></td>
       <td data-label="Ratio"><input class="input input-sm" type="number" min="0" max="100" step="0.1"
         data-seed-tracker="${esc(tracker)}" data-seed-field="target_ratio" value="${esc(ratio)}"></td>
       <td data-label="Descargar"><input type="checkbox" aria-label="Permitir descargas de ${esc(tracker)}"
-        data-seed-tracker="${esc(tracker)}" data-seed-field="enabled" ${enabled ? 'checked' : ''}></td>
+        data-seed-tracker="${esc(tracker)}" data-seed-field="enabled" ${enabled ? 'checked' : ''} ${hardBlocked ? 'disabled title="Bloqueado: usa Desbloquear"' : ''}></td>
+      <td data-label="Última" class="tiny faint nowrap">${stats.last_checked ? fmtDate(stats.last_checked) : '—'}</td>
       <td class="actions" data-label="">
         <button class="btn btn-sm btn-ghost" data-action="seed-policy-save" data-tracker="${esc(tracker)}">Guardar</button>
+        <button class="btn btn-sm ${isBlocked ? '' : 'btn-danger'}" data-action="tracker-block"
+          data-tracker="${esc(tracker)}" data-blocked="${isBlocked ? '0' : '1'}">${isBlocked ? 'Desbloquear' : 'Bloquear'}</button>
       </td>
     </tr>`;
   }).join('');
@@ -238,7 +257,7 @@ export async function renderSettings({ signal, query } = {}) {
         <button class="settings-tab" data-action="settings-jump" data-target="settings-playback">Reproducción</button>
         <button class="settings-tab" data-action="settings-jump" data-target="settings-security">Seguridad</button>
         <button class="settings-tab" data-action="settings-jump" data-target="settings-language">Idioma</button>
-        <button class="settings-tab" data-action="settings-jump" data-target="settings-seed">Siembra</button>
+        <button class="settings-tab" data-action="settings-jump" data-target="settings-seed">Trackers y siembra</button>
         <button class="settings-tab" data-action="settings-jump" data-target="settings-scheduler">Tareas</button>
       </nav>
     </div>
@@ -305,8 +324,8 @@ export async function renderSettings({ signal, query } = {}) {
 
     <div class="panel section" id="settings-seed">
       <div class="panel-head">
-        <h2>Siembra</h2>
-        <span class="right tiny faint">TOD no borra torrents ni ficheros</span>
+        <h2>Trackers y siembra</h2>
+        <span class="right tiny faint">TOD no borra torrents ni ficheros descargados</span>
       </div>
       <div class="panel-body">
         <p class="muted tiny" style="margin-top:0">
@@ -334,10 +353,13 @@ export async function renderSettings({ signal, query } = {}) {
             <button class="btn btn-primary" data-action="seed-save">${icon('check', 'sm')} Guardar siembra</button>
           </label>
         </div>
-        <div class="table-wrap" style="margin-top:14px">
+        <p class="muted tiny" style="margin:12px 0 8px">
+          «Descargar» solo permite o bloquea descargas nuevas. «Bloquear» marca sus releases como no disponibles y, si lo eliges, borra sus <span class="mono">.strm</span>.
+        </p>
+        <div class="table-wrap">
           <table class="table--stack">
-            <thead><tr><th>Tracker</th><th>Días</th><th>Ratio</th><th>Descargar</th><th></th></tr></thead>
-            <tbody>${trackerRows || '<tr><td colspan="5" class="tiny faint">Aún no hay trackers indexados.</td></tr>'}</tbody>
+            <thead><tr><th>Tracker</th><th>Días</th><th>Ratio</th><th>Descargar</th><th title="Última comprobación de salud">Última</th><th></th></tr></thead>
+            <tbody>${trackerRows || '<tr><td colspan="6" class="tiny faint">Aún no hay trackers indexados.</td></tr>'}</tbody>
           </table>
         </div>
         <p class="muted tiny" style="margin:8px 0 0">

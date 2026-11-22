@@ -94,22 +94,6 @@ export async function renderSystem({ signal }) {
     </div>`;
   }).join('');
 
-  const trackers = (system.trackers || []).map((tracker) => `<tr>
-    <td data-label="Tracker"><strong>${esc(tracker.tracker)}</strong></td>
-    <td data-label="Releases" class="num">${fmtInt(tracker.releases)}</td>
-    <td data-label="Vivos" class="num">${fmtInt(tracker.alive)}</td>
-    <td data-label="Bloqueados" class="num">${fmtInt(tracker.blocked)}</td>
-    <td data-label="Privacidad">${tracker.privacy ? badge(tracker.privacy, 'mono') : '—'}</td>
-    <td data-label="Política">${tracker.enabled === 0 ? status('Deshabilitada', 'bad') : status('Activa', 'ok')}</td>
-    <td data-label="Seed">${tracker.min_seed_hours ?? '—'} h, ratio ${tracker.target_ratio ?? '—'}</td>
-    <td data-label="Última">${fmtDate(tracker.last_checked)}</td>
-    <td class="actions" data-label="">
-      <button class="btn btn-sm ${tracker.enabled === 0 ? '' : 'btn-danger'}" data-action="tracker-block" data-tracker="${esc(tracker.tracker)}" data-blocked="${tracker.enabled === 0 ? '0' : '1'}">
-        ${tracker.enabled === 0 ? 'Desbloquear' : 'Bloquear'}
-      </button>
-    </td>
-  </tr>`).join('');
-
   const eventRows = (events.items || []).map((event) => `<tr>
     <td data-label="Fecha" class="nowrap">${fmtDate(event.ts)}</td>
     <td data-label="Acción">${badge(eventLabel(event.kind), 'mono')}</td>
@@ -131,6 +115,7 @@ export async function renderSystem({ signal }) {
         <div class="panel-head"><h2>Integraciones y base</h2></div>
         <div class="panel-body" style="padding-top:6px;padding-bottom:8px">
           ${integrations}
+          <div class="kv"><span>Trackers</span><span>${(system.trackers || []).filter((item) => item.enabled !== 0).length} activos · ${(system.trackers || []).filter((item) => item.enabled === 0).length} bloqueados · <a class="tiny" href="#/settings?section=siembra">Gestionar</a></span></div>
           <div class="kv"><span>qBittorrent</span><span>${system.qbit?.ok ? `${esc(system.qbit.version)}, ${fmtInt(system.qbit.torrents)} torrents` : `<span class="error">${esc(system.qbit?.error || 'sin conexión')}</span>`}</span></div>
           <div class="kv"><span>Base de datos</span><span class="mono tiny">${esc(system.db?.path || '—')}, ${fmtBytes(system.db?.size || 0)}</span></div>
           <div class="kv"><span>Títulos / releases</span><span>${fmtInt(system.db?.media_items || 0)} / ${fmtInt(system.db?.releases || 0)}</span></div>
@@ -159,14 +144,6 @@ export async function renderSystem({ signal }) {
         ${!system.paths?.library_root_movies && !system.paths?.library_root_series ? `<div class="kv"><span>Carpeta común</span><span class="mono">${esc(system.paths?.library_root || '—')}</span></div>` : ''}
         <div class="kv"><span>Carpetas .strm</span><span class="mono">${esc(system.paths?.strm_roots || '—')} <a class="tiny" href="#/settings">Cambiar</a></span></div>
       </div>
-    </div>
-
-    <div class="panel flush section">
-      <div class="panel-head"><h2>Trackers y políticas</h2><span class="right tiny faint">${system.trackers?.length || 0} indexers</span></div>
-      ${trackers ? `<div class="table-wrap"><table class="table--stack">
-        <thead><tr><th>Tracker</th><th>Releases</th><th>Vivos</th><th>Bloqueados</th><th>Privacidad</th><th>Política</th><th>Seed</th><th>Última</th><th></th></tr></thead>
-        <tbody>${trackers}</tbody>
-      </table></div>` : empty('Sin trackers indexados')}
     </div>
 
     <div class="panel flush section">

@@ -190,8 +190,8 @@ resultado). Puedes usar uno o ambos; no hay listas privadas en el repositorio.
 
 ## Configuración desde la web
 
-**Sistema → Estado** muestra los avisos de TOD y el resultado de la última
-comprobación de integraciones, con enlaces a la sección que los arregla.
+**Sistema → Estado** es diagnóstico: avisos, servicios, tareas, discos y
+auditoría, con enlaces a la sección que los arregla.
 
 **Sistema → Configuración** incluye:
 
@@ -202,7 +202,10 @@ comprobación de integraciones, con enlaces a la sección que los arregla.
 - **Idioma**: cualquier idioma, castellano primero (V.O. como respaldo) o solo castellano.
   En títulos originalmente españoles manda el país de origen: castellano en
   España y latino en Latinoamérica; el doblaje latino del resto queda fuera.
-- **Siembra**: mínimo de días/ratio, force-start, políticas por tracker y borrado opcional desde TOD.
+- **Trackers y siembra**: mínimo de días/ratio, force-start y políticas por
+  tracker. Desde aquí se permite o bloquea la descarga de cada tracker y se
+  puede borrar, opcionalmente, los `.strm` que dependen de él. El `.strm`
+  principal solo se borra si el título se queda sin otra fuente ni fichero local.
 - **Seguridad**: token web y hosts permitidos.
 - **Tareas programadas**: activar, cambiar cadencia, ver la próxima ejecución y lanzar ahora.
 

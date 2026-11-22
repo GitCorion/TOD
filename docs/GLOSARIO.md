@@ -12,6 +12,13 @@ Estos son los únicos términos que deberían aparecer en pantalla.
 | **Fuente** | Un release o torrent que se puede reproducir. | `release` |
 | **Carpeta de los `.strm`** | Carpeta donde TOD escribe los ficheros que lee Jellyfin. | `catalog_library` |
 
+## Trackers
+
+- **Descargar** solo permite o bloquea descargas nuevas de ese tracker.
+- **Bloquear** marca sus releases como no disponibles y permite borrar sus
+  `.strm`. El principal solo se borra si el título se queda sin otra fuente ni
+  fichero local.
+
 ## Reglas de escritura
 
 - No usar **publicar**, **publicación**, **publicado** ni **monitorizar** en la
