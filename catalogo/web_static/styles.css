@@ -304,7 +304,9 @@ kbd {
 .kpi {
   background: var(--paper-soft); border: 1px solid var(--rule); border-radius: var(--radius-lg);
   padding: 10px 12px 11px; min-width: 0; display: flex; flex-direction: column; gap: 2px;
+  color: inherit; text-decoration: none;
 }
+a.kpi:hover { border-color: var(--rule-dark); background: var(--paper-deep); text-decoration: none; }
 .kpi .label {
   color: var(--faint); font-size: 10px; font-weight: 600;
   letter-spacing: .07em; text-transform: uppercase; display: flex; align-items: center; gap: 6px;

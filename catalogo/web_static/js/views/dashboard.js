@@ -26,6 +26,7 @@ export async function renderDashboard({ signal }) {
   const latest = recentJobs[0] || null;
   const onJellyfin = (movies.published || 0) + (series.published || 0);
   const usedPct = disk.total ? Math.round(((disk.total - (disk.free || 0)) / disk.total) * 100) : 0;
+  const missingJellyfin = (movies.pending || 0) + (series.pending || 0);
 
   setHeader('Inicio', 'Contenido');
 
@@ -69,26 +70,27 @@ export async function renderDashboard({ signal }) {
     <div class="section" style="margin-top:0">${attentionCard(attention, { compact: true })}</div>
 
     <div class="kpi-grid section">
-      <div class="kpi accent" title="Películas y series que ya aparecen en Jellyfin. Cada serie cuenta una vez.">
-        <span class="label">Títulos en Jellyfin</span>
+      <a class="kpi accent" href="#/catalog?publication=publicado" title="Películas, series y episodios que ya aparecen en Jellyfin.">
+        <span class="label">En Jellyfin</span>
         <span class="value">${fmtInt(onJellyfin)}</span>
         <span class="hint">${fmtInt(movies.published || 0)} películas · ${fmtInt(series.published || 0)} series</span>
-      </div>
-      <div class="kpi" title="Cada episodio con acceso propio cuenta una vez. No se agrupa por serie.">
-        <span class="label">Episodios en Jellyfin</span>
-        <span class="value">${fmtInt(catalog.episodes || 0)}</span>
-        <span class="hint">cuentan por separado</span>
-      </div>
-      <div class="kpi ${downloads.error ? 'red' : downloads.downloading ? 'amber' : ''}">
+        <span class="hint">${fmtInt(catalog.episodes || 0)} episodios</span>
+      </a>
+      <a class="kpi ${missingJellyfin ? 'amber' : ''}" href="#/catalog?publication=pendiente" title="Tienen una fuente reproducible; solo falta crear su acceso en Jellyfin.">
+        <span class="label">Falta en Jellyfin</span>
+        <span class="value">${fmtInt(missingJellyfin)}</span>
+        <span class="hint">para añadir a Jellyfin</span>
+      </a>
+      <a class="kpi ${downloads.error ? 'red' : downloads.downloading ? 'amber' : ''}" href="#/downloads" title="Ver descargas en qBittorrent.">
         <span class="label">Descargando</span>
         <span class="value">${fmtInt(downloads.downloading || 0)}</span>
         <span class="hint">${fmtInt(downloads.seeding || 0)} sembrando · ${fmtInt(downloads.paused || 0)} pausadas</span>
-      </div>
-      <div class="kpi">
+      </a>
+      <a class="kpi" href="#/system" title="Espacio libre en la carpeta de los .strm.">
         <span class="label">Espacio libre</span>
         <span class="value">${fmtBytes(disk.free || 0)}</span>
         <span class="hint">${usedPct} % usado de ${fmtBytes(disk.total || 0)}</span>
-      </div>
+      </a>
     </div>
 
     <div class="dash-grid section">
