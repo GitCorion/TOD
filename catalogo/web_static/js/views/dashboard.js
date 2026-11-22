@@ -69,15 +69,15 @@ export async function renderDashboard({ signal }) {
     <div class="section" style="margin-top:0">${attentionCard(attention, { compact: true })}</div>
 
     <div class="kpi-grid section">
-      <div class="kpi accent">
-        <span class="label">En Jellyfin</span>
+      <div class="kpi accent" title="Películas y series que ya aparecen en Jellyfin. Cada serie cuenta una vez.">
+        <span class="label">Títulos en Jellyfin</span>
         <span class="value">${fmtInt(onJellyfin)}</span>
         <span class="hint">${fmtInt(movies.published || 0)} películas · ${fmtInt(series.published || 0)} series</span>
       </div>
-      <div class="kpi">
-        <span class="label">Episodios</span>
+      <div class="kpi" title="Episodios concretos que ya aparecen en Jellyfin. Una serie puede aportar varios.">
+        <span class="label">Episodios en Jellyfin</span>
         <span class="value">${fmtInt(catalog.episodes || 0)}</span>
-        <span class="hint">${fmtInt(catalog.orphans || 0)} sin título</span>
+        <span class="hint">repartidos en ${fmtInt(series.published || 0)} series</span>
       </div>
       <div class="kpi ${downloads.error ? 'red' : downloads.downloading ? 'amber' : ''}">
         <span class="label">Descargando</span>
