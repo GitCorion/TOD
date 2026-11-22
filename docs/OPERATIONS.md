@@ -57,6 +57,17 @@ tod rss-sync --limit 200 --delay 0.3
 tod monitor --limit 100 --delay 2
 ```
 
+## Seguimiento por defecto
+
+Todo título que **no esté en Radarr/Sonarr** se marca como monitorizado al
+entrar en TOD. Así se busca una fuente y se publica su `.strm` sin tener que
+pedirlo a mano. Al publicarse el `.strm`, el seguimiento se cierra solo.
+
+`library_added` es la fuente de verdad de pertenencia a los *arr. Si un título
+sale de Radarr/Sonarr, vuelve a seguimiento; si entra, deja de perseguirse
+desde TOD. Los títulos que ya tienen fichero local/torrent también se marcan
+al importarse, para que no queden fuera de la reconciliación.
+
 ## Reproducción
 
 `.strm` estable:

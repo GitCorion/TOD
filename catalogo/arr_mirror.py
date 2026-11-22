@@ -123,7 +123,7 @@ def mirror_radarr(db_path, radarr, *, now: str | None = None) -> dict[str, Any]:
                 f"movie:tmdb:{item['tmdb']}",
             )
         )
-    if not items:
+    if not items and rows:
         return report
 
     result = upsert_movies(db_path, items, source="radarr")
@@ -135,6 +135,15 @@ def mirror_radarr(db_path, radarr, *, now: str | None = None) -> dict[str, Any]:
         }
     )
     with closing(connect(db_path)) as conn:
+        conn.execute(
+            "CREATE TEMP TABLE IF NOT EXISTS _arr_seen_movies "
+            "(key TEXT PRIMARY KEY)"
+        )
+        conn.execute("DELETE FROM _arr_seen_movies")
+        conn.executemany(
+            "INSERT OR IGNORE INTO _arr_seen_movies(key) VALUES(?)",
+            [(key,) for _runtime, key in updates],
+        )
         conn.executemany(
             """
             UPDATE media_items SET
@@ -146,6 +155,31 @@ def mirror_radarr(db_path, radarr, *, now: str | None = None) -> dict[str, Any]:
             WHERE key = ?
             """,
             [(stamp, runtime, key) for runtime, key in updates],
+        )
+        # Si estaba en Radarr ya no hace falta perseguirlo desde TOD.
+        conn.execute(
+            """
+            UPDATE media_items SET monitored = 0
+            WHERE kind = 'movie' AND monitored = 1
+              AND monitor_source IN ('rss','tmdb','series','auto','qbit')
+              AND key IN (SELECT key FROM _arr_seen_movies)
+            """
+        )
+        # Lo que ha salido de Radarr vuelve a seguimiento por defecto.
+        conn.execute(
+            """
+            UPDATE media_items SET
+                library_added = 0,
+                library_added_at = NULL,
+                library_source = NULL,
+                monitored = 1,
+                monitored_at = COALESCE(monitored_at, ?),
+                monitor_source = 'auto',
+                updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+            WHERE kind = 'movie' AND library_added = 1
+              AND key NOT IN (SELECT key FROM _arr_seen_movies)
+            """,
+            (stamp,),
         )
         conn.commit()
     return report
@@ -171,12 +205,15 @@ def mirror_sonarr(db_path, sonarr, *, now: str | None = None) -> dict[str, Any]:
         return report
 
     all_states: list[tuple[int | None, str]] = []
+    seen_series: set[int] = set()
+    complete_series: set[int] = set()
     for series in rows:
         report["seen"] += 1
         item = _series_item(series)
         if item is None:
             report["skipped"] += 1
             continue
+        seen_series.add(int(item["tmdb"]))
         try:
             episodes = sonarr.episodes(int(series.get("id") or 0))
         except Exception as exc:
@@ -210,6 +247,7 @@ def mirror_sonarr(db_path, sonarr, *, now: str | None = None) -> dict[str, Any]:
             )
         if not payload:
             report["skipped"] += 1
+            complete_series.add(int(item["tmdb"]))
             continue
         try:
             result = upsert_episodes(
@@ -220,6 +258,7 @@ def mirror_sonarr(db_path, sonarr, *, now: str | None = None) -> dict[str, Any]:
                 f"sonarr {item['title']}: {str(exc)[:150]}"
             )
             continue
+        complete_series.add(int(item["tmdb"]))
         report["series"] += 1
         report["episodes"] += len(payload)
         report["inserted"] += int(result.get("inserted") or 0)
@@ -227,8 +266,32 @@ def mirror_sonarr(db_path, sonarr, *, now: str | None = None) -> dict[str, Any]:
         report["skipped"] += int(result.get("skipped") or 0)
         # Sonarr puede devolver cientos de series; no saturar su API.
         time.sleep(0.02)
-    if all_states:
-        with closing(connect(db_path)) as conn:
+    if not seen_series and rows:
+        return report
+    with closing(connect(db_path)) as conn:
+        conn.execute(
+            "CREATE TEMP TABLE IF NOT EXISTS _arr_seen_episodes "
+            "(key TEXT PRIMARY KEY)"
+        )
+        conn.execute(
+            "CREATE TEMP TABLE IF NOT EXISTS _arr_seen_series "
+            "(tmdb INTEGER PRIMARY KEY)"
+        )
+        conn.execute(
+            "CREATE TEMP TABLE IF NOT EXISTS _arr_complete_series "
+            "(tmdb INTEGER PRIMARY KEY)"
+        )
+        for table in (
+            "_arr_seen_episodes",
+            "_arr_seen_series",
+            "_arr_complete_series",
+        ):
+            conn.execute(f"DELETE FROM {table}")
+        if all_states:
+            conn.executemany(
+                "INSERT OR IGNORE INTO _arr_seen_episodes(key) VALUES(?)",
+                [(key,) for _tvdb, key in all_states],
+            )
             conn.executemany(
                 """
                 UPDATE media_items SET
@@ -241,7 +304,48 @@ def mirror_sonarr(db_path, sonarr, *, now: str | None = None) -> dict[str, Any]:
                 """,
                 [(tvdb, stamp, key) for tvdb, key in all_states],
             )
-            conn.commit()
+        if seen_series:
+            conn.executemany(
+                "INSERT OR IGNORE INTO _arr_seen_series(tmdb) VALUES(?)",
+                [(tmdb,) for tmdb in seen_series],
+            )
+        if complete_series:
+            conn.executemany(
+                "INSERT OR IGNORE INTO _arr_complete_series(tmdb) VALUES(?)",
+                [(tmdb,) for tmdb in complete_series],
+            )
+        # Si está en Sonarr ya no hace falta perseguirlo desde TOD.
+        conn.execute(
+            """
+            UPDATE media_items SET monitored = 0
+            WHERE kind = 'series' AND monitored = 1
+              AND monitor_source IN ('rss','tmdb','series','auto','qbit')
+              AND key IN (SELECT key FROM _arr_seen_episodes)
+            """
+        )
+        # Episodios/series que han salido de Sonarr vuelven a seguimiento.
+        conn.execute(
+            """
+            UPDATE media_items SET
+                library_added = 0,
+                library_added_at = NULL,
+                library_source = NULL,
+                monitored = 1,
+                monitored_at = COALESCE(monitored_at, ?),
+                monitor_source = 'auto',
+                updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+            WHERE kind = 'series' AND library_added = 1
+              AND (
+                  tmdb NOT IN (SELECT tmdb FROM _arr_seen_series)
+                  OR (
+                      tmdb IN (SELECT tmdb FROM _arr_complete_series)
+                      AND key NOT IN (SELECT key FROM _arr_seen_episodes)
+                  )
+              )
+            """,
+            (stamp,),
+        )
+        conn.commit()
     return report
 
 

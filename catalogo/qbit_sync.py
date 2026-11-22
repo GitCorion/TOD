@@ -21,6 +21,7 @@ from typing import Any
 
 from .db import connect
 from .qbittorrent import QbittorrentClient
+from .title_sync import monitor_if_not_in_arr
 
 VIDEO_EXT = {".mkv", ".mp4", ".m4v", ".avi", ".ts", ".webm", ".mov"}
 SXXEYY = re.compile(r"(?i)\bS(\d{1,2})E(\d{1,3})\b")
@@ -312,6 +313,7 @@ def _ensure_movie(conn, tmdb: int, title: str | None, year: int | None) -> tuple
         """,
         (key, key, tmdb, title, year),
     )
+    monitor_if_not_in_arr(conn, [key], source="qbit")
     return int(
         conn.execute("SELECT id FROM media_items WHERE key = ?", (key,)).fetchone()["id"]
     ), True
@@ -359,6 +361,7 @@ def _ensure_episode(
             scheme,
         ),
     )
+    monitor_if_not_in_arr(conn, [key], source="qbit")
     return int(
         conn.execute("SELECT id FROM media_items WHERE key = ?", (key,)).fetchone()["id"]
     ), True

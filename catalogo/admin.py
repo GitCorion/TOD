@@ -52,7 +52,7 @@ from .reseed import reseed_pending
 from .rss_sync import publish_keys as publish_rss_keys, sync_rss
 from .seeding import normalize_completed
 from .strm import export_strm
-from .title_sync import upsert_episodes, upsert_movies
+from .title_sync import monitor_if_not_in_arr, upsert_episodes, upsert_movies
 from .tmdb import TmdbClient, TmdbError, episode_items, movie_item, tv_item, year_of_date
 from .tracker_block import set_tracker_blocked
 from .trackers import GENERAL_TRACKERS
@@ -890,11 +890,13 @@ def add_movie(config: Config, tmdb_id: int) -> dict[str, Any]:
     from .db import connect
 
     with closing(connect(config.db_path)) as conn:
+        monitor_if_not_in_arr(conn, [key], source="tmdb")
         row = conn.execute(
             "SELECT id FROM media_items WHERE key = ?", (key,)
         ).fetchone()
         if row is not None:
             asset_id = int(row["id"])
+        conn.commit()
     return {
         "kind": "movie",
         "key": key,
@@ -938,15 +940,8 @@ def add_series(
 
         from .db import connect
 
-        stamp = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
         with closing(connect(config.db_path)) as conn:
-            conn.executemany(
-                "UPDATE media_items SET monitored = 1, "
-                "monitored_at = COALESCE(monitored_at, ?), "
-                "monitor_source = COALESCE(monitor_source, 'series') "
-                "WHERE key = ?",
-                [(stamp, key) for key in episode_keys],
-            )
+            monitor_if_not_in_arr(conn, episode_keys, source="series")
             conn.commit()
     return {
         "kind": "series",

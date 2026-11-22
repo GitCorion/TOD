@@ -116,6 +116,13 @@ def test_rss_creates_movie_and_episode(tmp_path):
         ("movie:tmdb:1", "movie", "Test Movie", 2020),
         ("series:tmdb:2:1:3", "series", "Test Show", 2021),
     ]
+    monitored = conn.execute(
+        "SELECT key, monitored, monitor_source FROM media_items ORDER BY key"
+    ).fetchall()
+    assert [tuple(row) for row in monitored] == [
+        ("movie:tmdb:1", 1, "rss"),
+        ("series:tmdb:2:1:3", 1, "rss"),
+    ]
     releases = conn.execute(
         "SELECT tracker, audio, audio_confidence, seeders FROM releases "
         "ORDER BY id"

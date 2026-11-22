@@ -144,3 +144,85 @@ def test_pending_publish_keys_finds_library_files(tmp_path):
     conn.close()
 
     assert pending_publish_keys(db, root, limit=10) == ["movie:tmdb:100"]
+
+
+def test_removed_from_arr_returns_to_monitoring(tmp_path):
+    db = tmp_path / "catalogo.db"
+    init_db(db, MIGRATIONS)
+    conn = sqlite3.connect(db)
+    conn.execute(
+        "INSERT INTO media_items(key,kind,tmdb,title,year,library_added,"
+        "library_source) VALUES(?,?,?,?,?,?,?)",
+        ("movie:tmdb:999", "movie", 999, "Ya no está", 2019, 1, "radarr"),
+    )
+    conn.execute(
+        "INSERT INTO media_items(key,kind,tmdb,season,episode,title,"
+        "library_added,library_source) VALUES(?,?,?,?,?,?,?,?)",
+        ("series:tmdb:888:1:1", "series", 888, 1, 1, "Serie ida", 1, "sonarr"),
+    )
+    conn.commit()
+    conn.close()
+
+    mirror_library(db, FakeRadarr(), FakeSonarr())
+
+    conn = sqlite3.connect(db)
+    conn.row_factory = sqlite3.Row
+    movie = conn.execute(
+        "SELECT * FROM media_items WHERE key='movie:tmdb:999'"
+    ).fetchone()
+    episode = conn.execute(
+        "SELECT * FROM media_items WHERE key='series:tmdb:888:1:1'"
+    ).fetchone()
+    assert movie["library_added"] == 0
+    assert movie["monitored"] == 1
+    assert movie["monitor_source"] == "auto"
+    assert episode["library_added"] == 0
+    assert episode["monitored"] == 1
+    assert episode["monitor_source"] == "auto"
+    conn.close()
+
+
+def test_removed_episode_from_seen_series_returns_to_monitoring(tmp_path):
+    db = tmp_path / "catalogo.db"
+    init_db(db, MIGRATIONS)
+    conn = sqlite3.connect(db)
+    conn.execute(
+        "INSERT INTO media_items(key,kind,tmdb,season,episode,title,"
+        "library_added,library_source) VALUES(?,?,?,?,?,?,?,?)",
+        ("series:tmdb:200:1:9", "series", 200, 1, 9, "Episodio ido", 1, "sonarr"),
+    )
+    conn.commit()
+    conn.close()
+
+    mirror_library(db, FakeRadarr(), FakeSonarr())
+
+    conn = sqlite3.connect(db)
+    conn.row_factory = sqlite3.Row
+    episode = conn.execute(
+        "SELECT * FROM media_items WHERE key='series:tmdb:200:1:9'"
+    ).fetchone()
+    assert episode["library_added"] == 0
+    assert episode["monitored"] == 1
+    assert episode["monitor_source"] == "auto"
+    conn.close()
+
+
+def test_arr_import_clears_auto_monitoring(tmp_path):
+    db = tmp_path / "catalogo.db"
+    init_db(db, MIGRATIONS)
+    conn = sqlite3.connect(db)
+    conn.execute(
+        "INSERT INTO media_items(key,kind,tmdb,title,year,monitored,"
+        "monitor_source) VALUES(?,?,?,?,?,?,?)",
+        ("movie:tmdb:100", "movie", 100, "Pelicula", 2020, 1, "rss"),
+    )
+    conn.commit()
+    conn.close()
+
+    mirror_library(db, FakeRadarr(), FakeSonarr())
+
+    conn = sqlite3.connect(db)
+    assert conn.execute(
+        "SELECT monitored FROM media_items WHERE key='movie:tmdb:100'"
+    ).fetchone()[0] == 0
+    conn.close()

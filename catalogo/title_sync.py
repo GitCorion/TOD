@@ -8,8 +8,38 @@ from __future__ import annotations
 
 import json
 from contextlib import closing
+from datetime import datetime, timezone
 
 from .db import connect
+
+
+def _now() -> str:
+    return datetime.now(timezone.utc).isoformat()
+
+
+def monitor_if_not_in_arr(conn, keys, *, source: str) -> int:
+    """Marca para seguimiento lo que no está en Radarr/Sonarr.
+
+    `library_added` lo mantiene el espejo de los *arr. Si el título no está
+    allí, TOD debe buscarlo por defecto. No toca los que ya están en un *arr.
+    """
+    clean = [str(key) for key in keys if key]
+    if not clean:
+        return 0
+    before = conn.total_changes
+    stamp = _now()
+    conn.executemany(
+        """
+        UPDATE media_items SET
+            monitored = 1,
+            monitored_at = COALESCE(monitored_at, ?),
+            monitor_source = ?,
+            updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+        WHERE key = ? AND library_added = 0
+        """,
+        [(stamp, source, key) for key in clean],
+    )
+    return conn.total_changes - before
 
 
 def _aliases_json(value) -> str | None:
@@ -25,6 +55,7 @@ def upsert_movies(db_path, items, *, source: str = "tmdb") -> dict:
     inserted = 0
     updated = 0
     skipped = 0
+    auto_keys: list[str] = []
     with closing(connect(db_path)) as conn:
         for item in items:
             try:
@@ -108,6 +139,10 @@ def upsert_movies(db_path, items, *, source: str = "tmdb") -> dict:
                     ),
                 )
                 inserted += 1
+                if source not in ("radarr", "sonarr"):
+                    auto_keys.append(key)
+        if auto_keys:
+            monitor_if_not_in_arr(conn, auto_keys, source=source)
         conn.commit()
     return {
         "inserted": inserted,
@@ -129,6 +164,7 @@ def upsert_episodes(db_path, series, episodes, *, source: str = "tmdb") -> dict:
     inserted = 0
     updated = 0
     skipped = 0
+    auto_keys: list[str] = []
     with closing(connect(db_path)) as conn:
         for item in episodes:
             try:
@@ -221,6 +257,10 @@ def upsert_episodes(db_path, series, episodes, *, source: str = "tmdb") -> dict:
                     ),
                 )
                 inserted += 1
+                if source not in ("radarr", "sonarr"):
+                    auto_keys.append(key)
+        if auto_keys:
+            monitor_if_not_in_arr(conn, auto_keys, source=source)
         conn.commit()
     return {
         "inserted": inserted,

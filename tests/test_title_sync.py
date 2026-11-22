@@ -134,3 +134,74 @@ def test_upsert_episodes_inserts_and_updates(tmp_path):
         ("Quinto", "Quinto capítulo"),
     ]
     conn.close()
+
+
+def test_new_catalog_titles_are_monitored_by_default(tmp_path):
+    from catalogo.title_sync import upsert_episodes
+
+    db = seed_db(tmp_path)
+    upsert_movies(
+        db,
+        [{"tmdb": 11, "title": "Película nueva", "year": 2026}],
+        source="tmdb",
+    )
+    upsert_episodes(
+        db,
+        {"tmdb": 12, "title": "Serie nueva", "year": 2026},
+        [{"season": 1, "episode": 1, "name": "Piloto"}],
+        source="rss",
+    )
+    conn = sqlite3.connect(db)
+    conn.row_factory = sqlite3.Row
+    movie = conn.execute(
+        "SELECT monitored, monitor_source FROM media_items "
+        "WHERE key='movie:tmdb:11'"
+    ).fetchone()
+    episode = conn.execute(
+        "SELECT monitored, monitor_source FROM media_items "
+        "WHERE key='series:tmdb:12:1:1'"
+    ).fetchone()
+    assert (movie["monitored"], movie["monitor_source"]) == (1, "tmdb")
+    assert (episode["monitored"], episode["monitor_source"]) == (1, "rss")
+    conn.close()
+
+
+def test_arr_imports_are_not_monitored_by_default(tmp_path):
+    from catalogo.title_sync import upsert_episodes
+
+    db = seed_db(tmp_path)
+    upsert_movies(
+        db,
+        [{"tmdb": 21, "title": "En Radarr", "year": 2026}],
+        source="radarr",
+    )
+    upsert_episodes(
+        db,
+        {"tmdb": 22, "title": "En Sonarr", "year": 2026},
+        [{"season": 1, "episode": 1, "name": "Piloto"}],
+        source="sonarr",
+    )
+    conn = sqlite3.connect(db)
+    rows = conn.execute(
+        "SELECT monitored, monitor_source FROM media_items ORDER BY key"
+    ).fetchall()
+    assert rows == [(0, None), (0, None)]
+    conn.close()
+
+
+def test_update_does_not_re_monitor_an_existing_title(tmp_path):
+    db = seed_db(tmp_path)
+    upsert_movies(db, [{"tmdb": 31, "title": "Ya publicada"}])
+    conn = sqlite3.connect(db)
+    conn.execute(
+        "UPDATE media_items SET monitored=0, monitor_source=NULL "
+        "WHERE key='movie:tmdb:31'"
+    )
+    conn.commit()
+    conn.close()
+    upsert_movies(db, [{"tmdb": 31, "title": "Ya publicada (actualizada)"}])
+    conn = sqlite3.connect(db)
+    assert conn.execute(
+        "SELECT monitored FROM media_items WHERE key='movie:tmdb:31'"
+    ).fetchone()[0] == 0
+    conn.close()

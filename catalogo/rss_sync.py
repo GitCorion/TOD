@@ -346,7 +346,7 @@ def sync_rss(
                                 "monitored_at = COALESCE(monitored_at, ?), "
                                 "monitor_source = COALESCE(monitor_source, 'rss') "
                                 "WHERE kind = 'series' AND tmdb = ? "
-                                "AND season = ?",
+                                "AND season = ? AND library_added = 0",
                                 (checked_at, marker[0], marker[1]),
                             )
                             mconn.commit()

@@ -15,6 +15,7 @@ from typing import Any
 
 from .db import connect, connect_legacy, migrate
 from .identity import asset_key, normalize_key
+from .title_sync import monitor_if_not_in_arr
 
 
 def norm_title(text: str | None) -> str:
@@ -129,6 +130,7 @@ def import_legacy(
                 )
                 asset_id = cur.lastrowid
                 report.assets_inserted += 1
+                monitor_if_not_in_arr(dest, [key], source="legacy")
             else:
                 asset_id = existing["id"]
                 dest.execute(

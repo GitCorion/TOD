@@ -30,6 +30,8 @@ Las URLs y API keys se introducen en la web y TOD aplica el resto. En Docker,
   Al cumplirse, TOD lo suelta y, por defecto, qBittorrent decide si borra el torrent. El borrado desde TOD es una opción desactivada.
 - **Descubrir fuentes** en Prowlarr, Jackett o ambos, sin listas de trackers escritas a mano.
 - **Leer Radarr/Sonarr por API**, nunca tocando sus bases de datos.
+- **Seguir por defecto** lo que no está en Radarr/Sonarr. En cuanto se publica
+  su `.strm`, TOD cierra el seguimiento y deja de buscar.
 - **Automatizar** RSS, seguimiento, backfill, puente, restauración y límites de qBittorrent.
 - **Ver qué necesita atención** en Inicio, con el motivo y un enlace al ajuste exacto.
 - **Configurar integraciones, directorios y tareas** desde
