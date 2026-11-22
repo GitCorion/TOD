@@ -230,9 +230,11 @@ def _upsert_release(
     if not title or size <= 0:
         return "skipped"
     info_hash = (result.get("infoHash") or "").lower() or None
+    same_hash = None
     if info_hash:
         previous = conn.execute(
-            "SELECT asset_id FROM releases WHERE info_hash = ?", (info_hash,)
+            "SELECT id, asset_id FROM releases WHERE info_hash = ?",
+            (info_hash,),
         ).fetchone()
         if previous:
             if is_pack:
@@ -241,6 +243,11 @@ def _upsert_release(
                 info_hash = None
             elif int(previous["asset_id"]) != asset_id:
                 return "skipped"
+            else:
+                # Mismo torrent y mismo título: puede haber cambiado el
+                # nombre o el tracker. Se reutiliza la fila en vez de
+                # chocar con el índice único de info_hash.
+                same_hash = previous
 
     guid = f"prowlarr:{tracker}:{result.get('guid') or title}"
     if is_pack and season and episode:
@@ -280,6 +287,8 @@ def _upsert_release(
         """,
         (asset_id, tracker, title, size),
     ).fetchone()
+    if existing is None and same_hash is not None:
+        existing = same_hash
     if existing is None:
         new_norm = norm_title(title)
         candidates = conn.execute(

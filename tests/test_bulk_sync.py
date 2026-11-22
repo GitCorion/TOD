@@ -260,3 +260,48 @@ def test_jackett_does_not_duplicate_existing_title(tmp_path):
     assert outcome == "updated"
     assert conn.execute("SELECT COUNT(*) FROM releases").fetchone()[0] == 1
     conn.close()
+
+
+def test_same_info_hash_updates_instead_of_colliding(tmp_path):
+    from catalogo.bulk_sync import _upsert_release
+
+    db = seed_db(tmp_path)
+    conn = sqlite3.connect(db)
+    conn.row_factory = sqlite3.Row
+    asset_id = conn.execute("SELECT id FROM media_items").fetchone()[0]
+    conn.execute(
+        "INSERT INTO releases(asset_id,tracker,title,normalized_title,"
+        "size_bytes,info_hash,health) VALUES(?,?,?,?,?,?,?)",
+        (
+            asset_id,
+            "Tracker",
+            "Pelicula.2026.1080p.mkv",
+            "pelicula20261080pmkv",
+            1000,
+            "abc123",
+            "unknown",
+        ),
+    )
+    conn.commit()
+
+    outcome = _upsert_release(
+        conn,
+        asset_id,
+        "Tracker",
+        {
+            "title": "Pelicula.2026.1080p.REPACK.mkv",
+            "size": 1000,
+            "seeders": 12,
+            "peers": 1,
+            "infoHash": "ABC123",
+            "downloadUrl": "http://tracker/download",
+            "guid": "duplicado",
+        },
+        "2026-11-19T12:00:00+00:00",
+    )
+    assert outcome == "updated"
+    assert conn.execute("SELECT COUNT(*) FROM releases").fetchone()[0] == 1
+    row = conn.execute("SELECT title, seeders FROM releases").fetchone()
+    assert row["title"] == "Pelicula.2026.1080p.REPACK.mkv"
+    assert row["seeders"] == 12
+    conn.close()
