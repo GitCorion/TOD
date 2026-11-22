@@ -20,12 +20,16 @@ def _file_path(base: str | None, relative: str | None) -> str | None:
 
 
 def sync_library(db_path, *, radarr=None, sonarr=None) -> dict:
-    entries: list[tuple] = []
+    radarr_entries: list[tuple] = []
+    sonarr_entries: list[tuple] = []
     movies = 0
     episodes = 0
     errors: list[str] = []
+    radarr_ok = None
+    sonarr_ok = None
 
     if radarr is not None:
+        radarr_ok = False
         try:
             for movie in radarr.movies():
                 if not movie.get("hasFile"):
@@ -37,7 +41,7 @@ def sync_library(db_path, *, radarr=None, sonarr=None) -> dict:
                 )
                 if not tmdb or not path:
                     continue
-                entries.append(
+                radarr_entries.append(
                     (
                         "movie",
                         tmdb,
@@ -49,10 +53,12 @@ def sync_library(db_path, *, radarr=None, sonarr=None) -> dict:
                     )
                 )
                 movies += 1
+            radarr_ok = True
         except Exception as exc:
             errors.append(f"radarr: {str(exc)[:160]}")
 
     if sonarr is not None:
+        sonarr_ok = False
         try:
             for series in sonarr.series():
                 tmdb = int(series.get("tmdbId") or 0)
@@ -79,7 +85,7 @@ def sync_library(db_path, *, radarr=None, sonarr=None) -> dict:
                     number = int(episode.get("episodeNumber") or 0)
                     if number <= 0:
                         continue
-                    entries.append(
+                    sonarr_entries.append(
                         (
                             "series",
                             tmdb,
@@ -91,6 +97,7 @@ def sync_library(db_path, *, radarr=None, sonarr=None) -> dict:
                         )
                     )
                     episodes += 1
+            sonarr_ok = True
         except Exception as exc:
             errors.append(f"sonarr: {str(exc)[:160]}")
 
@@ -101,20 +108,34 @@ def sync_library(db_path, *, radarr=None, sonarr=None) -> dict:
             "entries": 0,
         }
 
+    # Solo se reemplaza la fuente que respondió bien. Un fallo temporal de
+    # Radarr/Sonarr no debe borrar las rutas que ya conocíamos.
     with closing(connect(db_path)) as db:
         db.execute("BEGIN IMMEDIATE")
-        db.execute("DELETE FROM library_files")
-        db.executemany(
-            """
-            INSERT OR REPLACE INTO library_files(
-                kind, tmdb, season, episode, path, size_bytes, source
-            ) VALUES(?,?,?,?,?,?,?)
-            """,
-            entries,
-        )
+        if radarr_ok:
+            db.execute("DELETE FROM library_files WHERE source = 'radarr'")
+            db.executemany(
+                """
+                INSERT OR REPLACE INTO library_files(
+                    kind, tmdb, season, episode, path, size_bytes, source
+                ) VALUES(?,?,?,?,?,?,?)
+                """,
+                radarr_entries,
+            )
+        if sonarr_ok:
+            db.execute("DELETE FROM library_files WHERE source = 'sonarr'")
+            db.executemany(
+                """
+                INSERT OR REPLACE INTO library_files(
+                    kind, tmdb, season, episode, path, size_bytes, source
+                ) VALUES(?,?,?,?,?,?,?)
+                """,
+                sonarr_entries,
+            )
         db.commit()
+    entries = radarr_entries + sonarr_entries
     return {
-        "ok": True,
+        "ok": bool(radarr_ok or sonarr_ok),
         "entries": len(entries),
         "movies": movies,
         "episodes": episodes,

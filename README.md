@@ -72,11 +72,18 @@ series/Título (Año)/Season 01/Título S01E01 - 1080p Cast.strm
 ```
 
 - El principal resuelve la mejor fuente disponible al reproducir.
+- Cada variante apunta a una versión concreta por su `release_id`, no por una
+  ruta fija: si el fichero se mueve y Radarr/Sonarr o qBittorrent actualizan su
+  ruta, la variante sigue funcionando sin regenerar el `.strm`. Si esa versión
+  desaparece, falla solo esa variante; el `.strm` principal sigue resolviendo
+  otra fuente.
 - Cada variante apunta a una versión concreta y aparece como versión distinta
   en Jellyfin, para elegir calidad o audio.
 - El nombre usa calidad y audio; si se repiten, añade tracker o id.
 - Solo se publica si hay algo que reproducir: **un release vivo con seeds** o
   un fichero local/archivado. Los releases muertos no crean entradas vacías.
+- `library_files` se refresca desde Radarr/Sonarr. Si una API falla, TOD
+  conserva las rutas que ya conocía en vez de vaciar la biblioteca.
 - Radarr/Sonarr se espejan completos al catálogo, pero su `.strm` solo aparece
   cuando TOD encuentra una fuente viva o un fichero local.
 - Si la fuente muere, TOD la busca otra vez al reproducir. Si ya no hay

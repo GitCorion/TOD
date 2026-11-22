@@ -237,6 +237,27 @@ def test_library_file_is_trusted_from_arr_without_stat(tmp_path, monkeypatch):
     assert result.size == 4242
 
 
+def test_version_resolution_follows_moved_library_path(tmp_path):
+    db, _asset_id, release_id, seed_file, _library, *_ = seed(tmp_path)
+    seed_file.unlink()
+    resolver = Resolver(db)
+    first = resolver.resolve_release("movie:tmdb:1", release_id)
+    assert first.source == "library"
+
+    moved = "/mnt/fichier/Peliculas/Test (2020)/Test movida.mkv"
+    conn = sqlite3.connect(db)
+    conn.execute(
+        "UPDATE torrent_files SET library_path=? WHERE release_id=?",
+        (moved, release_id),
+    )
+    conn.commit()
+    conn.close()
+
+    second = resolver.resolve_release("movie:tmdb:1", release_id)
+    assert second.source == "library"
+    assert second.path == moved
+
+
 def test_partial_local_file_is_torrent_not_local_seed(tmp_path):
     db, _asset_id, _release_id, *_ = seed(tmp_path)
     conn = sqlite3.connect(db)
