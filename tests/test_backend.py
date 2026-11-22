@@ -256,7 +256,7 @@ def test_capacity_blocks_third_active(tmp_path):
     assert client.added == []
 
 
-def test_existing_error_torrent_is_removed_and_readded(tmp_path):
+def test_existing_error_torrent_is_paused_and_readded(tmp_path):
     db, key, _ = seed(tmp_path, kind="movie", tracker="TrackerEspanol2 (API)")
     client = FakeQbit(
         files=[{"index": 0, "name": "Movie.mkv", "size": 1000}],
@@ -265,8 +265,8 @@ def test_existing_error_torrent_is_removed_and_readded(tmp_path):
         ],
     )
     result = prepare_download(str(db), key, client, torrent_bytes=TORRENT)
-    assert client.deleted
-    assert client.deleted[0][0] == info_hash(TORRENT)
+    assert client.paused == [info_hash(TORRENT)]
+    assert not getattr(client, "deleted", [])
     assert client.added
     assert result["resumed"] is True
 

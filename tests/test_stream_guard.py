@@ -102,7 +102,7 @@ def seed(tmp_path):
     return db, asset_id, release_id
 
 
-def test_guard_deletes_early_bad_swarm_and_tries_next(tmp_path):
+def test_guard_pauses_early_bad_swarm_and_tries_next(tmp_path):
     db, asset_id, release_id = seed(tmp_path)
     qbit = FakeQbit(progress=0.02, speed=0, buffer_pieces=0)
     service = FakePlayService(qbit)
@@ -111,7 +111,8 @@ def test_guard_deletes_early_bad_swarm_and_tries_next(tmp_path):
     assert first["bad"] == []
     second = guard.run_once(now=NOW + timedelta(seconds=40))
     assert second["bad"][0]["reason"] == "no_contiguous_buffer"
-    assert qbit.deleted == [("hash1", True)]
+    assert qbit.paused == ["hash1"]
+    assert qbit.deleted == []
     assert service.calls == ["movie:tmdb:1"]
     assert release_id in failed_release_ids(str(db), asset_id=asset_id)
     assert Resolver(db).sources("movie:tmdb:1") == []
@@ -173,7 +174,8 @@ def test_guard_switches_when_audio_is_not_spanish(tmp_path, monkeypatch):
     guard.run_once(now=NOW)
     report = guard.run_once(now=NOW + timedelta(seconds=40))
     assert report["bad"][0]["reason"] == "audio_not_spanish"
-    assert qbit.deleted == [("hash1", True)]
+    assert qbit.paused == ["hash1"]
+    assert qbit.deleted == []
 
 
 class BusyQbit(FakeQbit):

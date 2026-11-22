@@ -393,8 +393,10 @@ def prepare_download(
         state = (torrent.get("state") or "").lower()
         if "error" not in state and "missing" not in state:
             return torrent
+        # No se borra: se pausa y qBittorrent decide. Se intenta el
+        # siguiente release para no bloquear la reproducción.
         try:
-            client.delete(torrent.get("hash") or "", delete_files=False)
+            client.pause(torrent.get("hash") or "")
         except Exception:
             pass
         return None

@@ -726,6 +726,7 @@ def list_seeds(
             FROM seed_commitments i
             JOIN media_items m ON m.id = i.asset_id
             LEFT JOIN torrents t ON t.info_hash = i.info_hash
+            WHERE i.state IN ('approved', 'active', 'seeding')
             ORDER BY CASE i.state
                         WHEN 'seeding' THEN 0 WHEN 'active' THEN 1
                         WHEN 'approved' THEN 2 ELSE 3 END,

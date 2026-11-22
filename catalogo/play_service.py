@@ -110,17 +110,12 @@ class PlayService:
         self.mark_failed(release_id)
         if not info_hash:
             return
-        live = self._live_torrent(info_hash)
-        progress = float(live.get("progress") or 0) if live else 0.0
         try:
-            if progress <= 0.01:
-                self.qbit_write.delete(info_hash, delete_files=True)
-                self._forget_failed(info_hash, release_id)
-            elif bool(handle.get("private", True)) or progress >= 0.05:
-                self.qbit_write.pause(info_hash)
-            else:
-                self.qbit_write.delete(info_hash, delete_files=True)
-                self._forget_failed(info_hash, release_id)
+            # TOD no borra torrents ni ficheros. Un candidato fallido se
+            # pausa para no ocupar la admisión; qBittorrent decide después
+            # si lo elimina con sus propias reglas.
+            self.qbit_write.pause(info_hash)
+            self._forget_failed(info_hash, release_id)
         except Exception:
             pass
 
@@ -144,7 +139,7 @@ class PlayService:
                 (release_id, release_id, info_hash),
             )
             conn.execute(
-                "UPDATE torrents SET state='removed', qbit_state='removed' "
+                "UPDATE torrents SET state='paused', qbit_state='pausedDL' "
                 "WHERE info_hash = ?",
                 (info_hash,),
             )

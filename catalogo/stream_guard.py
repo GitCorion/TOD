@@ -25,7 +25,6 @@ DEFAULT_GRACE_SECONDS = 45.0
 DEFAULT_SAFETY = 1.25
 DEFAULT_FAILURE_HOURS = 2
 DEFAULT_MAX_ATTEMPTS = 3
-EARLY_DELETE_PERCENT = 0.05
 DEFAULT_RUNTIME_SECONDS = 7200
 LEASE_WINDOW_MINUTES = 5
 
@@ -518,16 +517,13 @@ class StreamGuard:
             self.db_path, int(release_id), asset_id, reason
         )
         qbit = self.play_service.qbit_write
-        early = progress <= EARLY_DELETE_PERCENT
         try:
-            if early:
-                qbit.delete(info_hash, delete_files=True)
-            else:
-                qbit.pause(info_hash)
+            # TOD no borra: pausa el candidato fallido y deja que
+            # qBittorrent aplique sus reglas de borrado.
+            qbit.pause(info_hash)
         except Exception as exc:
             report["errors"].append(
-                f"{key}: no se pudo {'borrar' if early else 'pausar'} "
-                f"{str(exc)[:120]}"
+                f"{key}: no se pudo pausar {str(exc)[:120]}"
             )
             return
 
@@ -536,43 +532,15 @@ class StreamGuard:
                 "SELECT id FROM torrents WHERE info_hash = ?", (info_hash,)
             ).fetchone()
             torrent_id = int(torrent["id"]) if torrent else None
-            if early:
+            if torrent_id is not None:
                 conn.execute(
                     """
-                    UPDATE seed_commitments SET state = 'cancelled',
-                        reason = 'bad_swarm_early', completed_at = ?
-                    WHERE release_id = ?
-                      AND state IN ('approved', 'active')
+                    UPDATE torrents SET state = 'paused',
+                        qbit_state = 'paused'
+                    WHERE id = ?
                     """,
-                    (_now().isoformat(), int(release_id)),
+                    (torrent_id,),
                 )
-                conn.execute(
-                    """
-                    UPDATE torrent_files SET state = 'evicted',
-                        local_path = NULL, library_path = NULL, asset_id = NULL
-                    WHERE release_id = ?
-                    """,
-                    (int(release_id),),
-                )
-                if torrent_id is not None:
-                    conn.execute(
-                        """
-                        UPDATE torrents SET state = 'removed',
-                            qbit_state = 'removed'
-                        WHERE id = ?
-                        """,
-                        (torrent_id,),
-                    )
-            else:
-                if torrent_id is not None:
-                    conn.execute(
-                        """
-                        UPDATE torrents SET state = 'paused',
-                            qbit_state = 'paused'
-                        WHERE id = ?
-                        """,
-                        (torrent_id,),
-                    )
             conn.execute(
                 """
                 UPDATE media_items SET active_file_id = NULL, status = 'COLD'
