@@ -103,7 +103,8 @@ tod qbit-limits
   **Configuración → Siembra**; entonces aparece el botón de borrar en
   Descargas, con opción de quitar solo el torrent o borrar también ficheros.
 - Al descubrir un tracker privado sin política, TOD crea una inicial con los
-  valores de **Configuración → Siembra** (50 días y ratio 1,0 por defecto).
+  valores de **Configuración → Siembra** (por defecto 72 h y ratio 1,0;
+  cada instalación puede cambiarlos).
   También se puede cambiar por CLI:
   `tod set-policy Tracker --min-seed-hours 24 --target-ratio 0.5`.
 - Públicos: sin compromiso de seed.

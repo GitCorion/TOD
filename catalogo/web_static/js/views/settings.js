@@ -176,7 +176,7 @@ export async function renderSettings({ signal, query } = {}) {
     api('/api/language', { signal }).catch(() => null),
   ]);
   state.attention = attention;
-  const languagePreference = language?.preference || 'prefer_spanish';
+  const languagePreference = language?.preference || 'any';
   setHeader('Configuración', 'Sistema');
   const items = data.settings || [];
   const integrationKeys = new Set(INTEGRATIONS.flatMap((meta) =>
@@ -185,7 +185,7 @@ export async function renderSettings({ signal, query } = {}) {
   const dirs = items.filter((item) => item.section === 'directorios');
   const playback = items.filter((item) => item.section === 'reproduccion');
   const security = items.filter((item) => item.section === 'seguridad');
-  const seedDefaults = seed?.defaults || { min_hours: 50 * 24, ratio: 1, force: true, allow_delete: false };
+  const seedDefaults = seed?.defaults || { min_hours: 72, ratio: 1, force: true, allow_delete: false };
   const policyByTracker = new Map(
     (seed?.policies || []).map((item) => [item.tracker, item]),
   );
@@ -284,8 +284,8 @@ export async function renderSettings({ signal, query } = {}) {
           <label class="field"><span>Preferencia</span>
             <select class="input" data-language>
               <option value="any" ${languagePreference === 'any' ? 'selected' : ''}>Cualquier idioma</option>
-              <option value="prefer_spanish" ${languagePreference === 'prefer_spanish' ? 'selected' : ''}>Español primero; si no hay, otra fuente</option>
-              <option value="only_spanish" ${languagePreference === 'only_spanish' ? 'selected' : ''}>Solo español</option>
+              <option value="castellano_first" ${languagePreference === 'castellano_first' ? 'selected' : ''}>Castellano primero; si no, V.O. (sin doblaje latino)</option>
+              <option value="only_castellano" ${languagePreference === 'only_castellano' ? 'selected' : ''}>Solo castellano (España)</option>
             </select>
           </label>
           <label class="field"><span>&nbsp;</span>
@@ -293,10 +293,10 @@ export async function renderSettings({ signal, query } = {}) {
           </label>
         </div>
         <p class="muted tiny" style="margin:10px 0 0">
-          «Español primero» elige antes una fuente en castellano o latino. Si no
-          encuentra ninguna, usa otra. «Solo español» descarta las fuentes que
-          no tengan el español verificado. Esto no pausa indexers: para eso usa
-          Seguimiento → Indexers.
+          «Castellano primero» elige castellano de España. Si no hay, usa V.O.
+          original o VOSE; nunca un doblaje latino. «Solo castellano» solo acepta
+          castellano de España. Esto no pausa indexers: para eso usa Seguimiento
+          → Indexers.
         </p>
       </div>
     </div>

@@ -238,13 +238,13 @@ def test_admit_creates_default_policy_for_new_private_tracker(tmp_path):
         reserve_bytes=0, disk_free_override=10**12, now=NOW,
     )
     assert result.decision.allowed
-    assert result.decision.seed_required_until == NOW + timedelta(hours=50 * 24)
+    assert result.decision.seed_required_until == NOW + timedelta(hours=72)
     conn = sqlite3.connect(db)
     row = conn.execute(
         "SELECT min_seed_hours, target_ratio, privacy FROM tracker_policies "
         "WHERE tracker='NuevoPrivado'"
     ).fetchone()
-    assert row == (50 * 24, 1.0, "private")
+    assert row == (72, 1.0, "private")
     conn.close()
 
 

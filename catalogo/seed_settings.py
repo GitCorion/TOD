@@ -17,7 +17,7 @@ RATIO_KEY = "seed.ratio"
 FORCE_KEY = "seed.force"
 ALLOW_DELETE_KEY = "seed.allow_delete"
 
-DEFAULT_MIN_HOURS = 50 * 24
+DEFAULT_MIN_HOURS = 72
 DEFAULT_RATIO = 1.0
 DEFAULT_FORCE = True
 DEFAULT_ALLOW_DELETE = False

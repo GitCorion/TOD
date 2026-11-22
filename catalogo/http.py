@@ -810,7 +810,9 @@ class CatalogHandler(BaseHTTPRequestHandler):
                 source.get("health"), 3
             )
             audio = language_settings.rank(
-                source.get("audio"), preference
+                source.get("audio"),
+                preference,
+                source.get("original_language"),
             )
             return (
                 audio if audio is not None else 9,

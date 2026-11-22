@@ -177,8 +177,12 @@ def _versions(
     result: list[tuple[dict, str]] = []
     for release in releases:
         if (
-            preference == "only_spanish"
-            and language_settings.rank(release["audio"], preference) is None
+            language_settings.rank(
+                release["audio"],
+                preference,
+                asset.get("original_language"),
+            )
+            is None
         ):
             continue
         release_id = int(release["id"])

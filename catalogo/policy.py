@@ -111,7 +111,7 @@ def default_policy(
             int(
                 min_seed_hours
                 if min_seed_hours is not None
-                else 50 * 24
+                else 72
             ),
         )
     )

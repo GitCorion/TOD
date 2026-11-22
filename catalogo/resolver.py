@@ -124,23 +124,26 @@ class Resolver:
 
     def _language_sql(self) -> tuple[str, str]:
         preference = language_settings.load(self.db_path)
-        audio = (
-            "('castellano','latino','espanol','spanish','spanish_unverified')"
-        )
+        if preference == "any":
+            return "(SELECT 0)", ""
         rank = (
-            "(SELECT 0)"
-            if preference == "any"
-            else (
-                f"CASE WHEN releases.audio IN {audio} THEN 0 "
-                "WHEN releases.audio IS NULL OR releases.audio = 'unknown' "
-                "THEN 1 ELSE 2 END"
+            "CASE "
+            "WHEN releases.audio IN ('castellano','espanol') THEN 0 "
+            "WHEN releases.audio = 'latino' "
+            " AND lower(COALESCE(m.original_language,'')) IN "
+            "     ('es','spa','spanish','español','espanol') THEN 1 "
+            "WHEN releases.audio IN ('spanish_unverified','vose') THEN 2 "
+            "WHEN releases.audio IS NULL OR releases.audio = 'unknown' THEN 3 "
+            "ELSE 4 END"
+        )
+        if preference == "only_castellano":
+            only = " AND releases.audio IN ('castellano','espanol')"
+        else:
+            only = (
+                " AND NOT (releases.audio = 'latino' "
+                "AND lower(COALESCE(m.original_language,'')) NOT IN "
+                "('es','spa','spanish','español','espanol'))"
             )
-        )
-        only = (
-            f" AND releases.audio IN {audio}"
-            if preference == "only_spanish"
-            else ""
-        )
         return rank, only
 
     def _best_release(self, asset_id: int) -> Any:
@@ -151,6 +154,7 @@ class Resolver:
                 SELECT releases.*
                 FROM releases
                 LEFT JOIN swarm_stats ss ON ss.release_id = releases.id
+                JOIN media_items m ON m.id = releases.asset_id
                 WHERE releases.asset_id = ?{only}
                   AND NOT EXISTS (
                       SELECT 1 FROM stream_failures sf
@@ -179,6 +183,7 @@ class Resolver:
                 SELECT releases.*
                 FROM releases
                 LEFT JOIN swarm_stats ss ON ss.release_id = releases.id
+                JOIN media_items m ON m.id = releases.asset_id
                 WHERE releases.asset_id = ? AND releases.health = 'alive'{only}
                   AND NOT EXISTS (
                       SELECT 1 FROM stream_failures sf
@@ -383,9 +388,12 @@ class Resolver:
                 (asset["id"],),
             ).fetchall()
         preference = language_settings.load(self.db_path)
+        original_language = asset["original_language"]
         ranked: list[tuple[int, dict[str, Any]]] = []
         for row in rows:
-            rank = language_settings.rank(row["audio"], preference)
+            rank = language_settings.rank(
+                row["audio"], preference, original_language
+            )
             if rank is None:
                 continue
             ranked.append(
@@ -397,6 +405,7 @@ class Resolver:
                         "title": row["title"],
                         "quality": row["quality"],
                         "audio": row["audio"],
+                        "original_language": original_language,
                         "size_bytes": row["size_bytes"],
                         "seeders": row["seeders"],
                         "health": row["health"],
