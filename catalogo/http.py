@@ -26,7 +26,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any
 
-from . import play_intents, stream_leases
+from . import language_settings, play_intents, stream_leases
 from .config import media_type
 from .db import connect
 from .backend import BackendError, CapacityError, NoSource, ReleaseUnavailable
@@ -792,6 +792,7 @@ class CatalogHandler(BaseHTTPRequestHandler):
             sources = self.resolver.sources(key)
         except Exception:
             sources = []
+        preference = language_settings.load(self.db_path)
         requested_source = next(
             (
                 source for source in sources
@@ -808,7 +809,11 @@ class CatalogHandler(BaseHTTPRequestHandler):
             health = {"alive": 0, "unknown": 1, "stale": 2}.get(
                 source.get("health"), 3
             )
+            audio = language_settings.rank(
+                source.get("audio"), preference
+            )
             return (
+                audio if audio is not None else 9,
                 tracker_priority(source.get("tracker")),
                 health,
                 -int(source.get("seeders") or 0),

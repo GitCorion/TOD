@@ -17,6 +17,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from . import language_settings
 from .db import connect
 from .identity import normalize_key
 
@@ -121,14 +122,36 @@ class Resolver:
                 (asset_id,),
             ).fetchall()
 
+    def _language_sql(self) -> tuple[str, str]:
+        preference = language_settings.load(self.db_path)
+        audio = (
+            "('castellano','latino','espanol','spanish','spanish_unverified')"
+        )
+        rank = (
+            "(SELECT 0)"
+            if preference == "any"
+            else (
+                f"CASE WHEN releases.audio IN {audio} THEN 0 "
+                "WHEN releases.audio IS NULL OR releases.audio = 'unknown' "
+                "THEN 1 ELSE 2 END"
+            )
+        )
+        only = (
+            f" AND releases.audio IN {audio}"
+            if preference == "only_spanish"
+            else ""
+        )
+        return rank, only
+
     def _best_release(self, asset_id: int) -> Any:
+        audio_rank, only = self._language_sql()
         with closing(self._conn()) as conn:
             return conn.execute(
-                """
+                f"""
                 SELECT releases.*
                 FROM releases
                 LEFT JOIN swarm_stats ss ON ss.release_id = releases.id
-                WHERE releases.asset_id = ?
+                WHERE releases.asset_id = ?{only}
                   AND NOT EXISTS (
                       SELECT 1 FROM stream_failures sf
                       WHERE sf.release_id = releases.id
@@ -139,6 +162,7 @@ class Resolver:
                          THEN 1 ELSE 0 END,
                     CASE releases.health WHEN 'alive' THEN 0 WHEN 'unknown' THEN 1
                                 WHEN 'stale' THEN 2 ELSE 3 END,
+                    {audio_rank},
                     COALESCE(releases.seeders, 0) DESC,
                     COALESCE(releases.size_bytes, 999999999999) ASC,
                     releases.id DESC
@@ -148,13 +172,14 @@ class Resolver:
             ).fetchone()
 
     def _alive_release(self, asset_id: int) -> Any:
+        audio_rank, only = self._language_sql()
         with closing(self._conn()) as conn:
             return conn.execute(
-                """
+                f"""
                 SELECT releases.*
                 FROM releases
                 LEFT JOIN swarm_stats ss ON ss.release_id = releases.id
-                WHERE releases.asset_id = ? AND releases.health = 'alive'
+                WHERE releases.asset_id = ? AND releases.health = 'alive'{only}
                   AND NOT EXISTS (
                       SELECT 1 FROM stream_failures sf
                       WHERE sf.release_id = releases.id
@@ -163,6 +188,7 @@ class Resolver:
                 ORDER BY
                     CASE WHEN ss.failures > 0 AND ss.started_ok = 0
                          THEN 1 ELSE 0 END,
+                    {audio_rank},
                     COALESCE(releases.seeders, 0) DESC,
                     COALESCE(releases.size_bytes, 999999999999) ASC,
                     releases.id DESC
@@ -356,35 +382,45 @@ class Resolver:
                 """,
                 (asset["id"],),
             ).fetchall()
-        result = []
+        preference = language_settings.load(self.db_path)
+        ranked: list[tuple[int, dict[str, Any]]] = []
         for row in rows:
-            result.append(
-                {
-                    "release_id": row["id"],
-                    "tracker": row["tracker"],
-                    "title": row["title"],
-                    "quality": row["quality"],
-                    "audio": row["audio"],
-                    "size_bytes": row["size_bytes"],
-                    "seeders": row["seeders"],
-                    "health": row["health"],
-                    "privacy": row["privacy"],
-                    "source": row["source"],
-                    "too_large": bool(
-                        self.max_size_bytes
-                        and (row["size_bytes"] or 0) > self.max_size_bytes
-                    ),
-                    "has_debrid": bool(row["debrid_cached"] and row["debrid_link"]),
-                    "swarm_started_ok": (
-                        bool(row["swarm_started_ok"])
-                        if row["swarm_started_ok"] is not None
-                        else None
-                    ),
-                    "swarm_failures": row["swarm_failures"],
-                    "swarm_speed_bps": row["swarm_speed_bps"],
-                }
+            rank = language_settings.rank(row["audio"], preference)
+            if rank is None:
+                continue
+            ranked.append(
+                (
+                    rank,
+                    {
+                        "release_id": row["id"],
+                        "tracker": row["tracker"],
+                        "title": row["title"],
+                        "quality": row["quality"],
+                        "audio": row["audio"],
+                        "size_bytes": row["size_bytes"],
+                        "seeders": row["seeders"],
+                        "health": row["health"],
+                        "privacy": row["privacy"],
+                        "source": row["source"],
+                        "too_large": bool(
+                            self.max_size_bytes
+                            and (row["size_bytes"] or 0) > self.max_size_bytes
+                        ),
+                        "has_debrid": bool(
+                            row["debrid_cached"] and row["debrid_link"]
+                        ),
+                        "swarm_started_ok": (
+                            bool(row["swarm_started_ok"])
+                            if row["swarm_started_ok"] is not None
+                            else None
+                        ),
+                        "swarm_failures": row["swarm_failures"],
+                        "swarm_speed_bps": row["swarm_speed_bps"],
+                    },
+                )
             )
-        return result
+        ranked.sort(key=lambda pair: pair[0])
+        return [item for _, item in ranked]
 
     def resolve_release(self, key: str, release_id: int) -> Resolution:
         asset = self.asset(key)

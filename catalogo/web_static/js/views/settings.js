@@ -168,13 +168,15 @@ function diskLine(item, key) {
 }
 
 export async function renderSettings({ signal, query } = {}) {
-  const [data, schedule, attention, seed] = await Promise.all([
+  const [data, schedule, attention, seed, language] = await Promise.all([
     api('/api/settings', { signal }),
     api('/api/scheduler', { signal }),
     api('/api/attention', { signal }).catch(() => null),
     api('/api/seed', { signal }).catch(() => null),
+    api('/api/language', { signal }).catch(() => null),
   ]);
   state.attention = attention;
+  const languagePreference = language?.preference || 'prefer_spanish';
   setHeader('Configuración', 'Sistema');
   const items = data.settings || [];
   const integrationKeys = new Set(INTEGRATIONS.flatMap((meta) =>
@@ -235,6 +237,7 @@ export async function renderSettings({ signal, query } = {}) {
         <button class="chip" data-action="settings-jump" data-target="settings-directories">Directorios</button>
         <button class="chip" data-action="settings-jump" data-target="settings-playback">Reproducción</button>
         <button class="chip" data-action="settings-jump" data-target="settings-security">Seguridad</button>
+        <button class="chip" data-action="settings-jump" data-target="settings-language">Idioma</button>
         <button class="chip" data-action="settings-jump" data-target="settings-seed">Siembra</button>
         <button class="chip" data-action="settings-jump" data-target="settings-scheduler">Tareas</button>
       </nav>
@@ -269,6 +272,33 @@ export async function renderSettings({ signal, query } = {}) {
     <div class="panel section" id="settings-security">
       <div class="panel-head"><h2>${sectionDot(attention, 'seguridad')}Seguridad</h2></div>
       <div class="panel-body">${security.map(field).join('')}</div>
+    </div>
+
+    <div class="panel section" id="settings-language">
+      <div class="panel-head">
+        <h2>Idioma de las fuentes</h2>
+        <span class="right tiny faint">no cambia el catálogo</span>
+      </div>
+      <div class="panel-body">
+        <div class="form-grid">
+          <label class="field"><span>Preferencia</span>
+            <select class="input" data-language>
+              <option value="any" ${languagePreference === 'any' ? 'selected' : ''}>Cualquier idioma</option>
+              <option value="prefer_spanish" ${languagePreference === 'prefer_spanish' ? 'selected' : ''}>Preferir español, con vuelta atrás</option>
+              <option value="only_spanish" ${languagePreference === 'only_spanish' ? 'selected' : ''}>Solo español</option>
+            </select>
+          </label>
+          <label class="field"><span>&nbsp;</span>
+            <button class="btn btn-primary" data-action="language-save">${icon('check', 'sm')} Guardar idioma</button>
+          </label>
+        </div>
+        <p class="muted tiny" style="margin:10px 0 0">
+          «Preferir español» ordena primero castellano/latino y deja las fuentes
+          sin idioma verificado como respaldo. «Solo español» excluye las que no
+          tengan idioma español verificado. No pausa indexers: para eso usa
+          Seguimiento → Indexers.
+        </p>
+      </div>
     </div>
 
     <div class="panel section" id="settings-seed">
@@ -334,7 +364,7 @@ export async function renderSettings({ signal, query } = {}) {
   if (!state.settingsDirtyHandler) {
     state.settingsDirtyHandler = (event) => {
       if (state.view !== 'settings') return;
-      if (!event.target.closest('[data-setting], [data-task], [data-seed-field], [data-seed-tracker]')) return;
+      if (!event.target.closest('[data-setting], [data-task], [data-seed-field], [data-seed-tracker], [data-language]')) return;
       state.settingsDirty = true;
       $('#settingsDirty')?.classList.remove('hidden');
     };
@@ -347,6 +377,7 @@ export async function renderSettings({ signal, query } = {}) {
     directorios: 'settings-directories',
     reproduccion: 'settings-playback',
     seguridad: 'settings-security',
+    idioma: 'settings-language',
     siembra: 'settings-seed',
     tareas: 'settings-scheduler',
   };

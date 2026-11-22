@@ -264,9 +264,12 @@ def test_sources_order_by_size_without_hardcoded_tracker_priority(tmp_path):
     ).lastrowid
     conn.commit()
     conn.close()
+    from catalogo import language_settings
+
+    language_settings.save(str(db), "any")
     resolver = Resolver(db)
     sources = resolver.sources("movie:tmdb:1")
-    # Sin listas locales, no hay tracker forzado al final: manda el tamaño.
+    # Sin preferencia de idioma ni listas locales, manda el tamaño.
     assert sources[0]["release_id"] == smaller_id
     assert small_id in {item["release_id"] for item in sources}
     assert tracker2_id in {item["release_id"] for item in sources}

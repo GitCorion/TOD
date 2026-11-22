@@ -28,7 +28,7 @@ from pathlib import Path
 from typing import Any
 
 from . import app_settings, admin, attention, integrations, jellyfin, jobs, ondemand, queries
-from . import policy, seed_settings, settings, strm_inventory
+from . import language_settings, policy, seed_settings, settings, strm_inventory
 from . import strm as strm_module
 from .arr_data import ArrData
 from .config import Config
@@ -1028,6 +1028,25 @@ class Handler(PlaybackHandler):
             )
             app.audit("web.qbit_action", payload=result)
             return self._json(200, result, head=head)
+
+        if parts == ["language"]:
+            if not mutate:
+                return self._json(
+                    200,
+                    {
+                        "preference": language_settings.load(db),
+                        "choices": list(language_settings.CHOICES),
+                    },
+                    head=head,
+                )
+            try:
+                value = language_settings.save(
+                    db, str(body.get("preference") or "")
+                )
+            except ValueError as exc:
+                raise WebError(400, str(exc))
+            app.audit("web.language", payload={"preference": value})
+            return self._json(200, {"preference": value}, head=head)
 
         if parts == ["seed"]:
             if not mutate:

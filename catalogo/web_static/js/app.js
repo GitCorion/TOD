@@ -1127,6 +1127,15 @@ document.addEventListener('click', async (event) => {
       }
       return;
     }
+    if (action === 'language-save') {
+      await apiPost('/api/language', {
+        preference: $('[data-language]')?.value || 'prefer_spanish',
+      });
+      state.settingsDirty = false;
+      toast('Preferencia de idioma actualizada', 'ok');
+      await route();
+      return;
+    }
     if (action === 'seed-save') {
       const values = {};
       $$('[data-seed-field]').forEach((input) => {

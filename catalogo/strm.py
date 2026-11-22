@@ -15,6 +15,7 @@ from contextlib import closing
 from pathlib import Path
 from xml.sax.saxutils import escape as xml_escape
 
+from . import language_settings
 from .db import connect
 from .health import publishable
 from .identity import play_url
@@ -161,6 +162,7 @@ def _versions(
     *,
     versions_filter: str = "available",
     min_seeders: int = 1,
+    preference: str = "any",
 ) -> list[tuple[dict, str]]:
     """Devuelve las versiones que deben tener fichero `.strm` propio.
 
@@ -174,6 +176,11 @@ def _versions(
     used: set[str] = set()
     result: list[tuple[dict, str]] = []
     for release in releases:
+        if (
+            preference == "only_spanish"
+            and language_settings.rank(release["audio"], preference) is None
+        ):
+            continue
         release_id = int(release["id"])
         is_available = release_id in available_ids or (
             release["debrid_cached"] and release["debrid_link"]
@@ -247,6 +254,7 @@ def export_strm(
     if prune and (key or limit):
         raise ValueError("--prune solo se permite en una exportación completa")
     out = Path(out_dir)
+    preference = language_settings.load(db_path)
 
     def ensure_nfo(asset: dict) -> None:
         data = _nfo(asset)
@@ -385,6 +393,7 @@ def export_strm(
             available_ids,
             versions_filter="all",
             min_seeders=min_seeders,
+            preference=preference,
         )
         # Un .strm solo se publica si hay algo que reproducir de verdad:
         # fichero local/archivado, debrid cacheado o un release VIVO con
@@ -428,6 +437,7 @@ def export_strm(
             available_ids,
             versions_filter=versions_filter,
             min_seeders=min_seeders,
+            preference=preference,
         )
 
         default = strm_path(out, asset)
