@@ -5,7 +5,7 @@ from pathlib import Path
 from catalogo.db import init_db
 from catalogo.evict import evict_completed
 
-MIGRATIONS = Path(__file__).resolve().parents[1] / "migrations"
+MIGRATIONS = Path(__file__).resolve().parents[1] / "catalogo" / "migrations"
 NOW = datetime(2026, 11, 19, 12, 0, tzinfo=timezone.utc)
 
 

@@ -75,12 +75,20 @@ def _jackett_key() -> str | None:
 
 
 def _default_db_path() -> Path:
-    """Base nueva en `var/tod.db`; conserva `var/catalogo.db` si ya existe."""
-    current = BASE_DIR / "var" / "tod.db"
-    legacy = BASE_DIR / "var" / "catalogo.db"
-    if not current.exists() and legacy.exists():
-        return legacy
-    return current
+    """Base en `var/tod.db` para un clon; datos de usuario si es un wheel."""
+    repo = (BASE_DIR / "pyproject.toml").exists() or (BASE_DIR / ".git").exists()
+    if repo:
+        current = BASE_DIR / "var" / "tod.db"
+        legacy = BASE_DIR / "var" / "catalogo.db"
+        if not current.exists() and legacy.exists():
+            return legacy
+        return current
+    data = Path(
+        os.environ.get(
+            "XDG_DATA_HOME", str(Path.home() / ".local" / "share")
+        )
+    ) / "tod"
+    return data / "tod.db"
 
 
 def _roots_from_env(name: str, default: tuple[str, ...]) -> tuple[str, ...]:
@@ -153,7 +161,8 @@ class Config:
                 "CATALOGO_SEED_ROOT", Path("/mnt/descargas/catalogo")
             ),
             migrations_dir=_path(
-                "CATALOGO_MIGRATIONS", BASE_DIR / "migrations"
+                "CATALOGO_MIGRATIONS",
+                Path(__file__).resolve().parent / "migrations",
             ),
             prowlarr_url=os.environ.get(
                 "PROWLARR_URL", "http://127.0.0.1:9696/api/v1"

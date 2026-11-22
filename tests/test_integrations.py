@@ -7,7 +7,7 @@ import pytest
 from catalogo import integrations
 from catalogo.config import Config
 
-MIGRATIONS = Path(__file__).resolve().parents[1] / "migrations"
+MIGRATIONS = Path(__file__).resolve().parents[1] / "catalogo" / "migrations"
 
 
 def _config(tmp_path, **overrides):

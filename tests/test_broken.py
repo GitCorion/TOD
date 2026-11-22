@@ -5,7 +5,7 @@ from catalogo.broken import clean_broken
 from catalogo.db import init_db
 from catalogo.strm import strm_path, version_path
 
-MIGRATIONS = Path(__file__).resolve().parents[1] / "migrations"
+MIGRATIONS = Path(__file__).resolve().parents[1] / "catalogo" / "migrations"
 
 
 class FakeRead:

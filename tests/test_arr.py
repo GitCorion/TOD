@@ -3,7 +3,7 @@ from pathlib import Path
 from catalogo.arr import RadarrClient, SonarrClient
 from catalogo.arr_data import ArrData
 
-MIGRATIONS = Path(__file__).resolve().parents[1] / "migrations"
+MIGRATIONS = Path(__file__).resolve().parents[1] / "catalogo" / "migrations"
 
 
 def test_radarr_queue_reads_all_pages():

@@ -5,7 +5,7 @@ from catalogo.db import init_db
 from catalogo.policy import TrackerPolicy, upsert_policy
 from catalogo.tracker_block import set_tracker_blocked
 
-MIGRATIONS = Path(__file__).resolve().parents[1] / "migrations"
+MIGRATIONS = Path(__file__).resolve().parents[1] / "catalogo" / "migrations"
 
 
 def seed(tmp_path):

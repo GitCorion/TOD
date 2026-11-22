@@ -21,6 +21,6 @@ python3 -m pytest -q
 
 - `catalogo/`: backend, resolver, reproducción, scheduler y API.
 - `catalogo/web_static/`: SPA sin dependencias externas.
-- `migrations/`: esquema SQLite.
+- `catalogo/migrations/`: esquema SQLite (viaja dentro del paquete).
 - `deploy/`: unidad systemd e instalador.
 - `tests/`: suite de pytest.

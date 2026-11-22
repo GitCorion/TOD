@@ -4,7 +4,7 @@ from pathlib import Path
 from catalogo.bridge import bridge_downloads
 from catalogo.db import init_db
 
-MIGRATIONS = Path(__file__).resolve().parents[1] / "migrations"
+MIGRATIONS = Path(__file__).resolve().parents[1] / "catalogo" / "migrations"
 
 
 class FakeRadarr:

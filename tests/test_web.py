@@ -15,7 +15,7 @@ from catalogo.db import init_db
 from catalogo.jobs import JobConflict, JobRunner, get_job, list_jobs, recover_jobs
 from catalogo.queries import list_titles, overview, title_detail
 
-MIGRATIONS = Path(__file__).resolve().parents[1] / "migrations"
+MIGRATIONS = Path(__file__).resolve().parents[1] / "catalogo" / "migrations"
 
 
 def seed(tmp_path):

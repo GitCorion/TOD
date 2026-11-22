@@ -7,7 +7,7 @@ from catalogo.mover import move_completed
 from catalogo.policy import TrackerPolicy, upsert_policy
 from catalogo.stream_leases import active, cleanup, touch
 
-MIGRATIONS = Path(__file__).resolve().parents[1] / "migrations"
+MIGRATIONS = Path(__file__).resolve().parents[1] / "catalogo" / "migrations"
 NOW = datetime(2026, 11, 18, 12, 0, tzinfo=timezone.utc)
 
 

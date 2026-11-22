@@ -10,7 +10,7 @@ from catalogo.db import init_db
 from catalogo.play_service import NoPeers, PlayService, Warming
 from catalogo.policy import TrackerPolicy, upsert_policy
 
-MIGRATIONS = Path(__file__).resolve().parents[1] / "migrations"
+MIGRATIONS = Path(__file__).resolve().parents[1] / "catalogo" / "migrations"
 TORRENT = b"d4:info4:teste"
 MB = 1024 * 1024
 

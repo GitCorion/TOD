@@ -212,15 +212,17 @@ pip install -e ".[dev]"
 python -m pytest -q
 ```
 
-Desde el clon, tras `pip install -e .`, se ejecuta con el comando `tod`:
+También se puede instalar como paquete:
 
 ```bash
-tod --help
+pip install .
 tod service --host 0.0.0.0 --port 8773
 ```
 
-La instalación recomendada sigue siendo Docker Compose o el instalador
-systemd, porque incluyen migraciones y rutas de datos.
+En una instalación de paquete, la base va a
+`~/.local/share/tod/tod.db` y las migraciones viajan dentro del paquete. En un
+clon se sigue usando `var/tod.db`. Docker Compose y el instalador systemd son
+la opción recomendada para un servidor completo.
 
 ## Documentación
 

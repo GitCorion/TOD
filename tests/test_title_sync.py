@@ -4,7 +4,7 @@ from pathlib import Path
 from catalogo.db import init_db
 from catalogo.title_sync import upsert_movies
 
-MIGRATIONS = Path(__file__).resolve().parents[1] / "migrations"
+MIGRATIONS = Path(__file__).resolve().parents[1] / "catalogo" / "migrations"
 
 
 def seed_db(tmp_path):

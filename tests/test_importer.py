@@ -3,7 +3,7 @@ from pathlib import Path
 
 from catalogo.importer import import_legacy
 
-MIGRATIONS = Path(__file__).resolve().parents[1] / "migrations"
+MIGRATIONS = Path(__file__).resolve().parents[1] / "catalogo" / "migrations"
 
 
 LEGACY_SCHEMA = """

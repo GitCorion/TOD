@@ -10,7 +10,7 @@ from catalogo.settings import (
     set_ondemand_max_active,
 )
 
-MIGRATIONS = Path(__file__).resolve().parents[1] / "migrations"
+MIGRATIONS = Path(__file__).resolve().parents[1] / "catalogo" / "migrations"
 
 
 def test_ondemand_limit_defaults_and_persists(tmp_path):

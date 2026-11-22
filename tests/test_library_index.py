@@ -6,7 +6,7 @@ from catalogo.library_index import build_library_index, in_library
 from catalogo.prune import prune_library
 from catalogo.strm import export_strm
 
-MIGRATIONS = Path(__file__).resolve().parents[1] / "migrations"
+MIGRATIONS = Path(__file__).resolve().parents[1] / "catalogo" / "migrations"
 
 
 def seed_catalog(tmp_path):

@@ -4,7 +4,7 @@ from pathlib import Path
 from catalogo.backfill import pick_year
 from catalogo.db import init_db
 
-MIGRATIONS = Path(__file__).resolve().parents[1] / "migrations"
+MIGRATIONS = Path(__file__).resolve().parents[1] / "catalogo" / "migrations"
 
 
 def seed(tmp_path, *, with_release_2019=True, library_2018=False):

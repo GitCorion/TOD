@@ -7,7 +7,7 @@ from catalogo.policy import TrackerPolicy, upsert_policy
 from catalogo.public_sync import matches, sync_assets
 from catalogo.resolver import Resolver
 
-MIGRATIONS = Path(__file__).resolve().parents[1] / "migrations"
+MIGRATIONS = Path(__file__).resolve().parents[1] / "catalogo" / "migrations"
 
 
 class FakeJackett:

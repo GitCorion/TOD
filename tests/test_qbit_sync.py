@@ -5,7 +5,7 @@ from pathlib import Path
 from catalogo.db import init_db
 from catalogo.qbit_sync import _storage_for, radarr_index, sonarr_index, sync
 
-MIGRATIONS = Path(__file__).resolve().parents[1] / "migrations"
+MIGRATIONS = Path(__file__).resolve().parents[1] / "catalogo" / "migrations"
 NOW = datetime(2026, 11, 18, 12, 0, tzinfo=timezone.utc)
 EPOCH = 1794000000
 

@@ -8,7 +8,6 @@ WORKDIR /app
 
 COPY pyproject.toml README.md LICENSE ./
 COPY catalogo ./catalogo
-COPY migrations ./migrations
 
 EXPOSE 8773
 

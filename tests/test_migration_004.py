@@ -5,7 +5,7 @@ from pathlib import Path
 from catalogo.db import connect, init_db, migrate
 
 ROOT = Path(__file__).resolve().parents[1]
-MIGRATIONS = ROOT / "migrations"
+MIGRATIONS = ROOT / "catalogo" / "migrations"
 
 
 def test_migration_004_from_previous_schema(tmp_path):

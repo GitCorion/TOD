@@ -12,7 +12,7 @@ from catalogo.health_worker import (
     size_close,
 )
 
-MIGRATIONS = Path(__file__).resolve().parents[1] / "migrations"
+MIGRATIONS = Path(__file__).resolve().parents[1] / "catalogo" / "migrations"
 NOW = datetime(2026, 11, 16, 12, 0, tzinfo=timezone.utc)
 SIZE = 3_000_000_000
 SIZE_CLOSE = 3_010_000_000

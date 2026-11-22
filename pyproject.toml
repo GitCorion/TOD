@@ -44,6 +44,7 @@ catalogo = [
   "web_static/js/*",
   "web_static/js/views/*",
   "web_static/fonts/*",
+  "migrations/*.sql",
 ]
 
 [tool.pytest.ini_options]

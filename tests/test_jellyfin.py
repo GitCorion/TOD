@@ -4,7 +4,7 @@ from pathlib import Path
 from catalogo.config import Config
 from catalogo.jellyfin import notify_updated
 
-MIGRATIONS = Path(__file__).resolve().parents[1] / "migrations"
+MIGRATIONS = Path(__file__).resolve().parents[1] / "catalogo" / "migrations"
 
 
 def _config(tmp_path, *, api_key="jelly-key"):

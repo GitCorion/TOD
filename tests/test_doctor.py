@@ -4,7 +4,7 @@ from pathlib import Path
 from catalogo.db import init_db
 from catalogo.doctor import run_doctor
 
-MIGRATIONS = Path(__file__).resolve().parents[1] / "migrations"
+MIGRATIONS = Path(__file__).resolve().parents[1] / "catalogo" / "migrations"
 
 
 class FakeQbit:

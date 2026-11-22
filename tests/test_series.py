@@ -5,7 +5,7 @@ from catalogo.backend import select_target
 from catalogo.bulk_sync import matches_asset, sync_sources
 from catalogo.db import init_db
 
-MIGRATIONS = Path(__file__).resolve().parents[1] / "migrations"
+MIGRATIONS = Path(__file__).resolve().parents[1] / "catalogo" / "migrations"
 
 
 class FakeProwlarr:

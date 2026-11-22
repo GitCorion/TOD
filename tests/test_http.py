@@ -9,7 +9,7 @@ from catalogo.http import make_server
 from catalogo.identity import play_url
 from catalogo.play_service import NoPeers
 
-MIGRATIONS = Path(__file__).resolve().parents[1] / "migrations"
+MIGRATIONS = Path(__file__).resolve().parents[1] / "catalogo" / "migrations"
 
 
 def build_db(tmp_path):

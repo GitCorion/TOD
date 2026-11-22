@@ -7,7 +7,7 @@ from catalogo.resolver import Resolver
 from catalogo.stream_guard import StreamGuard, failed_release_ids
 from catalogo.stream_leases import touch
 
-MIGRATIONS = Path(__file__).resolve().parents[1] / "migrations"
+MIGRATIONS = Path(__file__).resolve().parents[1] / "catalogo" / "migrations"
 NOW = datetime(2026, 11, 20, 6, 0, tzinfo=timezone.utc)
 MB = 1024 * 1024
 

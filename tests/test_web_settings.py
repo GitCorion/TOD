@@ -8,7 +8,7 @@ from pathlib import Path
 from catalogo.config import Config
 from catalogo.db import init_db
 
-MIGRATIONS = Path(__file__).resolve().parents[1] / "migrations"
+MIGRATIONS = Path(__file__).resolve().parents[1] / "catalogo" / "migrations"
 
 
 def _seed(tmp_path):

@@ -5,7 +5,7 @@ import pytest
 from catalogo.config import Config
 from catalogo.prowlarr import ProwlarrClient, ProwlarrError
 
-MIGRATIONS = Path(__file__).resolve().parents[1] / "migrations"
+MIGRATIONS = Path(__file__).resolve().parents[1] / "catalogo" / "migrations"
 
 
 def _config(tmp_path, *, api_key):

@@ -8,7 +8,7 @@ from catalogo.db import init_db
 from catalogo.debrid import DebridCache, RealDebridClient
 from catalogo.debrid_cache import infohash_for_release, cache_public
 
-MIGRATIONS = Path(__file__).resolve().parents[1] / "migrations"
+MIGRATIONS = Path(__file__).resolve().parents[1] / "catalogo" / "migrations"
 
 
 class FakeRD(BaseHTTPRequestHandler):
