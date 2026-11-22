@@ -131,6 +131,11 @@ Una coproducción con España se considera castellano. Si TMDB no da país, el
 latino de un título originalmente español se acepta como V.O. pero después del
 castellano. Los títulos sin idioma detectado solo entran como último respaldo.
 
+Al actualizar una instalación anterior hay que rellenar el país una vez:
+**Sistema → Tareas → Actualizar metadatos**, marcando «Revisar también los ya
+rellenados». Sin ese paso, los títulos importados de Radarr/Sonarr no tienen
+país y el latino se queda como respaldo.
+
 ## Almacenamiento
 
 Valores por defecto en una instalación systemd:
