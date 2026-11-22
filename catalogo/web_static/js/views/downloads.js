@@ -6,7 +6,10 @@ import { state } from '../store.js';
 import { $, badge, bar, empty, icon, poster, setHeader, status } from '../ui.js';
 
 function groupKey(item) {
-  return item.media_id ? `media:${item.media_id}` : item.key ? `key:${item.key}` : `name:${item.title || item.name}`;
+  if (item.media_id) return `media:${item.media_id}`;
+  if (item.key) return `key:${item.key}`;
+  if (item.info_hash) return `torrent:${item.info_hash}`;
+  return `name:${item.title || item.name || 'sin-titulo'}`;
 }
 
 function groupItems(items) {
