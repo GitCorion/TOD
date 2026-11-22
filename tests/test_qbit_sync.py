@@ -319,7 +319,7 @@ def test_ondemand_removed_after_min_seed_is_closed(tmp_path):
     conn.close()
 
 
-def test_ondemand_removed_early_requests_reseed(tmp_path):
+def test_ondemand_removed_early_is_left_to_qbittorrent(tmp_path):
     db, asset_id, release_id = seed_removed_commitment(
         tmp_path, NOW - timedelta(hours=1)
     )
@@ -328,17 +328,15 @@ def test_ondemand_removed_early_requests_reseed(tmp_path):
         check_exists=False, now=NOW,
     )
     assert report.torrents_removed == 1
-    assert report.reseed_required == 1
+    assert report.reseed_required == 0
     conn = sqlite3.connect(db)
     conn.row_factory = sqlite3.Row
     row = conn.execute(
-        "SELECT state, reason, started_at FROM seed_commitments "
-        "WHERE release_id=?",
+        "SELECT state, reason FROM seed_commitments WHERE release_id=?",
         (release_id,),
     ).fetchone()
-    assert row["state"] == "approved"
-    assert row["reason"] == "reseed_early_removal"
-    assert row["started_at"] is None
+    assert row["state"] == "done"
+    assert row["reason"] == "qbit_removed"
     assert conn.execute(
         "SELECT status FROM media_items WHERE id=?", (asset_id,)
     ).fetchone()["status"] == "COLD"

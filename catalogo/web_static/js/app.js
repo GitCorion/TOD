@@ -1127,6 +1127,30 @@ document.addEventListener('click', async (event) => {
       }
       return;
     }
+    if (action === 'seed-save') {
+      const values = {};
+      $$('[data-seed-field]').forEach((input) => {
+        const key = input.dataset.seedField;
+        values[key] = input.type === 'checkbox' ? input.checked : input.value;
+      });
+      await apiPost('/api/seed', values);
+      state.settingsDirty = false;
+      toast('Siembra actualizada', 'ok');
+      await route();
+      return;
+    }
+    if (action === 'seed-policy-save') {
+      const tracker = element.dataset.tracker;
+      const values = { tracker };
+      $$(`[data-seed-tracker="${CSS.escape(tracker)}"]`).forEach((input) => {
+        const key = input.dataset.seedField;
+        values[key] = input.type === 'checkbox' ? input.checked : input.value;
+      });
+      await apiPost('/api/seed/policies', values);
+      toast(`Política de ${tracker} actualizada`, 'ok');
+      await route();
+      return;
+    }
     if (action === 'settings-save') {
       const values = {};
       $$('[data-setting]').forEach((input) => {
@@ -1672,20 +1696,6 @@ document.addEventListener('click', async (event) => {
       await route();
       return;
     }
-    if (action === 'qbit-delete') {
-      const ok = await confirmModal({
-        title: 'Borrar torrent',
-        message: 'Se quitará el torrent de qBittorrent. Los ficheros NO se borran por defecto desde este panel.',
-        confirm: 'Borrar torrent',
-        danger: true,
-      });
-      if (!ok) return;
-      await apiPost(`/api/downloads/${element.dataset.hash}/action`, { action: 'delete' });
-      state.torrentSelection.delete(element.dataset.hash);
-      toast('Torrent borrado', 'ok');
-      await route();
-      return;
-    }
     if (action === 'qbit-bulk') {
       const hashes = [...state.torrentSelection];
       if (!hashes.length) return;
@@ -1705,8 +1715,8 @@ document.addEventListener('click', async (event) => {
     }
     if (action === 'seed-finish') {
       const result = await apiPost(`/api/seeds/${element.dataset.id}/finish`, {});
-      if (result.closed) toast('Compromiso cerrado', 'ok');
-      else toast(`No se puede cerrar: ${result.reason || 'política sin cumplir'}`, 'warn');
+      if (result.closed) toast('Mínimo cumplido; qBittorrent decide desde ahora', 'ok');
+      else toast(`Aún no se puede soltar: ${result.reason || 'política sin cumplir'}`, 'warn');
       await route();
       return;
     }

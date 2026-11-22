@@ -80,9 +80,9 @@ export async function renderSeeds({ signal }) {
       </td>
       <td data-label="Tamaño" class="num">${fmtBytes(item.size_bytes)}</td>
       <td data-label="Requerido hasta">${fmtDate(item.seed_required_until)}</td>
-      <td data-label="Puede cerrar">${canFinish ? status('Listo', 'ok') : `<span class="tiny faint">${esc(finishText)}</span>`}</td>
+      <td data-label="Mínimo cumplido">${canFinish ? status('Listo', 'ok') : `<span class="tiny faint">${esc(finishText)}</span>`}</td>
       <td class="actions" data-label="">
-        <button class="btn btn-sm" data-action="seed-finish" data-id="${item.id}" ${canFinish ? '' : 'disabled'}>Cerrar</button>
+        <button class="btn btn-sm" data-action="seed-finish" data-id="${item.id}" ${canFinish ? '' : 'disabled'}>Soltar</button>
         ${item.media_id ? `<a class="btn btn-sm btn-ghost" href="#/title/${item.media_id}">Ficha</a>` : ''}
       </td>
     </tr>`;
@@ -93,27 +93,24 @@ export async function renderSeeds({ signal }) {
       <div class="stat"><div class="label">Compromisos</div><div class="value">${fmtInt(items.length)}</div><div class="hint">${fmtInt(items.filter((item) => !item.live).length)} sin datos de qBittorrent</div></div>
       <div class="stat green"><div class="label">Sembrando</div><div class="value">${fmtInt(items.filter(isSeeding).length)}</div><div class="hint">con qBittorrent activo</div></div>
       <div class="stat amber"><div class="label">Comprobando o en cola</div><div class="value">${fmtInt(items.filter(isChecking).length)}</div><div class="hint">estado de qBittorrent</div></div>
-      <div class="stat accent"><div class="label">Listos para cerrar</div><div class="value">${fmtInt(items.filter((item) => item.can_finish && isSeeding(item)).length)}</div><div class="hint">${fmtInt(data.evictable || 0)} liberables</div></div>
+      <div class="stat accent"><div class="label">Listos para soltar</div><div class="value">${fmtInt(items.filter((item) => item.can_finish && isSeeding(item)).length)}</div><div class="hint">qBittorrent decide el borrado</div></div>
     </div>
 
     <div class="panel section">
-      <div class="panel-head"><h2>Mantenimiento</h2><span class="right tiny faint">todo con dry-run primero</span></div>
+      <div class="panel-head"><h2>Mantenimiento</h2><span class="right tiny faint">TOD no borra torrents ni ficheros</span></div>
       <div class="panel-body">
         <div class="chips">
-          <button class="chip" data-action="open-task" data-kind="reseed">${icon('refresh', 'sm')} Reponer borrados</button>
-          <button class="chip" data-action="open-task" data-kind="evict">${icon('trash', 'sm')} Liberar espacio</button>
-          <button class="chip" data-action="open-task" data-kind="abandon">Abandonar &lt;5 %</button>
-          <button class="chip" data-action="open-task" data-kind="seeding">Normalizar siembra</button>
-          <button class="chip" data-action="open-task" data-kind="cleanup-leases">Limpiar leases</button>
+          <button class="chip" data-action="open-task" data-kind="seeding">${icon('refresh', 'sm')} Mantener siembra mínima</button>
+          <a class="chip" href="#/settings?section=siembra">Ajustes de siembra</a>
         </div>
-        <p class="muted tiny" style="margin:12px 0 0">Solo se cierra cuando se cumple el tiempo y el ratio. En trackers privados no se borran ficheros desde el panel.</p>
+        <p class="muted tiny" style="margin:12px 0 0">TOD fuerza el seed hasta cumplir horas y ratio. Después lo suelta y qBittorrent aplica sus propias reglas; TOD no elimina el torrent ni su contenido.</p>
       </div>
     </div>
 
     <div class="panel flush section">
       <div class="panel-head"><h2>Compromisos de siembra</h2><span class="right tiny faint">${items.length} registros</span></div>
       ${rows ? `<div class="table-wrap"><table class="table--stack">
-        <thead><tr><th>Título</th><th>Tracker</th><th>Estado</th><th>Ratio</th><th>Tamaño</th><th>Requerido hasta</th><th>Puede cerrar</th><th></th></tr></thead>
+        <thead><tr><th>Título</th><th>Tracker</th><th>Estado</th><th>Ratio</th><th>Tamaño</th><th>Requerido hasta</th><th>Mínimo cumplido</th><th></th></tr></thead>
         <tbody>${rows}</tbody>
       </table></div>` : empty('Sin compromisos', 'Las descargas nuevas crearán uno al prepararse.')}
     </div>

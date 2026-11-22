@@ -82,7 +82,6 @@ function torrentRow(item) {
     <div class="actions">
       ${status(stateLabel.label, stateLabel.tone)}
       <button class="btn btn-sm btn-ghost" data-action="qbit" data-hash="${esc(item.info_hash)}" data-qaction="${String(item.state || '').toLowerCase().includes('paus') || String(item.state || '').toLowerCase().includes('stop') ? 'resume' : 'pause'}" aria-label="${String(item.state || '').toLowerCase().includes('paus') ? 'Reanudar' : 'Pausar'}">${icon(String(item.state || '').toLowerCase().includes('paus') ? 'play' : 'pause', 'sm')}</button>
-      <button class="btn btn-sm btn-ghost" data-action="qbit-delete" data-hash="${esc(item.info_hash)}" aria-label="Borrar torrent">${icon('trash', 'sm')}</button>
     </div>
   </div>`;
 }

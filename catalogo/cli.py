@@ -1387,22 +1387,6 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--no-evict", action="store_true")
     p.add_argument("--no-debrid", action="store_true")
 
-    p = sub.add_parser("abandon", help="pausa/borra descargas bajo el umbral sin reproducción")
-    p.add_argument("--limit", type=int, default=20)
-    p.add_argument("--grace", type=int, default=120)
-    p.add_argument("--min-age", type=int, default=600)
-    p.add_argument("--private-delete", action="store_true")
-    p.add_argument("--execute", action="store_true")
-
-    p = sub.add_parser("evict", help="borra copias del catálogo a mano (liberar espacio)")
-    p.add_argument("--limit", type=int, default=10)
-    p.add_argument("--grace", type=int, default=120)
-    p.add_argument("--execute", action="store_true")
-
-    p = sub.add_parser("reseed", help="re-descarga compromisos borrados antes del seed mínimo")
-    p.add_argument("--limit", type=int, default=1)
-    p.add_argument("--execute", action="store_true")
-
     p = sub.add_parser("repair", help="recheck/reanuda torrents con error local")
     p.add_argument("--limit", type=int, default=5)
     p.add_argument("--execute", action="store_true")
@@ -1420,11 +1404,6 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("tracker")
     p.add_argument("--unblock", action="store_true")
     p.add_argument("--reason", default="downloads_broken")
-    p.add_argument("--execute", action="store_true")
-
-    p = sub.add_parser("clean-broken", help="borra torrents que el tracker ya no reconoce")
-    p.add_argument("--limit", type=int, default=10)
-    p.add_argument("--library")
     p.add_argument("--execute", action="store_true")
 
     p = sub.add_parser("prune-library", help="borra .strm de títulos ya en Radarr/Sonarr")
@@ -1474,12 +1453,6 @@ def build_parser() -> argparse.ArgumentParser:
         help="quita forceStart a torrents completos para que siembren normal",
     )
     p.add_argument("--limit", type=int, default=50)
-    p.add_argument("--execute", action="store_true")
-
-    p = sub.add_parser("move-completed", help="mueve privados completos a archivo si están idle")
-    p.add_argument("--target")
-    p.add_argument("--grace", type=int, default=300)
-    p.add_argument("--limit", type=int, default=10)
     p.add_argument("--execute", action="store_true")
 
     p = sub.add_parser(
@@ -1557,11 +1530,7 @@ def main(argv: list[str] | None = None) -> int:
         "debrid-check": cmd_debrid_check,
         "public-sync": cmd_public_sync,
         "worker": cmd_worker,
-        "abandon": cmd_abandon,
-        "evict": cmd_evict,
-        "reseed": cmd_reseed,
         "repair": cmd_repair,
-        "clean-broken": cmd_clean_broken,
         "block-tracker": cmd_block_tracker,
         "jellyfin-leases": cmd_jellyfin_leases,
         "prune-library": cmd_prune_library,
@@ -1571,7 +1540,6 @@ def main(argv: list[str] | None = None) -> int:
         "sync-library": cmd_sync_library,
         "restore-strm": cmd_restore_strm,
         "normalize-seeding": cmd_normalize_seeding,
-        "move-completed": cmd_move_completed,
         "serve": cmd_serve,
         "service": cmd_service,
         "web": cmd_web,

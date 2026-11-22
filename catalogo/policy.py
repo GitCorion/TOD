@@ -89,32 +89,65 @@ def can_remove(
     return Decision(True, "politica_cumplida")
 
 
-def default_policy(tracker: str, privacy: str | None = None) -> TrackerPolicy:
+def default_policy(
+    tracker: str,
+    privacy: str | None = None,
+    *,
+    min_seed_hours: int | None = None,
+    target_ratio: float | None = None,
+) -> TrackerPolicy:
     """Política de arranque para un tracker sin regla configurada.
 
     Sin ella, cualquier descarga privada se bloquea con ``sin_politica`` y
     el play bajo demanda no funciona en una instalación recién creada. Los
-    valores son conservadores y se pueden ajustar después.
+    valores se pueden cambiar desde Configuración → Siembra.
     """
     public = (privacy or "").lower() == "public"
+    hours = (
+        0 if public
+        else max(0, int(min_seed_hours if min_seed_hours is not None else 72))
+    )
+    ratio = (
+        0.0 if public
+        else max(
+            0.0,
+            float(target_ratio if target_ratio is not None else 1.0),
+        )
+    )
     return TrackerPolicy(
         tracker=tracker,
-        min_seed_hours=0 if public else 72,
-        target_ratio=0.0 if public else 1.0,
+        min_seed_hours=hours,
+        target_ratio=ratio,
         privacy="public" if public else "private",
         keep_for_bonus=True,
-        notes="Política automática inicial; ajústala si tu tracker exige otra cosa.",
+        notes="Política automática; editable en Configuración → Siembra.",
     )
 
 
 def ensure_default_policy(
-    conn: Any, tracker: str, privacy: str | None = None
+    conn: Any,
+    tracker: str,
+    privacy: str | None = None,
+    *,
+    min_seed_hours: int | None = None,
+    target_ratio: float | None = None,
 ) -> TrackerPolicy:
     """Devuelve la política existente o crea una por defecto en la misma conexión."""
     existing = get_policy(conn, tracker)
     if existing is not None:
         return existing
-    policy = default_policy(tracker, privacy)
+    if min_seed_hours is None or target_ratio is None:
+        from .seed_settings import from_conn
+
+        values = from_conn(conn)
+        min_seed_hours = values["min_hours"]
+        target_ratio = values["ratio"]
+    policy = default_policy(
+        tracker,
+        privacy,
+        min_seed_hours=min_seed_hours,
+        target_ratio=target_ratio,
+    )
     conn.execute(
         """
         INSERT INTO tracker_policies(tracker, min_seed_hours, target_ratio,

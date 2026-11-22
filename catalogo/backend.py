@@ -476,10 +476,11 @@ def prepare_download(
             """
             UPDATE seed_commitments
             SET state = 'active',
+                info_hash = COALESCE(info_hash, ?),
                 started_at = COALESCE(started_at, ?)
             WHERE id = ?
             """,
-            (current.isoformat(), commitment["id"]),
+            (hash_, current.isoformat(), commitment["id"]),
         )
         conn.execute(
             """

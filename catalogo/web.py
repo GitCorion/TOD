@@ -28,7 +28,7 @@ from pathlib import Path
 from typing import Any
 
 from . import app_settings, admin, attention, integrations, jellyfin, jobs, ondemand, queries
-from . import settings, strm_inventory
+from . import policy, seed_settings, settings, strm_inventory
 from . import strm as strm_module
 from .arr_data import ArrData
 from .config import Config
@@ -1029,6 +1029,101 @@ class Handler(PlaybackHandler):
             app.audit("web.qbit_action", payload=result)
             return self._json(200, result, head=head)
 
+        if parts == ["seed"]:
+            if not mutate:
+                with closing(connect(db)) as conn:
+                    known = [
+                        dict(row)
+                        for row in conn.execute(
+                            """
+                            SELECT r.tracker, r.privacy, COUNT(*) AS releases
+                            FROM releases r
+                            WHERE r.tracker IS NOT NULL AND r.tracker <> ''
+                            GROUP BY r.tracker, r.privacy
+                            ORDER BY r.tracker
+                            """
+                        ).fetchall()
+                    ]
+                return self._json(
+                    200,
+                    {
+                        "defaults": seed_settings.load(db),
+                        "policies": policy.list_policies(db),
+                        "known": known,
+                    },
+                    head=head,
+                )
+            try:
+                values = seed_settings.save(
+                    db,
+                    min_hours=body.get("min_hours"),
+                    ratio=body.get("ratio"),
+                    force=body.get("force"),
+                )
+            except (TypeError, ValueError) as exc:
+                raise WebError(400, str(exc)[:200])
+            app.audit("web.seed_settings", payload=values)
+            return self._json(200, {"defaults": values}, head=head)
+
+        if parts == ["seed", "policies"]:
+            if not mutate:
+                raise WebError(405, "usa POST")
+            tracker = str(body.get("tracker") or "").strip()
+            if not tracker:
+                raise WebError(400, "falta tracker")
+            existing = next(
+                (
+                    item
+                    for item in policy.list_policies(db)
+                    if item.get("tracker") == tracker
+                ),
+                {},
+            )
+            try:
+                item = policy.TrackerPolicy(
+                    tracker=tracker,
+                    min_seed_hours=max(
+                        0, self._int(body.get("min_seed_hours"), 72)
+                    ),
+                    target_ratio=max(
+                        0.0, float(body.get("target_ratio") or 0)
+                    ),
+                    max_active=existing.get("max_active"),
+                    allow_partial=bool(existing.get("allow_partial")),
+                    keep_for_bonus=bool(existing.get("keep_for_bonus", True)),
+                    privacy=str(existing.get("privacy") or "private"),
+                    enabled=bool(body.get("enabled", True)),
+                    abandon_under_percent=int(
+                        existing.get("abandon_under_percent") or 0
+                    ),
+                    abandon_action=str(
+                        existing.get("abandon_action") or "keep"
+                    ),
+                    notes="Editada desde Configuración → Siembra.",
+                )
+                policy.upsert_policy(db, item)
+            except (TypeError, ValueError) as exc:
+                raise WebError(400, str(exc)[:200])
+            app.audit(
+                "web.seed_policy",
+                payload={
+                    "tracker": tracker,
+                    "min_seed_hours": item.min_seed_hours,
+                    "target_ratio": item.target_ratio,
+                    "enabled": item.enabled,
+                },
+            )
+            return self._json(
+                200,
+                {
+                    "tracker": tracker,
+                    "min_seed_hours": item.min_seed_hours,
+                    "target_ratio": item.target_ratio,
+                    "enabled": item.enabled,
+                },
+                head=head,
+            )
+
         if parts == ["seeds"] and not mutate:
             qbit, _ = app.qbit()
             return self._json(
@@ -1085,6 +1180,16 @@ class Handler(PlaybackHandler):
                 ratio=live_ratio,
                 started=live_started,
             )
+            if result.get("closed") and row is not None and row["effective_hash"]:
+                try:
+                    writer = (
+                        app.play_service.qbit_write
+                        if app.play_service is not None
+                        else QbittorrentWriteClient.from_config(app.config)
+                    )
+                    writer.set_force_start(str(row["effective_hash"]), False)
+                except Exception:
+                    pass
             app.audit("web.seed_finish", payload=result)
             return self._json(200, result, head=head)
 

@@ -340,10 +340,24 @@ def admit(
         tracker = row["tracker"] or ""
         policy = get_policy(conn, tracker)
         if policy is None:
+            from .seed_settings import from_conn
+
+            seed = from_conn(conn)
             policy = (
-                ensure_default_policy(conn, tracker, row["privacy"])
+                ensure_default_policy(
+                    conn,
+                    tracker,
+                    row["privacy"],
+                    min_seed_hours=seed["min_hours"],
+                    target_ratio=seed["ratio"],
+                )
                 if persist
-                else default_policy(tracker, row["privacy"])
+                else default_policy(
+                    tracker,
+                    row["privacy"],
+                    min_seed_hours=seed["min_hours"],
+                    target_ratio=seed["ratio"],
+                )
             )
         free = (
             disk_free_override

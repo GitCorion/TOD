@@ -84,7 +84,8 @@ curl -s -r 0-1048575 'http://127.0.0.1:8773/play?key=movie%3Atmdb%3A9737' -o /tm
 - `qbit-sync` es solo lectura.
 - La escritura (añadir, pausar, mover) está aislada en `qbit_write.py`.
 - Límites por categoría: `radarr`, `tv-sonarr` y `ondemand`.
-- El worker mueve privados completos a `/mnt/library/archive` si no hay stream activo.
+- El worker no mueve ni borra contenido: qBittorrent conserva la gestión de
+  los ficheros.
 
 ```bash
 tod qbit-version
@@ -95,18 +96,19 @@ tod qbit-limits
 
 ## Seed y espacio
 
-- Privados: seed mínimo por política; no se borra al cumplir las horas.
-- Al descubrir un tracker privado sin política, TOD crea una inicial de
-  72 h y ratio 1,0. Se puede cambiar:
+- Privados: TOD mantiene el torrent en **force-start** hasta cumplir el
+  mínimo de horas y ratio. Al cumplirlo, lo suelta y **qBittorrent decide**
+  si lo para o lo borra. TOD no elimina torrents ni ficheros.
+- Al descubrir un tracker privado sin política, TOD crea una inicial con los
+  valores de **Configuración → Siembra** (72 h y ratio 1,0 por defecto).
+  También se puede cambiar por CLI:
   `tod set-policy Tracker --min-seed-hours 24 --target-ratio 0.5`.
 - Públicos: sin compromiso de seed.
-- `evict` es manual y solo actúa sobre compromisos ya cumplidos.
+- `evict`, `reseed`, `abandon`, `clean-broken` y `move-completed` ya no se
+  usan: el borrado pertenece a qBittorrent.
 
 ```bash
 tod policies
-tod evictable
-tod reseed --limit 1 --execute
-tod evict --limit 10 --execute
 ```
 
 ## Almacenamiento
@@ -148,5 +150,5 @@ No copies `*.db-wal` por separado. Para restaurar, para el servicio, sustituye
 | Jackett falla | API key y que Jackett tenga indexers configurados |
 | Jellyfin 401 | API key de Jellyfin |
 | Reproducción 403 | La petición no trae `Range` ni `download=1`; un reproductor real sí lo trae. Revisa también capacidad on-demand y política del tracker |
-| Sin espacio | `df -h`, límite on-demand y `evictable` |
+| Sin espacio | `df -h` y límite on-demand; qBittorrent decide qué se borra |
 | Tarea atascada | `Tareas` en la web; `jobs` guarda estado y error |

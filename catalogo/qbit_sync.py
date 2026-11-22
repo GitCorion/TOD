@@ -20,7 +20,6 @@ from pathlib import Path
 from typing import Any
 
 from .db import connect
-from .policy import get_policy
 from .qbittorrent import QbittorrentClient
 
 VIDEO_EXT = {".mkv", ".mp4", ".m4v", ".avi", ".ts", ".webm", ".mov"}
@@ -823,36 +822,15 @@ def sync(
                     ),
                 ).fetchall()
                 for commitment in commitments:
-                    policy = get_policy(conn, commitment["tracker"])
-                    started = (
-                        row["seed_started_at"] or commitment["started_at"]
+                    # qBittorrent manda: si su regla borra el torrent, TOD
+                    # acepta la decisión y cierra el compromiso. No se
+                    # re-descarga ni se reseedea por debajo del mínimo.
+                    conn.execute(
+                        "UPDATE seed_commitments SET state='done', "
+                        "reason='qbit_removed', completed_at=? "
+                        "WHERE id = ?",
+                        (current.isoformat(), int(commitment["id"])),
                     )
-                    early = True
-                    if policy and started:
-                        try:
-                            start = datetime.fromisoformat(
-                                str(started).replace("Z", "+00:00")
-                            )
-                            if current >= start + timedelta(
-                                hours=policy.min_seed_hours
-                            ):
-                                early = False
-                        except ValueError:
-                            pass
-                    if early:
-                        conn.execute(
-                            "UPDATE seed_commitments SET state='approved', "
-                            "reason='reseed_early_removal', started_at=NULL, "
-                            "completed_at=NULL WHERE id = ?",
-                            (int(commitment["id"]),),
-                        )
-                        report.reseed_required += 1
-                    else:
-                        conn.execute(
-                            "UPDATE seed_commitments SET state='done', "
-                            "completed_at=? WHERE id = ?",
-                            (current.isoformat(), int(commitment["id"])),
-                        )
                 report.torrents_removed += 1
 
             # Recalcular estado/puntero de los media tocados.

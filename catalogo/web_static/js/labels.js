@@ -297,17 +297,6 @@ export const TASKS = [
     danger: true,
   },
   {
-    kind: 'move-completed', title: 'Mover a archivo', category: 'biblioteca',
-    desc: 'Mueve privados completos e inactivos al almacenamiento de archivo.',
-    fields: [
-      { name: 'target', label: 'Destino', type: 'text', value: '' },
-      { name: 'limit', label: 'Torrents', type: 'number', value: 10, min: 1 },
-      { name: 'grace', label: 'Gracia (s)', type: 'number', value: 120, min: 0 },
-      { name: 'execute', label: 'Ejecutar de verdad (no dry-run)', type: 'checkbox', value: false },
-    ],
-    danger: true,
-  },
-  {
     kind: 'qbit-sync', title: 'Sincronizar qBittorrent', category: 'siembra',
     desc: 'Indexa torrents, ficheros y vínculos con Radarr/Sonarr.',
     fields: [
@@ -324,50 +313,11 @@ export const TASKS = [
     ],
   },
   {
-    kind: 'clean-broken', title: 'Limpiar rotos', category: 'siembra',
-    desc: 'Borra torrents que el tracker ya no reconoce y sus .strm.',
-    fields: [
-      { name: 'limit', label: 'Torrents', type: 'number', value: 10, min: 1 },
-      { name: 'execute', label: 'Ejecutar de verdad (no dry-run)', type: 'checkbox', value: false },
-    ],
-    danger: true,
-  },
-  {
-    kind: 'abandon', title: 'Abandonar descargas', category: 'siembra',
-    desc: 'Pausa o borra descargas por debajo del 5 % sin reproducción.',
-    fields: [
-      { name: 'limit', label: 'Torrents', type: 'number', value: 20, min: 1 },
-      { name: 'min_age', label: 'Edad mínima (s)', type: 'number', value: 600, min: 0 },
-      { name: 'allow_private_delete', label: 'Permitir borrar en privados', type: 'checkbox', value: false },
-      { name: 'execute', label: 'Ejecutar de verdad (no dry-run)', type: 'checkbox', value: false },
-    ],
-    danger: true,
-  },
-  {
-    kind: 'reseed', title: 'Reponer borrados', category: 'siembra',
-    desc: 'Re-descarga compromisos que qBittorrent borró antes del mínimo.',
-    fields: [
-      { name: 'limit', label: 'Compromisos', type: 'number', value: 1, min: 1 },
-      { name: 'execute', label: 'Ejecutar de verdad (no dry-run)', type: 'checkbox', value: false },
-    ],
-    danger: true,
-  },
-  {
-    kind: 'evict', title: 'Liberar espacio', category: 'siembra',
-    desc: 'Borra copias locales que ya cumplieron su siembra.',
-    fields: [
-      { name: 'limit', label: 'Compromisos', type: 'number', value: 10, min: 1 },
-      { name: 'grace', label: 'Gracia (s)', type: 'number', value: 120, min: 0 },
-      { name: 'execute', label: 'Ejecutar de verdad (no dry-run)', type: 'checkbox', value: false },
-    ],
-    danger: true,
-  },
-  {
-    kind: 'seeding', title: 'Normalizar siembra', category: 'siembra',
-    desc: 'Quita forceStart a torrents completos.',
+    kind: 'seeding', title: 'Mantener siembra mínima', category: 'siembra',
+    desc: 'Fuerza el seed hasta horas/ratio; después suelta y qBittorrent decide.',
     fields: [
       { name: 'limit', label: 'Torrents', type: 'number', value: 50, min: 1 },
-      { name: 'execute', label: 'Ejecutar de verdad (no dry-run)', type: 'checkbox', value: false },
+      { name: 'dry_run', label: 'Solo previsualizar', type: 'checkbox', value: false },
     ],
   },
   {

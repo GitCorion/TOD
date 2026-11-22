@@ -1,10 +1,14 @@
 import sqlite3
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from catalogo.db import init_db
+from catalogo.seed_settings import load as load_seed
+from catalogo.seed_settings import save as save_seed
 from catalogo.seeding import normalize_completed
 
 MIGRATIONS = Path(__file__).resolve().parents[1] / "catalogo" / "migrations"
+NOW = datetime(2026, 11, 22, 12, 0, tzinfo=timezone.utc)
 
 
 class FakeSeedingClient:
@@ -19,83 +23,194 @@ class FakeSeedingClient:
         self.calls.append((info_hash, value))
 
 
-def seed_db(tmp_path, hashes):
+def seed_commitment(
+    tmp_path,
+    *,
+    state="active",
+    deadline=None,
+    target=1.0,
+    qbit_state="uploading",
+    ratio=0.0,
+    progress=1.0,
+):
     db = tmp_path / "catalogo.db"
     init_db(db, MIGRATIONS)
     conn = sqlite3.connect(db)
-    for hash_ in hashes:
-        conn.execute(
-            "INSERT INTO torrents(info_hash,category,state,qbit_state,progress) "
-            "VALUES(?,?,?,?,?)",
-            (hash_, "ondemand", "seeding", "forcedUP", 1),
-        )
+    conn.execute(
+        "INSERT INTO media_items(key,kind,tmdb,title,year) VALUES(?,?,?,?,?)",
+        ("movie:tmdb:1", "movie", 1, "Test", 2020),
+    )
+    asset_id = conn.execute("SELECT id FROM media_items").fetchone()[0]
+    conn.execute(
+        "INSERT INTO seed_commitments(asset_id,release_id,tracker,info_hash,"
+        "size_bytes,state,started_at,seed_required_until,target_ratio) "
+        "VALUES(?,?,?,?,?,?,?,?,?)",
+        (
+            asset_id,
+            None,
+            "Tracker",
+            "hash1",
+            1000,
+            state,
+            (NOW - timedelta(hours=24)).isoformat(),
+            (deadline or (NOW + timedelta(hours=48))).isoformat(),
+            target,
+        ),
+    )
+    conn.execute(
+        "INSERT INTO torrents(info_hash,category,state,qbit_state,progress,ratio) "
+        "VALUES(?,?,?,?,?,?)",
+        ("hash1", "ondemand", "seeding", qbit_state, progress, ratio),
+    )
     conn.commit()
     conn.close()
     return db
 
 
-def test_dry_run_only_plans_completed_forced(tmp_path):
-    db = seed_db(tmp_path, ["hash1", "hash2", "hash3"])
+def test_seed_settings_roundtrip(tmp_path):
+    db = tmp_path / "catalogo.db"
+    init_db(db, MIGRATIONS)
+    values = save_seed(str(db), min_hours=24, ratio=0.5, force=False)
+    assert values == {"min_hours": 24, "ratio": 0.5, "force": False}
+    assert load_seed(str(db)) == values
+
+
+def test_forces_seed_until_minimum(tmp_path):
+    db = seed_commitment(tmp_path, qbit_state="uploading", ratio=0.1)
     client = FakeSeedingClient(
-        [
-            {"hash": "hash1", "state": "forcedUP", "progress": 1, "name": "ok"},
-            {"hash": "hash2", "state": "forcedDL", "progress": 0.4, "name": "parcial"},
-            {"hash": "hash3", "state": "uploading", "progress": 1, "name": "normal"},
-        ]
+        [{"hash": "hash1", "state": "uploading", "progress": 1, "ratio": 0.1}]
     )
-    report = normalize_completed(str(db), client, dry_run=True)
-    assert [item["info_hash"] for item in report["planned"]] == ["hash1"]
-    assert report["skipped_incomplete"] == 1
-    assert client.calls == []
+    report = normalize_completed(str(db), client, now=NOW)
+    assert [item["info_hash"] for item in report["forced"]] == ["hash1"]
+    assert client.calls == [("hash1", True)]
+    conn = sqlite3.connect(db)
+    assert conn.execute(
+        "SELECT state FROM seed_commitments WHERE id=1"
+    ).fetchone()[0] == "seeding"
+    conn.close()
 
 
-def test_unknown_torrent_is_ignored(tmp_path):
-    db = seed_db(tmp_path, ["hash1"])
+def test_releases_force_when_minimum_is_met(tmp_path):
+    db = seed_commitment(
+        tmp_path,
+        deadline=NOW - timedelta(hours=1),
+        target=1.0,
+        qbit_state="forcedUP",
+        ratio=1.2,
+    )
     client = FakeSeedingClient(
-        [{"hash": "ajeno", "state": "forcedUP", "progress": 1}]
+        [{"hash": "hash1", "state": "forcedUP", "progress": 1, "ratio": 1.2}]
     )
-    report = normalize_completed(str(db), client, dry_run=True)
-    assert report["planned"] == []
-    assert client.calls == []
-
-
-def test_execute_removes_force_and_updates_state(tmp_path):
-    db = seed_db(tmp_path, ["hash1"])
-    client = FakeSeedingClient(
-        [{"hash": "hash1", "state": "forcedUP", "progress": 1, "name": "ok"}]
-    )
-    report = normalize_completed(str(db), client, dry_run=False)
-    assert report["normalized"][0]["info_hash"] == "hash1"
+    report = normalize_completed(str(db), client, now=NOW)
+    assert [item["info_hash"] for item in report["released"]] == ["hash1"]
     assert client.calls == [("hash1", False)]
     conn = sqlite3.connect(db)
     assert conn.execute(
-        "SELECT qbit_state FROM torrents WHERE info_hash='hash1'"
-    ).fetchone()[0] == "normalizing"
+        "SELECT state FROM seed_commitments WHERE id=1"
+    ).fetchone()[0] == "done"
+    conn.close()
+
+
+def test_does_not_force_when_setting_is_off(tmp_path):
+    db = seed_commitment(tmp_path, qbit_state="uploading", ratio=0)
+    save_seed(str(db), min_hours=72, ratio=1.0, force=False)
+    client = FakeSeedingClient(
+        [{"hash": "hash1", "state": "uploading", "progress": 1, "ratio": 0}]
+    )
+    report = normalize_completed(str(db), client, now=NOW)
+    assert report["force"] is False
+    assert report["forced"] == []
+    assert client.calls == []
+
+
+def test_incomplete_or_unknown_are_ignored(tmp_path):
+    db = seed_commitment(tmp_path, progress=0.4)
+    client = FakeSeedingClient(
+        [
+            {"hash": "hash1", "state": "downloading", "progress": 0.4},
+            {"hash": "ajeno", "state": "forcedUP", "progress": 1},
+        ]
+    )
+    report = normalize_completed(str(db), client, now=NOW)
+    assert report["forced"] == []
+    assert report["released"] == []
+    assert client.calls == []
+
+
+def test_matches_commitment_without_info_hash_by_release(tmp_path):
+    db = tmp_path / "catalogo.db"
+    init_db(db, MIGRATIONS)
+    conn = sqlite3.connect(db)
+    conn.execute(
+        "INSERT INTO media_items(key,kind,tmdb,title,year) VALUES(?,?,?,?,?)",
+        ("movie:tmdb:1", "movie", 1, "Test", 2020),
+    )
+    asset_id = conn.execute("SELECT id FROM media_items").fetchone()[0]
+    conn.execute(
+        "INSERT INTO releases(asset_id,tracker,title,size_bytes,health,seeders) "
+        "VALUES(?,?,?,?,?,?)",
+        (asset_id, "Tracker", "Test", 1000, "alive", 10),
+    )
+    release_id = conn.execute("SELECT id FROM releases").fetchone()[0]
+    conn.execute(
+        "INSERT INTO torrents(info_hash,release_id,category,state,qbit_state,"
+        "progress,ratio) VALUES(?,?,?,?,?,?,?)",
+        ("hash1", release_id, "ondemand", "seeding", "uploading", 1, 0),
+    )
+    conn.execute(
+        "INSERT INTO seed_commitments(asset_id,release_id,tracker,info_hash,"
+        "size_bytes,state,seed_required_until,target_ratio) "
+        "VALUES(?,?,?,?,?,?,?,?)",
+        (
+            asset_id, release_id, "Tracker", None, 1000, "active",
+            (NOW + timedelta(hours=48)).isoformat(), 1.0,
+        ),
+    )
+    conn.commit()
+    conn.close()
+    client = FakeSeedingClient(
+        [{"hash": "hash1", "state": "uploading", "progress": 1, "ratio": 0}]
+    )
+    report = normalize_completed(str(db), client, now=NOW)
+    assert [item["info_hash"] for item in report["forced"]] == ["hash1"]
+    assert client.calls == [("hash1", True)]
+
+
+def test_cancels_stale_approved_without_torrent(tmp_path):
+    db = tmp_path / "catalogo.db"
+    init_db(db, MIGRATIONS)
+    conn = sqlite3.connect(db)
+    conn.execute(
+        "INSERT INTO media_items(key,kind,tmdb,title,year) VALUES(?,?,?,?,?)",
+        ("movie:tmdb:1", "movie", 1, "Test", 2020),
+    )
+    asset_id = conn.execute("SELECT id FROM media_items").fetchone()[0]
+    conn.execute(
+        "INSERT INTO seed_commitments(asset_id,tracker,size_bytes,state,"
+        "approved_at,seed_required_until,target_ratio) "
+        "VALUES(?,?,?,?,?,?,?)",
+        (
+            asset_id, "Tracker", 1000, "approved",
+            (NOW - timedelta(hours=1)).isoformat(),
+            (NOW + timedelta(hours=48)).isoformat(), 1.0,
+        ),
+    )
+    conn.commit()
+    conn.close()
+    report = normalize_completed(str(db), FakeSeedingClient([]), now=NOW)
+    assert report["cancelled"] == 1
+    conn = sqlite3.connect(db)
+    assert conn.execute(
+        "SELECT state FROM seed_commitments"
+    ).fetchone()[0] == "cancelled"
     conn.close()
 
 
 def test_limit_is_respected(tmp_path):
-    db = seed_db(tmp_path, ["hash1", "hash2"])
+    db = seed_commitment(tmp_path, qbit_state="uploading")
     client = FakeSeedingClient(
-        [
-            {"hash": "hash1", "state": "forcedUP", "progress": 1},
-            {"hash": "hash2", "state": "forcedUP", "progress": 1},
-        ]
+        [{"hash": "hash1", "state": "uploading", "progress": 1, "ratio": 0}]
     )
-    report = normalize_completed(str(db), client, limit=1, dry_run=True)
-    assert len(report["planned"]) == 1
-
-
-def test_error_is_reported(tmp_path):
-    db = seed_db(tmp_path, ["hash1"])
-
-    class Broken(FakeSeedingClient):
-        def set_force_start(self, info_hash, value=True):
-            raise RuntimeError("sin conexión")
-
-    client = Broken(
-        [{"hash": "hash1", "state": "forcedUP", "progress": 1}]
-    )
-    report = normalize_completed(str(db), client, dry_run=False)
-    assert report["normalized"] == []
-    assert report["errors"]
+    report = normalize_completed(str(db), client, limit=1, dry_run=True, now=NOW)
+    assert len(report["kept"]) == 1
+    assert client.calls == []

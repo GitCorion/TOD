@@ -1108,44 +1108,19 @@ def qbit_action(
     *,
     delete_files: bool = False,
 ) -> dict[str, Any]:
-    from contextlib import closing
-
-    from .db import connect
-
-    info_hash = (info_hash or "").strip().lower()
-    if not info_hash:
-        raise JobError("falta el hash")
-    action = (action or "").strip().lower()
-    if action not in ("pause", "resume", "recheck", "delete"):
-        raise JobError("acción no válida")
-    if action == "delete" and delete_files:
-        with closing(connect(config.db_path)) as conn:
-            row = conn.execute(
-                "SELECT privacy FROM releases WHERE info_hash = ? LIMIT 1",
-                (info_hash,),
-            ).fetchone()
-            if row is None:
-                row = conn.execute(
-                    "SELECT r.privacy FROM torrents t "
-                    "JOIN releases r ON r.id = t.release_id "
-                    "WHERE t.info_hash = ? LIMIT 1",
-                    (info_hash,),
-                ).fetchone()
-        if row is not None and (row["privacy"] or "private") == "private":
-            raise JobError(
-                "no se borran ficheros de un tracker privado desde el panel; "
-                "pausa el torrent o usa la CLI con autorización explícita"
-            )
+    if action not in ("pause", "resume", "recheck"):
+        raise JobError(
+            "el borrado de torrents y ficheros lo decide qBittorrent; "
+            "TOD no elimina contenido"
+        )
     client = _qb_write(config)
     if action == "pause":
         client.pause(info_hash)
     elif action == "resume":
         client.resume(info_hash)
-    elif action == "recheck":
-        client.recheck(info_hash)
     else:
-        client.delete(info_hash, delete_files=bool(delete_files))
-    return {"info_hash": info_hash, "action": action, "delete_files": bool(delete_files)}
+        client.recheck(info_hash)
+    return {"info_hash": info_hash, "action": action, "delete_files": False}
 
 
 def apply_qbit_limits(
@@ -1556,12 +1531,12 @@ def job_evict(ctx: JobContext) -> dict[str, Any]:
 
 
 def job_seeding(ctx: JobContext) -> dict[str, Any]:
-    ctx.report("normalizando siembra", progress=0.1)
+    ctx.report("ajustando siembra mínima", progress=0.1)
     return normalize_completed(
         str(ctx.config.db_path),
         _qb_write(ctx.config),
         limit=_int(ctx.params.get("limit"), 50),
-        dry_run=not _bool(ctx.params.get("execute"), False),
+        dry_run=_bool(ctx.params.get("dry_run"), False),
     )
 
 
@@ -1768,8 +1743,8 @@ def job_worker_cycle(ctx: JobContext) -> dict[str, Any]:
     """Ciclo equivalente a `catalogo worker --once`.
 
     Sustituye al timer de 5 minutos cuando TOD corre como servicio único.
-    Respeta los mismos límites y deja en dry-run lo que el worker real
-    también deja en dry-run (abandono y normalización de siembra).
+    No borra torrents ni ficheros: sincroniza, repara y mantiene el seed
+    mínimo con force-start. El borrado lo decide qBittorrent.
     """
     config = ctx.config
     db = str(config.db_path)
@@ -1805,50 +1780,14 @@ def job_worker_cycle(ctx: JobContext) -> dict[str, Any]:
             db, qbit_read, qbit_write, limit=5, dry_run=False
         )
 
-    def reseed() -> dict:
-        return reseed_pending(
-            db,
-            qbit_write,
-            limit=1,
-            jackett_api_key=config.jackett_api_key,
-            save_path=str(config.ondemand_save_path),
-            dry_run=False,
-        )
-
-    def clean() -> dict:
-        return clean_broken(
-            db,
-            qbit_read,
-            qbit_write,
-            library_root=config.catalog_library,
-            limit=10,
-            dry_run=False,
-        )
-
-    def moves() -> dict:
-        return move_completed(
-            db,
-            qbit_write,
-            source_root=str(config.ondemand_save_path),
-            target=str(config.library_root / "descargas"),
-            limit=1,
-            dry_run=False,
-        )
-
-    def abandon() -> dict:
-        return abandon_idle(db, qbit_write, limit=10, dry_run=True)
-
     def seeding() -> dict:
-        return normalize_completed(db, qbit_write, limit=50, dry_run=True)
+        ctx.report("manteniendo siembra mínima", progress=0.9)
+        return normalize_completed(db, qbit_write, limit=50, dry_run=False)
 
     return run_once(
         cleanup=cleanup,
         sync=sync,
         repair=repair,
-        reseed=reseed,
-        clean=clean,
-        moves=moves,
-        abandon=abandon,
         seeding=seeding,
     ).public()
 
@@ -1920,11 +1859,6 @@ JOB_HANDLERS = {
     "export-strm": job_export,
     "qbit-sync": job_qbit_sync,
     "repair": job_repair,
-    "clean-broken": job_clean_broken,
-    "move-completed": job_move,
-    "abandon": job_abandon,
-    "reseed": job_reseed,
-    "evict": job_evict,
     "seeding": job_seeding,
     "prune-library": job_prune,
     "sync-library": job_library,

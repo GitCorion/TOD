@@ -26,7 +26,8 @@ Las URLs y API keys se introducen en la web y TOD aplica el resto. En Docker,
 - **Publicar `.strm` multiversión** para Jellyfin: un `.strm` principal y una
   variante por versión reproducible.
 - **Reproducir bajo demanda** desde qBittorrent con rangos HTTP reales (206).
-- **Sembrar con reglas** por tracker: tiempo mínimo, ratio, abandono y reseed.
+- **Sembrar con reglas** por tracker: mínimo de horas y ratio con force-start.
+  Al cumplirse, TOD lo suelta y qBittorrent decide si borra el torrent.
 - **Descubrir fuentes** en Prowlarr, Jackett o ambos, sin listas de trackers escritas a mano.
 - **Leer Radarr/Sonarr por API**, nunca tocando sus bases de datos.
 - **Automatizar** RSS, seguimiento, backfill, puente, restauración y límites de qBittorrent.
@@ -186,6 +187,7 @@ comprobación de integraciones, con enlaces a la sección que los arregla.
 - **Directorios** con comprobación de existencia, escritura y espacio. Las
   bibliotecas de Radarr (películas) y Sonarr (series) se configuran por separado.
 - **Reproducción**: descargas simultáneas, tamaño máximo y URL base de `.strm`.
+- **Siembra**: mínimo de horas y ratio, force-start y políticas por tracker.
 - **Seguridad**: token web y hosts permitidos.
 - **Tareas programadas**: activar, cambiar cadencia, ver la próxima ejecución y lanzar ahora.
 

@@ -1,6 +1,6 @@
 import { api } from '../api.js';
 import { attentionSummary } from '../attention.js';
-import { esc, fmtBytes, fmtDate } from '../format.js';
+import { esc, fmtBytes, fmtDate, fmtInt } from '../format.js';
 import { state } from '../store.js';
 import { $, badge, icon, setHeader, status } from '../ui.js';
 
@@ -168,10 +168,11 @@ function diskLine(item, key) {
 }
 
 export async function renderSettings({ signal, query } = {}) {
-  const [data, schedule, attention] = await Promise.all([
+  const [data, schedule, attention, seed] = await Promise.all([
     api('/api/settings', { signal }),
     api('/api/scheduler', { signal }),
     api('/api/attention', { signal }).catch(() => null),
+    api('/api/seed', { signal }).catch(() => null),
   ]);
   state.attention = attention;
   setHeader('Configuración', 'Sistema');
@@ -182,6 +183,37 @@ export async function renderSettings({ signal, query } = {}) {
   const dirs = items.filter((item) => item.section === 'directorios');
   const playback = items.filter((item) => item.section === 'reproduccion');
   const security = items.filter((item) => item.section === 'seguridad');
+  const seedDefaults = seed?.defaults || { min_hours: 72, ratio: 1, force: true };
+  const policyByTracker = new Map(
+    (seed?.policies || []).map((item) => [item.tracker, item]),
+  );
+  const seedTrackers = [
+    ...new Set([
+      ...(seed?.known || []).map((item) => item.tracker),
+      ...(seed?.policies || []).map((item) => item.tracker),
+    ]),
+  ].filter(Boolean).sort((a, b) => a.localeCompare(b, 'es'));
+  const trackerRows = seedTrackers.map((tracker) => {
+    const current = policyByTracker.get(tracker) || {};
+    const known = (seed?.known || []).find((item) => item.tracker === tracker) || {};
+    const hours = current.min_seed_hours ?? seedDefaults.min_hours;
+    const ratio = current.target_ratio ?? seedDefaults.ratio;
+    const enabled = current.enabled !== false;
+    return `<tr>
+      <td data-label="Tracker"><strong>${esc(tracker)}</strong>
+        <div class="tiny faint">${esc(known.privacy || current.privacy || '')}${known.releases ? ` · ${fmtInt(known.releases)} releases` : ''}</div>
+      </td>
+      <td data-label="Horas"><input class="input input-sm" type="number" min="0" max="8760"
+        data-seed-tracker="${esc(tracker)}" data-seed-field="min_seed_hours" value="${esc(hours)}"></td>
+      <td data-label="Ratio"><input class="input input-sm" type="number" min="0" max="100" step="0.1"
+        data-seed-tracker="${esc(tracker)}" data-seed-field="target_ratio" value="${esc(ratio)}"></td>
+      <td data-label="Activa"><input type="checkbox" aria-label="Activar política de ${esc(tracker)}"
+        data-seed-tracker="${esc(tracker)}" data-seed-field="enabled" ${enabled ? 'checked' : ''}></td>
+      <td class="actions" data-label="">
+        <button class="btn btn-sm btn-ghost" data-action="seed-policy-save" data-tracker="${esc(tracker)}">Guardar</button>
+      </td>
+    </tr>`;
+  }).join('');
 
   $('#view').innerHTML = `
     <div class="panel pad section">
@@ -202,6 +234,7 @@ export async function renderSettings({ signal, query } = {}) {
         <button class="chip" data-action="settings-jump" data-target="settings-directories">Directorios</button>
         <button class="chip" data-action="settings-jump" data-target="settings-playback">Reproducción</button>
         <button class="chip" data-action="settings-jump" data-target="settings-security">Seguridad</button>
+        <button class="chip" data-action="settings-jump" data-target="settings-seed">Siembra</button>
         <button class="chip" data-action="settings-jump" data-target="settings-scheduler">Tareas</button>
       </nav>
     </div>
@@ -237,6 +270,41 @@ export async function renderSettings({ signal, query } = {}) {
       <div class="panel-body">${security.map(field).join('')}</div>
     </div>
 
+    <div class="panel section" id="settings-seed">
+      <div class="panel-head">
+        <h2>Siembra</h2>
+        <span class="right tiny faint">TOD no borra torrents ni ficheros</span>
+      </div>
+      <div class="panel-body">
+        <p class="muted tiny" style="margin-top:0">
+          TOD mantiene el torrent en force-start hasta cumplir el mínimo. Después
+          lo suelta y qBittorrent aplica sus propias reglas de ratio y tiempo.
+          El borrado del torrent y su contenido lo decide qBittorrent.
+        </p>
+        <div class="form-grid">
+          <label class="field"><span>Horas mínimas por defecto</span>
+            <input class="input" type="number" min="0" max="8760" data-seed-field="min_hours" value="${esc(seedDefaults.min_hours)}">
+          </label>
+          <label class="field"><span>Ratio mínimo por defecto</span>
+            <input class="input" type="number" min="0" max="100" step="0.1" data-seed-field="ratio" value="${esc(seedDefaults.ratio)}">
+          </label>
+          <label class="inline check" style="align-self:end;padding-bottom:4px">
+            <input type="checkbox" data-seed-field="force" ${seedDefaults.force ? 'checked' : ''}>
+            Forzar siembra hasta el mínimo
+          </label>
+          <label class="field"><span>&nbsp;</span>
+            <button class="btn btn-primary" data-action="seed-save">${icon('check', 'sm')} Guardar siembra</button>
+          </label>
+        </div>
+        <div class="table-wrap" style="margin-top:14px">
+          <table class="table--stack">
+            <thead><tr><th>Tracker</th><th>Horas</th><th>Ratio</th><th>Activa</th><th></th></tr></thead>
+            <tbody>${trackerRows || '<tr><td colspan="5" class="tiny faint">Aún no hay trackers indexados.</td></tr>'}</tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
     <div class="panel flush section" id="settings-scheduler">
       <div class="panel-head"><h2>${sectionDot(attention, 'tareas')}Tareas programadas</h2><span class="right tiny faint">${schedule.items?.length || 0} tareas</span></div>
       <div class="table-wrap">
@@ -256,7 +324,7 @@ export async function renderSettings({ signal, query } = {}) {
   if (!state.settingsDirtyHandler) {
     state.settingsDirtyHandler = (event) => {
       if (state.view !== 'settings') return;
-      if (!event.target.closest('[data-setting], [data-task]')) return;
+      if (!event.target.closest('[data-setting], [data-task], [data-seed-field], [data-seed-tracker]')) return;
       state.settingsDirty = true;
       $('#settingsDirty')?.classList.remove('hidden');
     };
@@ -269,6 +337,7 @@ export async function renderSettings({ signal, query } = {}) {
     directorios: 'settings-directories',
     reproduccion: 'settings-playback',
     seguridad: 'settings-security',
+    siembra: 'settings-seed',
     tareas: 'settings-scheduler',
   };
   const target = sections[query?.get('section')];

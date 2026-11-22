@@ -179,10 +179,10 @@ def test_recover_jobs_marks_running_as_cancelled(tmp_path):
     assert "reinicio" in job["error"]
 
 
-def test_private_delete_files_rejected_before_qbit(tmp_path):
+def test_delete_is_left_to_qbittorrent(tmp_path):
     db, _, _ = seed(tmp_path)
     config = config_for(tmp_path, db)
-    with pytest.raises(Exception, match="tracker privado"):
+    with pytest.raises(Exception, match="qBittorrent"):
         admin.qbit_action(
             config, "hash1", "delete", delete_files=True
         )
