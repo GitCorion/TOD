@@ -74,10 +74,10 @@ export async function renderDashboard({ signal }) {
         <span class="value">${fmtInt(onJellyfin)}</span>
         <span class="hint">${fmtInt(movies.published || 0)} películas · ${fmtInt(series.published || 0)} series</span>
       </div>
-      <div class="kpi" title="Episodios concretos que ya aparecen en Jellyfin. Una serie puede aportar varios.">
+      <div class="kpi" title="Cada episodio con acceso propio cuenta una vez. No se agrupa por serie.">
         <span class="label">Episodios en Jellyfin</span>
         <span class="value">${fmtInt(catalog.episodes || 0)}</span>
-        <span class="hint">repartidos en ${fmtInt(series.published || 0)} series</span>
+        <span class="hint">cuentan por separado</span>
       </div>
       <div class="kpi ${downloads.error ? 'red' : downloads.downloading ? 'amber' : ''}">
         <span class="label">Descargando</span>
