@@ -9,8 +9,8 @@ const DOWNLOAD = {
 };
 
 const PUBLICATION = {
-  publicado: { label: 'Añadido', tone: 'ok' },
-  pendiente: { label: 'Sin añadir', tone: 'info' },
+  publicado: { label: 'En Jellyfin', tone: 'ok' },
+  pendiente: { label: 'Falta en Jellyfin', tone: 'info' },
   sin_fuente: { label: 'Sin fuente', tone: 'muted' },
 };
 
@@ -82,7 +82,7 @@ export const EVENT_LABELS = {
   'web.ondemand_limit': 'Cambio de límite',
   'web.manual_search': 'Búsqueda manual de fuentes',
   'web.collection_add': 'Añadir colección',
-  'web.title_monitor': 'Monitorizar título',
+  'web.title_monitor': 'Título en seguimiento',
   'web.title_library': 'Añadir título',
   'web.series_library': 'Añadir serie',
   'web.library_remove': 'Quitar de TOD',
@@ -246,7 +246,7 @@ export const TASKS = [
   },
   {
     kind: 'rss-sync', title: 'Novedades RSS', category: 'captura',
-    desc: 'Ingesta lo último de Prowlarr/Jackett y publica seguimientos encontrados.',
+    desc: 'Ingesta lo último de Prowlarr/Jackett y añade a Jellyfin los seguimientos encontrados.',
     fields: [
       { name: 'limit', label: 'Resultados', type: 'number', value: 200, min: 1 },
       { name: 'delay', label: 'Pausa (s)', type: 'number', value: 0.2, step: 0.1 },
@@ -302,10 +302,10 @@ export const TASKS = [
   },
   {
     kind: 'arr-mirror', title: 'Espejo Radarr/Sonarr', category: 'biblioteca',
-    desc: 'Importa altas, busca fuentes y publica los .strm posibles.',
+    desc: 'Importa altas, busca fuentes y crea sus entradas de Jellyfin.',
     fields: [
       { name: 'source_limit', label: 'Títulos a buscar', type: 'number', value: 50, min: 0 },
-      { name: 'publish_limit', label: 'Títulos con fichero a publicar', type: 'number', value: 200, min: 0 },
+      { name: 'publish_limit', label: 'Títulos a añadir a Jellyfin', type: 'number', value: 200, min: 0 },
       { name: 'delay', label: 'Pausa (s)', type: 'number', value: 0.2, step: 0.1 },
     ],
   },

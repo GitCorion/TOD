@@ -49,7 +49,7 @@ DEFAULT_TASKS: tuple[TaskSpec, ...] = (
     ),
     TaskSpec(
         "arr-mirror", "Espejo Radarr/Sonarr", "arr-mirror",
-        "Importa las altas de Radarr/Sonarr, busca fuentes y publica .strm.",
+        "Importa las altas de Radarr/Sonarr, busca fuentes y crea sus entradas de Jellyfin.",
         interval=1800,
         params={"source_limit": 50, "publish_limit": 200, "delay": 0.2},
     ),
@@ -60,7 +60,7 @@ DEFAULT_TASKS: tuple[TaskSpec, ...] = (
     ),
     TaskSpec(
         "rss-sync", "Novedades RSS", "rss-sync",
-        "Captura novedades de Prowlarr/Jackett y publica .strm.",
+        "Captura novedades de Prowlarr/Jackett y crea sus entradas de Jellyfin.",
         interval=1800,
         params={"limit": 200, "delay": 0.3},
     ),
@@ -72,7 +72,7 @@ DEFAULT_TASKS: tuple[TaskSpec, ...] = (
     ),
     TaskSpec(
         "monitor", "Seguimiento diario", "monitor",
-        "Busca fuentes de títulos monitorizados ya disponibles.",
+        "Busca fuentes de los títulos en seguimiento que ya están disponibles.",
         schedule="daily", at="04:20",
         params={"limit": 100, "delay": 2},
     ),

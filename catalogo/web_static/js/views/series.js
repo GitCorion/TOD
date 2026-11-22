@@ -12,7 +12,7 @@ function episodeStatus(ep) {
   if (ep.downloaded) return status('Descargado', 'ok');
   if (ep.incomplete) return status('Sin fuente', 'warn');
   if (ep.library_added && ep.monitored && ep.available === false) return status('Sin estrenar', 'muted');
-  if (ep.library_added && ep.monitored) return `${status('En Radarr/Sonarr', 'info')} ${status('Monitorizado', 'info')}`;
+  if (ep.library_added && ep.monitored) return `${status('En Radarr/Sonarr', 'info')} ${status('En seguimiento', 'info')}`;
   if (ep.library_added) return status('En Radarr/Sonarr', 'info');
   if (!ep.in_catalog) return status('Sin catalogar', 'muted');
   return status('Sin fuente', 'muted');
@@ -67,8 +67,8 @@ export async function renderSeries({ params, query, signal }) {
     const name = ep.name || `Episodio ${ep.episode}`;
     const actions = ep.in_catalog
       ? `${!ep.library_added && !ep.monitored ? `<button class="btn btn-sm btn-ghost" data-action="library-title" data-id="${ep.id}" data-key="${esc(ep.key)}" data-title="${esc(name)}" data-releases="${ep.releases || 0}">Catalogar</button>` : ''}
-         ${!ep.published && !ep.monitored ? `<button class="btn btn-sm btn-ghost" data-action="monitor-title" data-id="${ep.id}">Monitorizar</button>` : ''}
-         ${!ep.published && ep.monitored ? `<button class="btn btn-sm btn-ghost" data-action="unmonitor-title" data-id="${ep.id}">Dejar de monitorizar</button>` : ''}
+         ${!ep.published && !ep.monitored ? `<button class="btn btn-sm btn-ghost" data-action="monitor-title" data-id="${ep.id}">Seguir</button>` : ''}
+         ${!ep.published && ep.monitored ? `<button class="btn btn-sm btn-ghost" data-action="unmonitor-title" data-id="${ep.id}">Dejar de seguir</button>` : ''}
          ${!ep.downloaded && !ep.published ? `<button class="btn btn-sm" data-action="download-now" data-key="${esc(ep.key)}">Descargar ahora</button>` : ''}
          <a class="btn btn-sm btn-ghost" href="#/title/${ep.id}">Abrir</a>`
       : '<span class="faint">—</span>';
@@ -126,7 +126,7 @@ export async function renderSeries({ params, query, signal }) {
           ${series.overview ? `<p class="overview">${esc(series.overview)}</p>` : ''}
           <div class="detail-actions">
             ${allAdded ? '' : `<button class="btn btn-primary" data-action="library-series" data-tmdb="${tmdb}" data-title="${esc(series.title || '')}" data-mode="${seriesMode}">${icon('plus')} ${seriesAction}</button>`}
-            <button class="btn" data-action="sync-series" data-tmdb="${tmdb}">${icon('search')} Buscar y publicar</button>
+            <button class="btn" data-action="sync-series" data-tmdb="${tmdb}">${icon('search')} Buscar y añadir a Jellyfin</button>
             ${totals.library ? `<button class="btn btn-danger" data-action="unpublish-series" data-tmdb="${tmdb}">Quitar</button>` : ''}
             <a class="btn btn-ghost" href="${esc(data.tmdb_url || '#')}" target="_blank" rel="noreferrer">${icon('external')} TMDB</a>
           </div>
@@ -151,7 +151,7 @@ export async function renderSeries({ params, query, signal }) {
         <div class="chips">${seasonChips}</div>
         <div class="right row" style="gap:6px">
           ${seasonAdded ? '' : `<button class="btn btn-sm btn-ghost" data-action="library-season" data-season="${currentSeason}" data-tmdb="${tmdb}" data-title="${esc(series.title || '')}" data-mode="${seasonMode}">${icon('plus', 'sm')} ${seasonAction}</button>`}
-          <button class="btn btn-sm btn-ghost" data-action="sync-season" data-season="${currentSeason}">${icon('search', 'sm')} Buscar y publicar</button>
+          <button class="btn btn-sm btn-ghost" data-action="sync-season" data-season="${currentSeason}">${icon('search', 'sm')} Buscar y añadir a Jellyfin</button>
           <button class="btn btn-sm btn-ghost" data-action="manual-search-season" data-season="${currentSeason}">${icon('search', 'sm')} Buscar manualmente</button>
         </div>
       </div>

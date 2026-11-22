@@ -59,9 +59,9 @@ tod monitor --limit 100 --delay 2
 
 ## Seguimiento por defecto
 
-Todo título que **no esté en Radarr/Sonarr** se marca como monitorizado al
-entrar en TOD. Así se busca una fuente y se publica su `.strm` sin tener que
-pedirlo a mano. Al publicarse el `.strm`, el seguimiento se cierra solo.
+Todo título que **no esté en Radarr/Sonarr** queda en seguimiento al
+entrar en TOD. Así se busca una fuente y TOD crea su `.strm` sin tener que
+pedirlo a mano. Cuando existe el `.strm`, el seguimiento se cierra solo.
 
 `library_added` es la fuente de verdad de pertenencia a los *arr. Si un título
 sale de Radarr/Sonarr, vuelve a seguimiento; si entra, deja de perseguirse
@@ -79,7 +79,7 @@ al importarse, para que no queden fuera de la reconciliación.
   no pasa por admisión ni crea un compromiso de seed.
 
 El botón **Añadir a Seguimiento** decide si los títulos nuevos se buscan y se
-publican cuando haya fuente. Sin esa marca solo se crea la identidad.
+añaden a Jellyfin cuando haya fuente. Sin esa marca solo se crea la identidad.
 
 Añadir no descarga ni ocupa disco. Cada lote queda en
 `intake_batches`/`intake_items` con el resultado de cada línea, aunque falle.

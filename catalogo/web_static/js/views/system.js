@@ -152,12 +152,12 @@ export async function renderSystem({ signal }) {
       <div class="panel-body">
         ${disks || empty('Sin rutas', 'No se pudieron leer los discos.')}
         <div class="divider"></div>
-        <div class="kv"><span>Carpeta de publicación</span><span class="mono">${esc(system.paths?.catalog_library || '—')}</span></div>
+        <div class="kv"><span>Carpeta de los .strm</span><span class="mono">${esc(system.paths?.catalog_library || '—')}</span></div>
         <div class="kv"><span>Semillas</span><span class="mono">${esc(system.paths?.seed_root || '—')}</span></div>
         ${system.paths?.library_root_movies ? `<div class="kv"><span>Carpeta de películas</span><span class="mono">${esc(system.paths.library_root_movies)}</span></div>` : ''}
         ${system.paths?.library_root_series ? `<div class="kv"><span>Carpeta de series</span><span class="mono">${esc(system.paths.library_root_series)}</span></div>` : ''}
         ${!system.paths?.library_root_movies && !system.paths?.library_root_series ? `<div class="kv"><span>Carpeta común</span><span class="mono">${esc(system.paths?.library_root || '—')}</span></div>` : ''}
-        <div class="kv"><span>Raíces .strm</span><span class="mono">${esc(system.paths?.strm_roots || '—')} <a class="tiny" href="#/settings">Cambiar</a></span></div>
+        <div class="kv"><span>Carpetas .strm</span><span class="mono">${esc(system.paths?.strm_roots || '—')} <a class="tiny" href="#/settings">Cambiar</a></span></div>
       </div>
     </div>
 

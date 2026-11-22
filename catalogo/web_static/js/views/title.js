@@ -158,11 +158,11 @@ export async function renderTitle({ params, query, signal }) {
           <div class="row">
             ${badge(item.kind === 'movie' ? 'película' : 'episodio', 'mono')}
             ${tag ? badge(tag, 'mono') : ''}
-            ${od.published ? status('En Jellyfin', 'ok') : status('Sin .strm', 'muted')}
+            ${od.published ? status('En Jellyfin', 'ok') : status('Falta en Jellyfin', 'muted')}
             ${od.library_added ? status('En Radarr/Sonarr', 'info') : ''}
             ${item.monitored
-              ? status(od.available === false ? 'Sin estrenar' : 'Monitorizado', od.available === false ? 'muted' : 'info')
-              : status('Sin monitorizar', 'muted')}
+              ? status(od.available === false ? 'Sin estrenar' : 'En seguimiento', od.available === false ? 'muted' : 'info')
+              : status('Sin seguimiento', 'muted')}
             ${od.downloaded ? status('Descargada', 'ok') : ''}
             ${od.download === 'descargando' ? status('Descargando', 'info') : ''}
           </div>
@@ -174,12 +174,12 @@ export async function renderTitle({ params, query, signal }) {
           </a>` : ''}
           <div class="detail-actions">
             ${!od.library_added && !item.monitored ? `<button class="btn btn-primary" data-action="library-title" data-id="${item.id}" data-key="${esc(item.key)}" data-title="${esc(item.title || '')}" data-releases="${data.releases.length}">${icon('plus')} Catalogar en TOD</button>` : ''}
-            ${od.library_added && !od.published && item.monitored ? `<button class="btn btn-danger" data-action="unmonitor-title" data-id="${item.id}">Dejar de monitorizar</button>` : ''}
-            ${od.library_added && !od.published && !item.monitored && !od.has_file && !od.downloaded ? `<button class="btn" data-action="monitor-title" data-id="${item.id}">Monitorizar</button>` : ''}
+            ${od.library_added && !od.published && item.monitored ? `<button class="btn btn-danger" data-action="unmonitor-title" data-id="${item.id}">Dejar de seguir</button>` : ''}
+            ${od.library_added && !od.published && !item.monitored && !od.has_file && !od.downloaded ? `<button class="btn" data-action="monitor-title" data-id="${item.id}">Seguir</button>` : ''}
             ${!od.downloaded && data.releases.length ? `<button class="btn" data-action="download-now" data-key="${esc(item.key)}">${icon('download')} Descargar ahora</button>` : ''}
             ${od.published ? `<button class="btn btn-danger" data-action="unpublish-title" data-id="${item.id}">Quitar de Jellyfin</button>` : ''}
             <button class="btn btn-ghost" data-action="manual-search" data-id="${item.id}" data-title="${esc(item.title || '')}">${icon('search')} Buscar manualmente</button>
-            <button class="btn btn-ghost" data-action="sync-title" data-id="${item.id}">${icon('search')} Buscar y publicar</button>
+            <button class="btn btn-ghost" data-action="sync-title" data-id="${item.id}">${icon('search')} Buscar y añadir a Jellyfin</button>
             ${item.tmdb ? `<a class="btn btn-ghost" href="${esc(data.tmdb_url || '#')}" target="_blank" rel="noreferrer">${icon('external')} TMDB</a>` : ''}
           </div>
         </div>

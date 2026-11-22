@@ -483,7 +483,7 @@ def set_library(
     """Marca un título como solicitado en TOD.
 
     No implica que esté en Radarr/Sonarr: eso solo lo decide el espejo de
-    *arr. Aquí se activa el seguimiento para buscar fuentes y publicar el
+    *arr. Aquí se activa el seguimiento para buscar fuentes y crear el
     `.strm` cuando exista.
     """
     from contextlib import closing
@@ -544,7 +544,7 @@ def monitor_titles(
     force: bool = False,
     ctx=None,
 ) -> dict[str, Any]:
-    """Busca fuentes para títulos en seguimiento y publica si aparecen."""
+    """Busca fuentes para títulos en seguimiento y crea su `.strm` si aparecen."""
     from contextlib import closing
 
     from .db import connect
@@ -1583,7 +1583,7 @@ def job_library(ctx: JobContext) -> dict[str, Any]:
 
 
 def job_arr_mirror(ctx: JobContext) -> dict[str, Any]:
-    """Espeja Radarr/Sonarr, busca fuentes y publica los `.strm` posibles."""
+    """Espeja Radarr/Sonarr, busca fuentes y crea los `.strm` posibles."""
     params = ctx.params
     source_limit = max(0, _int(params.get("source_limit"), 50))
     publish_limit = max(0, _int(params.get("publish_limit"), 200))
@@ -1629,7 +1629,7 @@ def job_arr_mirror(ctx: JobContext) -> dict[str, Any]:
     for index, (key, _kind) in enumerate(pending):
         ctx.check()
         ctx.report(
-            f"publicando {key} ({index + 1}/{len(pending)})",
+            f"añadiendo {key} a Jellyfin ({index + 1}/{len(pending)})",
             progress=0.72 + 0.2 * (index / max(1, len(pending))),
         )
         report = export_strm(
@@ -1654,7 +1654,7 @@ def job_arr_mirror(ctx: JobContext) -> dict[str, Any]:
     for index, key in enumerate(published):
         ctx.check()
         ctx.report(
-            f"publicando biblioteca {key} ({index + 1}/{len(published)})",
+            f"añadiendo biblioteca {key} a Jellyfin ({index + 1}/{len(published)})",
             progress=0.92 + 0.06 * (index / max(1, len(published))),
         )
         report = export_strm(
@@ -1677,7 +1677,7 @@ def job_arr_mirror(ctx: JobContext) -> dict[str, Any]:
     notified = (
         jellyfin_notify(ctx.config, to_notify[:500]) if to_notify else None
     )
-    ctx.report("espejo y publicación terminados", progress=0.99)
+    ctx.report("espejo y entradas de Jellyfin terminadas", progress=0.99)
     return {
         "library": library,
         "mirror": mirror,

@@ -126,9 +126,9 @@ SETTINGS: tuple[Setting, ...] = (
     # Directorios
     Setting(
         "catalog_library", "catalog_library", "directorios",
-        "Carpeta de publicación (.strm)", kind="path",
+        "Carpeta de los .strm", kind="path",
         env="CATALOGO_CATALOG_LIBRARY", default="/mnt/catalogo",
-        help="Donde TOD escribe los .strm que lee Jellyfin.",
+        help="Aquí escribe TOD los .strm que Jellyfin lee como películas y series.",
     ),
     Setting(
         "library_root_movies", "library_root_movies", "directorios",

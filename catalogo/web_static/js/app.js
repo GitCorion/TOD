@@ -576,7 +576,7 @@ function openLibraryTitle(id, key, title, releases) {
     `<p class="muted" style="margin-top:0">Se añadirá el título.</p>
      <label class="inline check">
        <input type="checkbox" name="monitored" ${Number(releases) ? '' : 'checked'}>
-       Monitorizar para buscar fuentes a diario
+       Seguir para buscar fuentes a diario
      </label>`,
     `<button class="btn btn-ghost" data-action="modal-close">Cancelar</button>
      <button class="btn btn-primary" data-action="library-title-start" data-id="${id}" data-key="${esc(key)}" data-releases="${releases}">Añadir</button>`,
@@ -598,7 +598,7 @@ async function startLibraryTitle(element) {
     if (releases && key) {
       await acquireKeys([key], key.startsWith('series:') ? 'series' : 'movie', 'publish');
     } else {
-      toast(monitored ? 'Añadido y monitorizado' : 'Añadido', 'ok');
+      toast(monitored ? 'Añadido y en seguimiento' : 'Añadido', 'ok');
     }
     await route();
   } catch (error) {
@@ -631,7 +631,7 @@ function openLibrarySeries(tmdb, title, season, mode = 'add') {
     `<p class="muted" style="margin-top:0">${intro}</p>
      <label class="inline check">
        <input type="checkbox" name="monitored" ${monitoredByDefault}>
-       Monitorizar para buscar fuentes a diario
+       Seguir para buscar fuentes a diario
      </label>`,
     `<button class="btn btn-ghost" data-action="modal-close">Cancelar</button>
      <button class="btn btn-primary" data-action="library-series-start" data-tmdb="${tmdb}" data-mode="${mode}" ${season ? `data-season="${season}"` : ''}>${action}</button>`,
@@ -665,7 +665,7 @@ async function startLibrarySeries(element) {
     const done = mode === 'add'
       ? (season !== null ? 'Temporada añadida' : 'Serie añadida')
       : 'Episodios añadidos';
-    const doneMonitored = `${done} y ${mode === 'add' ? 'monitorizada' : 'monitorizados'}`;
+    const doneMonitored = `${done} y en seguimiento`;
     const queued = result.job_id ? `, búsqueda en cola (#${result.job_id})` : '';
     closeModal();
     toast(
@@ -1436,8 +1436,8 @@ document.addEventListener('click', async (event) => {
         const result = await apiPost(`/api/titles/${element.dataset.id}/monitor`, { monitored: true });
         toast(
           result.job_id
-            ? `Monitorizado · búsqueda en cola (#${result.job_id})`
-            : 'Monitorizado hasta encontrar fuente',
+            ? `En seguimiento · búsqueda en cola (#${result.job_id})`
+            : 'En seguimiento hasta encontrar fuente',
           'ok',
           result.job_id
             ? `<button class="btn btn-sm btn-ghost" data-action="job-detail" data-id="${result.job_id}">Ver tarea</button>`
@@ -1543,7 +1543,7 @@ document.addEventListener('click', async (event) => {
         } else if (mode === 'library' && !result.job_id) {
           toast(
             monitored
-              ? `${fmtInt(monitored)} monitorizadas hasta encontrar fuente`
+              ? `${fmtInt(monitored)} en seguimiento hasta encontrar fuente`
               : 'Toda la colección ya está añadida',
             monitored ? 'warn' : 'ok',
           );

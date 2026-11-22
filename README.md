@@ -26,15 +26,15 @@ Las URLs y API keys se introducen en la web y TOD aplica el resto. En Docker,
 - **Añadir desde una sola caja**: un título, un enlace de TMDB, un ID o una
   lista. Se puede marcar «Añadir a Seguimiento» y el resultado queda registrado.
   También puedes subir un `.torrent` manual a qBittorrent.
-- **Publicar `.strm` multiversión** para Jellyfin: un `.strm` principal y una
+- **Crear entradas multiversión en Jellyfin**: un `.strm` principal y una
   variante por versión reproducible.
 - **Reproducir bajo demanda** desde qBittorrent con rangos HTTP reales (206).
 - **Sembrar con reglas** por tracker: mínimo de horas y ratio con force-start.
   Al cumplirse, TOD lo suelta y, por defecto, qBittorrent decide si borra el torrent. El borrado desde TOD es una opción desactivada.
 - **Descubrir fuentes** en Prowlarr, Jackett o ambos, sin listas de trackers escritas a mano.
 - **Leer Radarr/Sonarr por API**, nunca tocando sus bases de datos.
-- **Seguir por defecto** lo que no está en Radarr/Sonarr. En cuanto se publica
-  su `.strm`, TOD cierra el seguimiento y deja de buscar.
+- **Seguir por defecto** lo que no está en Radarr/Sonarr. En cuanto TOD crea
+  su `.strm`, cierra el seguimiento y deja de buscar.
 - **Automatizar** RSS, seguimiento, backfill, puente, restauración y límites de qBittorrent.
 - **Ver qué necesita atención** en Inicio, con el motivo y un enlace al ajuste exacto.
 - **Configurar integraciones, directorios y tareas** desde
@@ -60,7 +60,7 @@ Un único proceso sirve:
 
 ## Versiones y `.strm`
 
-Cada película o episodio publicado tiene un `.strm` principal. Películas y
+Cada película o episodio visible en Jellyfin tiene un `.strm` principal. Películas y
 episodios van en rutas distintas:
 
 ```text
@@ -85,7 +85,7 @@ series/Título (Año)/Season 01/Título S01E01 - 1080p Cast.strm
 - Cada variante apunta a una versión concreta y aparece como versión distinta
   en Jellyfin, para elegir calidad o audio.
 - El nombre usa calidad y audio; si se repiten, añade tracker o id.
-- Solo se publica si hay algo que reproducir: **un release vivo con seeds** o
+- Solo se crea la entrada si hay algo que reproducir: **un release vivo con seeds** o
   un fichero local/archivado. Los releases muertos no crean entradas vacías.
 - `library_files` se refresca desde Radarr/Sonarr. Si una API falla, TOD
   conserva las rutas que ya conocía en vez de vaciar la biblioteca.
@@ -247,6 +247,7 @@ la opción recomendada para un servidor completo.
 - [Arquitectura](docs/ARCHITECTURE.md)
 - [Operación y mantenimiento](docs/OPERATIONS.md)
 - [Integraciones paso a paso](docs/INTEGRATIONS.md)
+- [Glosario de la interfaz](docs/GLOSARIO.md)
 - [Cómo contribuir](CONTRIBUTING.md)
 - [Seguridad](SECURITY.md)
 

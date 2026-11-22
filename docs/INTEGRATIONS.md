@@ -72,7 +72,7 @@ con la API key de TMDB (v3).
 
 | Ajuste | Uso |
 |---|---|
-| Carpeta de publicación (`.strm`) | donde TOD escribe los `.strm` que lee Jellyfin |
+| Carpeta de los `.strm` | donde TOD escribe los `.strm` que lee Jellyfin |
 | Biblioteca de películas | raíz de Radarr (solo lectura) |
 | Biblioteca de series | raíz de Sonarr (solo lectura) |
 | Raíz común | opcional, si ambas comparten carpeta padre |

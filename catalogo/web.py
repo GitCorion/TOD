@@ -185,7 +185,7 @@ class App:
         for index, key in enumerate(keys):
             ctx.check()
             ctx.report(
-                f"publicando {index + 1}/{len(keys)}",
+                f"añadiendo a Jellyfin {index + 1}/{len(keys)}",
                 progress=0.5 + 0.5 * (index / max(1, len(keys))),
             )
             report = admin.export_strm(
@@ -1982,7 +1982,7 @@ class Handler(PlaybackHandler):
         if parts == ["ondemand", "pending-summary"] and not mutate:
             publication = params.get("publication") or "pendiente"
             if publication not in ("pendiente", "sin_fuente"):
-                raise WebError(400, "publicación no válida")
+                raise WebError(400, "estado de Jellyfin no válido")
             return self._json(
                 200,
                 ondemand.pending_summary(
@@ -2000,7 +2000,7 @@ class Handler(PlaybackHandler):
                 raise WebError(405, "usa POST")
             publication = str(body.get("publication") or "pendiente")
             if publication not in ("pendiente", "sin_fuente"):
-                raise WebError(400, "publicación no válida")
+                raise WebError(400, "estado de Jellyfin no válido")
             kind = str(body.get("kind") or "")
             if kind not in ("", "movie", "series"):
                 raise WebError(400, "tipo no válido")

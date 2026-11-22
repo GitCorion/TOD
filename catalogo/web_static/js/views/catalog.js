@@ -126,10 +126,10 @@ export async function renderCatalog({ query, signal }) {
     ['series', 'Series', facets.kind?.series || 0],
   ];
   const publicationChips = [
-    ['', 'Todos', data.total || 0, '', 'Quita el filtro de publicación'],
-    ['publicado', 'En Jellyfin', facets.publication?.publicado || 0, 'ok', 'Tiene un .strm publicado y Jellyfin puede verlo'],
-    ['pendiente', 'Pendiente de publicar', facets.publication?.pendiente || 0, 'info', 'Tiene una fuente viva, pero todavía no tiene .strm'],
-    ['sin_fuente', 'Sin fuente', facets.publication?.sin_fuente || 0, 'muted', 'No tiene ningún release reproducible'],
+    ['', 'Todos', data.total || 0, '', 'Quita el filtro de Jellyfin'],
+    ['publicado', 'En Jellyfin', facets.publication?.publicado || 0, 'ok', 'Aparece en Jellyfin: TOD ya creó su .strm'],
+    ['pendiente', 'Falta en Jellyfin', facets.publication?.pendiente || 0, 'info', 'Tiene una fuente, pero todavía no aparece en Jellyfin'],
+    ['sin_fuente', 'Sin fuente', facets.publication?.sin_fuente || 0, 'muted', 'No hay ningún release que reproducir'],
   ];
   const downloadChips = [
     ['', 'Todas', 0, '', 'Quita el filtro de descargas'],
@@ -185,7 +185,7 @@ export async function renderCatalog({ query, signal }) {
       </div>
       <div class="panel-body filter-details ${state.filtersOpen ? 'open' : ''}">
         <div class="filter-row">
-          <span class="filter-label" title="Estado de publicación en Jellyfin">Publicación</span>
+          <span class="filter-label" title="Si aparece en Jellyfin y si hay algo que reproducir">Estado</span>
           <div class="chips">
             ${publicationChips.map(([value, label, count, tone, hint]) => `<button class="chip ${filters.publication === value ? 'active' : ''}" data-action="catalog-filter" data-key="publication" data-value="${value}" title="${esc(hint)}">${tone ? `<span class="dot ${tone}"></span>` : ''}${esc(label)}${value ? ` <b>${fmtInt(count)}</b>` : ''}</button>`).join('')}
           </div>
@@ -214,7 +214,7 @@ export async function renderCatalog({ query, signal }) {
       ? filters.view === 'grid'
         ? `<div class="poster-grid">${cards}</div>`
         : `<div class="table-wrap"><table class="table--stack catalog-table">
-            <thead><tr><th style="width:28px"></th><th>Título</th><th title="Estado de publicación en Jellyfin">Estado</th><th class="num" title="Releases encontrados para este título">Fuentes</th><th title="De dónde llegó el título al catálogo">Origen</th><th></th></tr></thead>
+            <thead><tr><th style="width:28px"></th><th>Título</th><th title="Si aparece en Jellyfin y si hay algo que reproducir">Estado</th><th class="num" title="Releases encontrados para este título">Fuentes</th><th title="De dónde llegó el título al catálogo">Origen</th><th></th></tr></thead>
             <tbody>${rows}</tbody>
           </table></div>`
       : `<div class="panel">${empty('Sin resultados', 'Prueba otro estado, otro tipo o busca el título en TMDB.', `<div class="row">${clearButton}${tmdbButton}</div>`)}</div>`}

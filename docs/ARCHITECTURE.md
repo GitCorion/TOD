@@ -35,7 +35,7 @@ catalogo/
 5. Si está frío, un `GET` con `Range` autoriza el prepare; un escaneo sin
    `Range` sigue recibiendo `403`.
 6. El scheduler sincroniza qBittorrent, espeja Radarr/Sonarr, busca fuentes,
-   publica `.strm` y devuelve a *arr lo descargado por TOD.
+   crea los `.strm` y devuelve a *arr lo descargado por TOD.
 
 ## Descubrimiento de trackers
 

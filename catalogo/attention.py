@@ -93,7 +93,7 @@ SERVICES: dict[str, dict[str, Any]] = {
 # Rutas que se comprueban siempre. `fail` significa que sin ellas no se puede
 # completar el flujo principal; `warn`, que conviene revisarlas.
 PATHS: tuple[tuple[str, str, str], ...] = (
-    ("catalog_library", "Carpeta de publicación", "fail"),
+    ("catalog_library", "Carpeta de los .strm", "fail"),
     ("downloads_root", "Descargas de qBittorrent", "fail"),
     ("ondemand_save_path", "Carpeta on-demand", "fail"),
     ("seed_root", "Raíz de semillas", "warn"),

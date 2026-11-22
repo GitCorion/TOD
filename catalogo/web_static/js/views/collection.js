@@ -34,7 +34,7 @@ export async function renderCollection({ params, signal }) {
     } else if (part.published) {
       action = `<a class="btn btn-sm btn-ghost" href="${href}">Abrir</a>`;
     } else if (part.library_added || part.monitored) {
-      action = `<button class="btn btn-sm" data-action="manual-search" data-id="${part.asset_id}" data-title="${esc(part.title)}">${icon('search', 'sm')} Buscar y publicar</button>
+      action = `<button class="btn btn-sm" data-action="manual-search" data-id="${part.asset_id}" data-title="${esc(part.title)}">${icon('search', 'sm')} Buscar y añadir a Jellyfin</button>
                 <a class="btn btn-sm btn-ghost" href="${href}">Abrir</a>`;
     } else {
       action = `<button class="btn btn-sm btn-primary" data-action="library-title" data-id="${part.asset_id}" data-key="${esc(part.key)}" data-title="${esc(part.title)}" data-releases="${part.publication === 'pendiente' ? 1 : 0}">${icon('plus', 'sm')} Catalogar</button>

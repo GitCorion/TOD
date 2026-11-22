@@ -197,7 +197,7 @@ export async function renderMonitor({ query, signal }) {
         <tbody>${rows}</tbody>
       </table></div>` : `<div class="pad">${empty(
         filters.q || filters.state || filters.kind ? 'Sin resultados con esos filtros' : 'No hay títulos en seguimiento',
-        'Los títulos monitorizados sin .strm aparecen aquí hasta que se encuentra una fuente.',
+        'Los títulos en seguimiento que aún no están en Jellyfin aparecen aquí hasta que se encuentra una fuente.',
       )}</div>`}
     </div>
 

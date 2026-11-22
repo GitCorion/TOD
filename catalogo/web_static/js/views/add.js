@@ -439,7 +439,7 @@ export async function renderAdd({ query, params, signal }) {
               aria-describedby="addHelp">${esc(initial)}</textarea>
           </label>
           <div class="add-controls">
-            <label class="inline check" title="Busca fuentes y publica el .strm cuando haya">
+            <label class="inline check" title="Busca fuentes y añade el título a Jellyfin cuando haya">
               <input type="checkbox" id="addFollow" checked> Añadir a Seguimiento
             </label>
             <div class="row">
