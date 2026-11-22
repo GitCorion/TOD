@@ -1166,9 +1166,9 @@ document.addEventListener('click', async (event) => {
     }
     if (action === 'settings-save') {
       const values = {};
-      $$('[data-setting]').forEach((input) => {
+      $$('input[data-setting], select[data-setting], textarea[data-setting]').forEach((input) => {
         const key = input.dataset.setting;
-        if (!key) return;
+        if (!key || input.disabled) return;
         if (input.type === 'password' && !input.value) return;
         values[key] = input.value;
       });
@@ -1186,7 +1186,7 @@ document.addEventListener('click', async (event) => {
       return;
     }
     if (action === 'settings-clear') {
-      const key = element.dataset.setting;
+      const key = element.dataset.clearSetting;
       const ok = await confirmModal({
         title: 'Borrar ajuste',
         message: `Se borrará el valor guardado de ${key}. Volverá el valor del entorno o el de por defecto.`,
@@ -1205,9 +1205,9 @@ document.addEventListener('click', async (event) => {
       element.disabled = true;
       element.textContent = 'Probando…';
       const values = {};
-      $$('[data-setting]').forEach((input) => {
+      $$('input[data-setting], select[data-setting], textarea[data-setting]').forEach((input) => {
         const key = input.dataset.setting;
-        if (!key) return;
+        if (!key || input.disabled) return;
         if (input.type === 'password' && !input.value) return;
         values[key] = input.value;
       });
@@ -1233,7 +1233,7 @@ document.addEventListener('click', async (event) => {
       return;
     }
     if (action === 'settings-path') {
-      const key = element.dataset.setting;
+      const key = element.dataset.pathSetting;
       const input = $(`[data-setting="${CSS.escape(key)}"]`);
       const result = await apiPost('/api/settings/path-check', { key, path: input?.value || '' });
       const target = $(`[data-path-for="${CSS.escape(key)}"]`);

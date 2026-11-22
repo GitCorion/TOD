@@ -59,11 +59,11 @@ function field(item) {
       ? status(`Configurado ${item.hint || ''}`, 'ok')
       : status('Sin configurar', 'muted'));
     if (item.configured) {
-      extra.push(`<button class="btn btn-sm btn-danger" data-action="settings-clear" data-setting="${key}">Borrar</button>`);
+      extra.push(`<button class="btn btn-sm btn-danger" data-action="settings-clear" data-clear-setting="${key}">Borrar</button>`);
     }
   }
   if (item.kind === 'path' || item.kind === 'paths') {
-    extra.push(`<button class="btn btn-sm btn-ghost" data-action="settings-path" data-setting="${key}">${icon('search', 'sm')} Comprobar</button>`);
+    extra.push(`<button class="btn btn-sm btn-ghost" data-action="settings-path" data-path-setting="${key}">${icon('search', 'sm')} Comprobar</button>`);
   }
   return `<div class="settings-item">
     <div class="settings-label">${label}<span class="tiny faint">${esc(item.help || '')}</span></div>
@@ -416,7 +416,7 @@ export async function renderSettings({ signal, query } = {}) {
       });
       const focus = query.get('focus');
       if (!focus) return;
-      const input = document.querySelector(`[data-setting="${CSS.escape(focus)}"]`);
+      const input = document.querySelector(`input[data-setting="${CSS.escape(focus)}"], select[data-setting="${CSS.escape(focus)}"]`);
       if (!input) return;
       input.closest('.settings-item')?.classList.add('attention-focus');
       input.focus({ preventScroll: true });
