@@ -284,7 +284,7 @@ export async function renderSettings({ signal, query } = {}) {
           <label class="field"><span>Preferencia</span>
             <select class="input" data-language>
               <option value="any" ${languagePreference === 'any' ? 'selected' : ''}>Cualquier idioma</option>
-              <option value="prefer_spanish" ${languagePreference === 'prefer_spanish' ? 'selected' : ''}>Preferir español, con vuelta atrás</option>
+              <option value="prefer_spanish" ${languagePreference === 'prefer_spanish' ? 'selected' : ''}>Español primero; si no hay, otra fuente</option>
               <option value="only_spanish" ${languagePreference === 'only_spanish' ? 'selected' : ''}>Solo español</option>
             </select>
           </label>
@@ -293,9 +293,9 @@ export async function renderSettings({ signal, query } = {}) {
           </label>
         </div>
         <p class="muted tiny" style="margin:10px 0 0">
-          «Preferir español» ordena primero castellano/latino y deja las fuentes
-          sin idioma verificado como respaldo. «Solo español» excluye las que no
-          tengan idioma español verificado. No pausa indexers: para eso usa
+          «Español primero» elige antes una fuente en castellano o latino. Si no
+          encuentra ninguna, usa otra. «Solo español» descarta las fuentes que
+          no tengan el español verificado. Esto no pausa indexers: para eso usa
           Seguimiento → Indexers.
         </p>
       </div>
