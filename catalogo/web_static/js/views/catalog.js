@@ -140,6 +140,19 @@ export async function renderCatalog({ query, signal }) {
     ['sin_descarga', 'Sin descarga', facets.download?.sin_descarga || 0, '', 'No hay ninguna descarga asociada'],
   ];
 
+  const bulkPublication = ['pendiente', 'sin_fuente'].includes(filters.publication);
+  const bulkCopy = filters.publication === 'sin_fuente'
+    ? {
+        title: `${fmtInt(data.total || 0)} títulos sin fuente`,
+        text: 'TOD buscará un release para cada película y episodio. Puede tardar horas; en el siguiente paso puedes poner un límite.',
+        button: `Buscar fuentes en los ${fmtInt(data.total || 0)}`,
+      }
+    : {
+        title: `${fmtInt(data.total || 0)} títulos con fuente, fuera de Jellyfin`,
+        text: 'TOD comprobará las fuentes de cada película y episodio y creará su acceso en Jellyfin. Puede tardar; en el siguiente paso puedes poner un límite.',
+        button: `Preparar los ${fmtInt(data.total || 0)} para Jellyfin`,
+      };
+
   const originChips = Object.entries(facets.origin || {})
     .filter(([value]) => value && value !== 'mixed')
     .map(([value, count]) => [value, originLabel(value), count]);
@@ -204,6 +217,16 @@ export async function renderCatalog({ query, signal }) {
         </div>` : ''}
       </div>
     </div>
+
+    ${bulkPublication && data.total ? `<div class="bulk-bar">
+      <div class="bulk-copy">
+        <strong>${esc(bulkCopy.title)}</strong>
+        <span>${esc(bulkCopy.text)}</span>
+      </div>
+      <button class="btn btn-primary" data-action="sync-pending-open" data-publication="${esc(filters.publication)}">
+        ${icon('search', 'sm')} ${esc(bulkCopy.button)}
+      </button>
+    </div>` : ''}
 
     <div class="row between section" style="margin:14px 0 8px">
       <div class="tiny faint">${fmtInt(totalGroups)} ${totalGroups === 1 ? (filters.kind === 'movie' ? 'película' : filters.kind === 'series' ? 'serie' : 'título') : (filters.kind === 'movie' ? 'películas' : filters.kind === 'series' ? 'series' : 'títulos')}, página ${data.page} de ${data.pages}${filters.kind === 'movie' ? '' : `, ${fmtInt(data.episodes_library_total || 0)} episodios en Radarr/Sonarr`}</div>

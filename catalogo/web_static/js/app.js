@@ -828,10 +828,12 @@ async function openSyncPending(publication) {  const routeInfo = parseRoute();
       toast('No hay títulos que buscar con esos filtros', 'warn');
       return;
     }
-    const label = publication === 'pendiente' ? 'pendientes' : 'sin fuente';
+    const label = publication === 'pendiente'
+      ? 'Buscar fuentes para los títulos que faltan en Jellyfin'
+      : 'Buscar fuentes para los títulos sin fuente';
     openModal(
-      `Buscar fuentes en ${label}`,
-      `<p class="muted" style="margin-top:0">Se buscarán fuentes para <strong>${fmtInt(summary.total)}</strong> títulos: ${fmtInt(summary.movies)} películas y ${fmtInt(summary.series_episodes)} episodios.</p>
+      label,
+      `<p class="muted" style="margin-top:0">Se buscarán fuentes para <strong>${fmtInt(summary.movies)}</strong> películas y <strong>${fmtInt(summary.series_episodes)}</strong> episodios. En total, ${fmtInt(summary.total)} búsquedas.</p>
        <p class="muted tiny">No se descarga nada. Se puede cancelar en Tareas.</p>
        <form id="syncPendingForm" data-publication="${esc(publication)}">
          <div class="form-grid">
@@ -842,7 +844,7 @@ async function openSyncPending(publication) {  const routeInfo = parseRoute();
        </form>
        <div class="notice" style="margin-top:12px">Puede tardar horas. Usa un límite pequeño para probar.</div>`,
       `<button class="btn btn-ghost" data-action="modal-close">Cancelar</button>
-       <button class="btn btn-primary" data-action="sync-pending-start" data-publication="${esc(publication)}">${icon('search')} Buscar todas</button>`,
+       <button class="btn btn-primary" data-action="sync-pending-start" data-publication="${esc(publication)}">${icon('search')} Empezar búsqueda</button>`,
       { wide: true },
     );
   } catch (error) {
@@ -865,7 +867,7 @@ async function startSyncPending(publication) {
       min_seeders: values.min_seeders ?? 1,
     });
     closeModal();
-    toast(`Búsqueda de ${publication === 'pendiente' ? 'pendientes' : 'sin fuente'} en cola (#${result.job_id})`, 'ok',
+    toast(`Búsqueda de fuentes en cola (#${result.job_id})`, 'ok',
       `<button class="btn btn-sm btn-ghost" data-action="job-detail" data-id="${result.job_id}">Ver tarea</button>`);
     refreshActivity();
   } catch (error) {
