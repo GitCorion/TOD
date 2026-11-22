@@ -1129,7 +1129,7 @@ document.addEventListener('click', async (event) => {
       });
       state.settingsDirty = false;
       toast('Preferencia de idioma actualizada', 'ok');
-      await route();
+      await route({ preserveScroll: true });
       return;
     }
     if (action === 'seed-save') {
@@ -1145,7 +1145,7 @@ document.addEventListener('click', async (event) => {
       await apiPost('/api/seed', values);
       state.settingsDirty = false;
       toast('Siembra actualizada', 'ok');
-      await route();
+      await route({ preserveScroll: true });
       return;
     }
     if (action === 'seed-policy-save') {
@@ -1161,7 +1161,7 @@ document.addEventListener('click', async (event) => {
       }
       await apiPost('/api/seed/policies', values);
       toast(`Política de ${tracker} actualizada`, 'ok');
-      await route();
+      await route({ preserveScroll: true });
       return;
     }
     if (action === 'settings-save') {
@@ -1182,7 +1182,7 @@ document.addEventListener('click', async (event) => {
           : 'Cambios guardados',
         restart.length ? 'warn' : 'ok',
       );
-      await route();
+      await route({ preserveScroll: true });
       return;
     }
     if (action === 'settings-clear') {
@@ -1196,7 +1196,7 @@ document.addEventListener('click', async (event) => {
       if (!ok) return;
       await apiPost('/api/settings', { clear: [key] });
       toast('Ajuste borrado', 'ok');
-      await route();
+      await route({ preserveScroll: true });
       return;
     }
     if (action === 'settings-test') {
@@ -1276,7 +1276,7 @@ document.addEventListener('click', async (event) => {
       await apiPost(`/api/scheduler/${task}`, body);
       state.settingsDirty = false;
       toast('Tarea actualizada', 'ok');
-      await route();
+      await route({ preserveScroll: true });
       return;
     }
     if (action === 'scheduler-run') {
@@ -1791,7 +1791,7 @@ document.addEventListener('click', async (event) => {
           tracker, blocked: false,
         });
         toast(`${tracker}: ${result.releases} releases afectados`, 'ok');
-        await route();
+        await route({ preserveScroll: true });
         return;
       }
 
@@ -1821,7 +1821,7 @@ document.addEventListener('click', async (event) => {
         `${tracker}: ${result.releases} releases bloqueados${removed ? ` · ${removed} .strm ${removed === 1 ? 'eliminado' : 'eliminados'}` : ''}`,
         'ok',
       );
-      await route();
+      await route({ preserveScroll: true });
       return;
     }
     if (action === 'tracker-block-start') {

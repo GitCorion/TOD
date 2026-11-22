@@ -86,8 +86,10 @@ export function updateQuery(patch, { replace = true, resetPage = true } = {}) {
 
 let previousView = null;
 
-export async function route() {
+export async function route({ preserveScroll = false } = {}) {
   const parsed = parseRoute();
+  const keepScroll = preserveScroll && parsed.view === previousView;
+  const scrollY = keepScroll ? window.scrollY : 0;
   if (
     state.settingsDirty
     && state.view === 'settings'
@@ -120,6 +122,9 @@ export async function route() {
     await definition.render({ ...parsed, signal });
     document.querySelector('#sidebar')?.classList.remove('open');
     document.querySelector('#scrim')?.classList.remove('open');
+    if (keepScroll) {
+      window.scrollTo({ top: scrollY, behavior: 'instant' });
+    }
     if (!restoreFocus(previousFocus)) focusTitle();
     window.dispatchEvent(new CustomEvent('route:rendered'));
   } catch (error) {
