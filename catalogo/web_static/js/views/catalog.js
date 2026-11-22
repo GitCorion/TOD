@@ -126,18 +126,18 @@ export async function renderCatalog({ query, signal }) {
     ['series', 'Series', facets.kind?.series || 0],
   ];
   const publicationChips = [
-    ['', 'Todos', data.total || 0, '', 'Quita el filtro de Jellyfin'],
-    ['publicado', 'En Jellyfin', facets.publication?.publicado || 0, 'ok', 'Aparece en Jellyfin: TOD ya creó su .strm'],
-    ['pendiente', 'Falta en Jellyfin', facets.publication?.pendiente || 0, 'info', 'Tiene una fuente, pero todavía no aparece en Jellyfin'],
-    ['sin_fuente', 'Sin fuente', facets.publication?.sin_fuente || 0, 'muted', 'No hay ningún release que reproducir'],
+    ['', 'Todos', data.total || 0, 'Quita el filtro de Jellyfin'],
+    ['publicado', 'En Jellyfin', facets.publication?.publicado || 0, 'Aparece en Jellyfin: TOD ya creó su .strm'],
+    ['pendiente', 'Falta en Jellyfin', facets.publication?.pendiente || 0, 'Tiene una fuente, pero todavía no aparece en Jellyfin'],
+    ['sin_fuente', 'Sin fuente', facets.publication?.sin_fuente || 0, 'No hay ningún release que reproducir'],
   ];
   const downloadChips = [
-    ['', 'Todas', 0, '', 'Quita el filtro de descargas'],
-    ['descargando', 'Descargando', facets.download?.descargando || 0, 'info', 'Descarga activa en qBittorrent'],
-    ['descargado', 'Descargado', facets.download?.descargado || 0, 'ok', 'La descarga ya terminó'],
-    ['pausado', 'Pausado', facets.download?.pausado || 0, 'warn', 'Descarga detenida temporalmente'],
-    ['error', 'Error', facets.download?.error || 0, 'bad', 'qBittorrent informó de un error'],
-    ['sin_descarga', 'Sin descarga', facets.download?.sin_descarga || 0, '', 'No hay ninguna descarga asociada'],
+    ['', 'Todas', 0, 'Quita el filtro de descargas'],
+    ['descargando', 'Descargando', facets.download?.descargando || 0, 'Descarga activa en qBittorrent'],
+    ['descargado', 'Descargado', facets.download?.descargado || 0, 'La descarga ya terminó'],
+    ['pausado', 'Pausado', facets.download?.pausado || 0, 'Descarga detenida temporalmente'],
+    ['error', 'Error', facets.download?.error || 0, 'qBittorrent informó de un error'],
+    ['sin_descarga', 'Sin descarga', facets.download?.sin_descarga || 0, 'No hay ninguna descarga asociada'],
   ];
 
   const bulkPublication = ['pendiente', 'sin_fuente'].includes(filters.publication);
@@ -200,13 +200,13 @@ export async function renderCatalog({ query, signal }) {
         <div class="filter-row">
           <span class="filter-label" title="Si aparece en Jellyfin y si hay algo que reproducir">Estado</span>
           <div class="chips">
-            ${publicationChips.map(([value, label, count, tone, hint]) => `<button class="chip ${filters.publication === value ? 'active' : ''}" data-action="catalog-filter" data-key="publication" data-value="${value}" title="${esc(hint)}">${tone ? `<span class="dot ${tone}"></span>` : ''}${esc(label)}${value ? ` <b>${fmtInt(count)}</b>` : ''}</button>`).join('')}
+            ${publicationChips.map(([value, label, count, hint]) => `<button class="chip ${filters.publication === value ? 'active' : ''}" data-action="catalog-filter" data-key="publication" data-value="${value}" title="${esc(hint)}">${esc(label)}${value ? ` <b>${fmtInt(count)}</b>` : ''}</button>`).join('')}
           </div>
         </div>
         <div class="filter-row">
           <span class="filter-label">Descargas</span>
           <div class="chips">
-            ${downloadChips.map(([value, label, count, tone, hint]) => `<button class="chip ${filters.download === value ? 'active' : ''}" data-action="catalog-filter" data-key="download" data-value="${value}" title="${esc(hint)}">${tone ? `<span class="dot ${tone}"></span>` : ''}${esc(label)}${count ? ` <b>${fmtInt(count)}</b>` : ''}</button>`).join('')}
+            ${downloadChips.map(([value, label, count, hint]) => `<button class="chip ${filters.download === value ? 'active' : ''}" data-action="catalog-filter" data-key="download" data-value="${value}" title="${esc(hint)}">${esc(label)}${count ? ` <b>${fmtInt(count)}</b>` : ''}</button>`).join('')}
           </div>
         </div>
         ${originChips.length ? `<div class="filter-row">

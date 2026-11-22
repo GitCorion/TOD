@@ -433,11 +433,6 @@ td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
 .chip b::before { content: "("; }
 .chip b::after { content: ")"; }
 .chip.active b { color: var(--graphite); }
-.chip .dot { width: 5px; height: 5px; border-radius: 50%; background: var(--faint); flex: 0 0 auto; }
-.chip .dot.ok { background: var(--green); }
-.chip .dot.info { background: var(--blue); }
-.chip .dot.warn { background: var(--amber); }
-.chip .dot.bad { background: var(--red); }
 
 .tabs { display: flex; gap: 0; border-bottom: 1px solid var(--rule); margin: 16px 0 12px; overflow-x: auto; }
 .tabs button {
