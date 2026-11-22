@@ -829,7 +829,13 @@ def list_trackers(db_path: str | Path) -> list[dict[str, Any]]:
                    SUM(CASE WHEN r.health='alive' THEN 1 ELSE 0 END) AS alive,
                    SUM(CASE WHEN r.health='blocked' THEN 1 ELSE 0 END) AS blocked,
                    MAX(r.health_checked_at) AS last_checked,
-                   p.privacy, p.enabled, p.min_seed_hours, p.target_ratio,
+                   p.privacy,
+                   COALESCE(
+                       p.enabled,
+                       CASE WHEN SUM(CASE WHEN r.health='blocked' THEN 1 ELSE 0 END) > 0
+                            THEN 0 ELSE 1 END
+                   ) AS enabled,
+                   p.min_seed_hours, p.target_ratio,
                    p.max_active, p.abandon_under_percent, p.abandon_action,
                    p.keep_for_bonus
             FROM releases r

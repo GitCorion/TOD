@@ -207,7 +207,9 @@ export async function renderSettings({ signal, query } = {}) {
     const hours = current.min_seed_hours ?? seedDefaults.min_hours;
     const days = Math.round((Number(hours) / 24) * 100) / 100;
     const ratio = current.target_ratio ?? seedDefaults.ratio;
-    const enabled = current.enabled !== false;
+    const enabled = stats.enabled !== undefined
+      ? stats.enabled !== 0
+      : current.enabled !== false;
     const isBlocked = stats.enabled === 0;
     const hardBlocked = isBlocked && Number(stats.blocked || 0) > 0;
     const detail = [

@@ -64,6 +64,22 @@ def set_tracker_blocked(
         if dry_run:
             return report
 
+        # Un tracker puede tener releases sin fila de política (instalaciones
+        # antiguas o trackers descubiertos después). Sin fila, el bloqueo no
+        # se vería en Configuración. Se crea con los valores por defecto.
+        from .policy import ensure_default_policy
+
+        privacy = conn.execute(
+            "SELECT privacy FROM releases "
+            "WHERE tracker = ? AND privacy IS NOT NULL AND privacy <> '' "
+            "LIMIT 1",
+            (tracker,),
+        ).fetchone()
+        ensure_default_policy(
+            conn, tracker, privacy[0] if privacy is not None else None
+        )
+        report["policy"] = "disabled" if blocked else "enabled"
+
         if blocked:
             conn.execute(
                 """

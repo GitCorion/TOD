@@ -159,3 +159,43 @@ def test_delete_tracker_strm_dry_run_keeps_files(tmp_path):
     assert report["total"] == 2
     assert variant.exists()
     assert main.exists()
+
+
+def test_block_creates_missing_policy(tmp_path):
+    db = seed(tmp_path)
+    conn = sqlite3.connect(db)
+    conn.execute("DELETE FROM tracker_policies")
+    conn.commit()
+    conn.close()
+
+    report = set_tracker_blocked(str(db), "TrackerJackett (API)", blocked=True)
+    assert report["policy"] == "disabled"
+    conn = sqlite3.connect(db)
+    assert conn.execute(
+        "SELECT enabled FROM tracker_policies WHERE tracker='TrackerJackett (API)'"
+    ).fetchone()[0] == 0
+    conn.close()
+
+    report = set_tracker_blocked(str(db), "TrackerJackett (API)", blocked=False)
+    assert report["policy"] == "enabled"
+    conn = sqlite3.connect(db)
+    assert conn.execute(
+        "SELECT enabled FROM tracker_policies WHERE tracker='TrackerJackett (API)'"
+    ).fetchone()[0] == 1
+    conn.close()
+
+
+def test_list_trackers_marks_blocked_releases_without_policy(tmp_path):
+    from catalogo.queries import list_trackers
+
+    db = seed(tmp_path)
+    conn = sqlite3.connect(db)
+    conn.execute("DELETE FROM tracker_policies")
+    conn.execute("UPDATE releases SET health='blocked'")
+    conn.commit()
+    conn.close()
+
+    rows = list_trackers(db)
+    assert rows[0]["tracker"] == "TrackerJackett (API)"
+    assert rows[0]["blocked"] == 2
+    assert rows[0]["enabled"] == 0
