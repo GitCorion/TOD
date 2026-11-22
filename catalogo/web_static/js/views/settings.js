@@ -208,7 +208,7 @@ export async function renderSettings({ signal, query } = {}) {
         data-seed-tracker="${esc(tracker)}" data-seed-field="min_days" value="${esc(days)}"></td>
       <td data-label="Ratio"><input class="input input-sm" type="number" min="0" max="100" step="0.1"
         data-seed-tracker="${esc(tracker)}" data-seed-field="target_ratio" value="${esc(ratio)}"></td>
-      <td data-label="Activa"><input type="checkbox" aria-label="Activar política de ${esc(tracker)}"
+      <td data-label="Descargar"><input type="checkbox" aria-label="Permitir descargas de ${esc(tracker)}"
         data-seed-tracker="${esc(tracker)}" data-seed-field="enabled" ${enabled ? 'checked' : ''}></td>
       <td class="actions" data-label="">
         <button class="btn btn-sm btn-ghost" data-action="seed-policy-save" data-tracker="${esc(tracker)}">Guardar</button>
@@ -304,10 +304,14 @@ export async function renderSettings({ signal, query } = {}) {
         </div>
         <div class="table-wrap" style="margin-top:14px">
           <table class="table--stack">
-            <thead><tr><th>Tracker</th><th>Días</th><th>Ratio</th><th>Activa</th><th></th></tr></thead>
+            <thead><tr><th>Tracker</th><th>Días</th><th>Ratio</th><th>Descargar</th><th></th></tr></thead>
             <tbody>${trackerRows || '<tr><td colspan="5" class="tiny faint">Aún no hay trackers indexados.</td></tr>'}</tbody>
           </table>
         </div>
+        <p class="muted tiny" style="margin:8px 0 0">
+          «Descargar» solo permite o bloquea descargas nuevas de TOD en ese tracker.
+          No pausa el indexer: para dejar de buscar, usa Seguimiento → Indexers.
+        </p>
       </div>
     </div>
 
