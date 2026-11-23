@@ -88,6 +88,7 @@ class StreamGuard:
         grace_seconds: float = DEFAULT_GRACE_SECONDS,
         safety: float = DEFAULT_SAFETY,
         max_attempts: int = DEFAULT_MAX_ATTEMPTS,
+        nudge_hold: float = 2.0,
     ):
         self.db_path = db_path
         self.play_service = play_service
@@ -103,7 +104,9 @@ class StreamGuard:
         self._busy = False
         self._busy_checked = 0.0
         self._last_switch: dict[str, float] = {}
+        self._last_nudge: dict[str, float] = {}
         self._audio_ok: dict[str, bool | None] = {}
+        self.nudge_hold = max(0.0, nudge_hold)
 
     def start(self) -> None:
         if self._thread is not None and self._thread.is_alive():
@@ -167,6 +170,7 @@ class StreamGuard:
             "bad": [],
             "switched": [],
             "deferred": [],
+            "nudged": [],
             "errors": [],
         }
         for key in keys:
@@ -202,6 +206,93 @@ class StreamGuard:
         self._since.pop(key, None)
         self._release.pop(key, None)
         self._audio_ok.pop(key, None)
+        self._last_nudge.pop(key, None)
+
+    def _maybe_nudge(
+        self,
+        key: str,
+        info_hash: str,
+        files: list[dict],
+        file_index: int,
+        samples: list[tuple[float, int, float, float]],
+        speed: float,
+        buffer_bytes: int,
+        buffer_required: int,
+        now_ts: float,
+        report: dict[str, Any],
+    ) -> None:
+        """Re-pide el hueco que bloquea el prefijo contiguo.
+
+        qBittorrent no expone control de piezas por la WebUI. Poner el
+        fichero objetivo a prioridad 0 durante un par de segundos cancela
+        las peticiones en vuelo; al restaurar, las piezas se vuelven a
+        pedir a otros pares. El resto del pack no se toca y no se deja
+        nada a medias.
+        """
+        if (
+            len(samples) < 3
+            or speed <= 0
+            or buffer_bytes <= 0
+            or buffer_bytes >= buffer_required
+        ):
+            return
+        recent = samples[-3:]
+        window = recent[-1][0] - recent[0][0]
+        growth = recent[-1][1] - recent[0][1]
+        if window < 8 or growth > 0:
+            return
+        if now_ts - self._last_nudge.get(key, 0.0) < 30:
+            return
+        qbit = self.play_service.qbit_write
+        setter = getattr(qbit, "set_file_priorities", None)
+        if not callable(setter):
+            return
+        target = next(
+            (
+                item for item in files
+                if int(item.get("index") or 0) == int(file_index)
+            ),
+            None,
+        )
+        if target is None:
+            return
+        priority = int(target.get("priority") or 1)
+        if priority <= 0:
+            priority = 1
+        payload = {
+            int(item.get("index") or 0): int(item.get("priority") or 0)
+            for item in files
+        }
+        payload[int(file_index)] = 0
+        self._last_nudge[key] = now_ts
+        print(
+            f"stream-nudge key={key} file={int(file_index)} "
+            f"buffer={int(buffer_bytes)}/{int(buffer_required)} "
+            f"speed={int(speed)}",
+            flush=True,
+        )
+        error = None
+        try:
+            setter(info_hash, payload)
+            if self.nudge_hold > 0:
+                time.sleep(self.nudge_hold)
+        except Exception as exc:
+            error = str(exc)[:120]
+        finally:
+            payload[int(file_index)] = priority
+            try:
+                setter(info_hash, payload)
+            except Exception as exc:
+                error = error or str(exc)[:120]
+        report.setdefault("nudged", []).append(
+            {
+                "key": key,
+                "file_index": int(file_index),
+                "buffer_bytes": int(buffer_bytes),
+                "buffer_required": int(buffer_required),
+                "error": error,
+            }
+        )
 
     def _record_swarm(
         self,
@@ -368,7 +459,7 @@ class StreamGuard:
             self._clear(key)
             return
         buffer_bytes, buffer_required, tail_ready = _buffer_state(
-            qbit, info_hash, files, file_index, file_size
+            qbit, info_hash, files, file_index, file_size, runtime
         )
         if buffer_bytes is None:
             self._clear(key)
@@ -395,7 +486,7 @@ class StreamGuard:
         )
         del samples[:-6]
 
-        if buffer_bytes >= buffer_required and tail_ready:
+        if buffer_bytes >= buffer_required:
             # Con colchón suficiente, comprobar el audio antes de dar luz
             # verde. Si aún no se puede sondear, no se descarta la fuente.
             if self._audio_ok.get(key) is None:
@@ -418,6 +509,19 @@ class StreamGuard:
                     started_ok=True,
                 )
                 return
+
+        self._maybe_nudge(
+            key,
+            info_hash,
+            files,
+            int(file_index),
+            samples,
+            speed,
+            int(buffer_bytes),
+            int(buffer_required),
+            current.timestamp(),
+            report,
+        )
 
         elapsed = current.timestamp() - since
         if elapsed < self.grace_seconds or len(samples) < 2:

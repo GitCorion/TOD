@@ -19,6 +19,10 @@ class FakeQbit:
         self.progress = progress
         self.speed = speed
         self.buffer_pieces = buffer_pieces
+        self.priorities = []
+
+    def set_file_priorities(self, info_hash, payload):
+        self.priorities.append(dict(payload))
 
     def torrent(self, info_hash):
         return {
@@ -138,6 +142,26 @@ def test_guard_starts_when_buffer_is_enough(tmp_path):
     report = guard.run_once(now=NOW + timedelta(seconds=40))
     assert report["bad"] == []
     assert service.calls == []
+
+
+def test_guard_nudges_a_stalled_buffer_without_switching(tmp_path):
+    db, _asset_id, _release_id = seed(tmp_path)
+    # 4 MB contiguos < 8 MB requeridos, pero el torrent descarga a 10 MB/s:
+    # el hueco está en las primeras piezas, no en el swarm.
+    qbit = FakeQbit(progress=0.5, speed=10 * MB, buffer_pieces=4)
+    service = FakePlayService(qbit)
+    guard = StreamGuard(
+        str(db), service, grace_seconds=120, nudge_hold=0
+    )
+    guard.run_once(now=NOW)
+    guard.run_once(now=NOW + timedelta(seconds=10))
+    report = guard.run_once(now=NOW + timedelta(seconds=16))
+    assert report["nudged"], report
+    assert report["nudged"][0]["file_index"] == 0
+    assert service.calls == []
+    # prioridad 0 para re-pedir y restaurada a 1 después
+    assert qbit.priorities[0] == {0: 0}
+    assert qbit.priorities[1] == {0: 1}
 
 
 def test_switch_increments_stream_generation(tmp_path):

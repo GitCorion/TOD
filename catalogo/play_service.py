@@ -511,10 +511,11 @@ class PlayService:
         timeout: float = 60.0,
         interval: float = 2.0,
     ) -> bool:
-        """Espera a que haya buffer contiguo y cola lista.
+        """Espera a que haya buffer contiguo suficiente para arrancar.
 
         Para un `prepare` lanzado desde Jellyfin: en vez de fallar al instante,
-        se sostiene la petición mientras el torrent arranca.
+        se sostiene la petición mientras el torrent arranca. La cola del
+        fichero no se exige aquí: solo hace falta al llegar al final.
         """
         from .status import _buffer_state
 
@@ -522,6 +523,23 @@ class PlayService:
         file_index = handle.get("file_index")
         if not info_hash or file_index is None:
             return False
+        runtime = 0
+        media_id = handle.get("media_id") or handle.get("key")
+        if media_id:
+            from contextlib import closing
+
+            from .db import connect
+
+            try:
+                with closing(connect(self.db_path)) as conn:
+                    row = conn.execute(
+                        "SELECT runtime_seconds FROM media_items "
+                        "WHERE media_id = ? OR key = ? LIMIT 1",
+                        (media_id, media_id),
+                    ).fetchone()
+                runtime = int(row["runtime_seconds"] or 0) if row else 0
+            except Exception:
+                runtime = 0
         deadline = time.monotonic() + max(1.0, timeout)
         while True:
             live = self._live_torrent(info_hash)
@@ -536,14 +554,14 @@ class PlayService:
                 if int(item.get("index") or 0) == int(file_index):
                     file_size = int(item.get("size") or 0) or None
                     break
-            buffer_bytes, required, tail_ready = _buffer_state(
-                self.qbit_read, info_hash, files, int(file_index), file_size
+            buffer_bytes, required, _tail_ready = _buffer_state(
+                self.qbit_read, info_hash, files, int(file_index), file_size,
+                runtime or None,
             )
             if (
                 buffer_bytes is not None
                 and required > 0
                 and buffer_bytes >= required
-                and tail_ready
             ):
                 return True
             if time.monotonic() >= deadline:

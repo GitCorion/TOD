@@ -149,10 +149,36 @@ def test_live_progress_100_marks_complete_without_worker(tmp_path):
 def test_buffer_required_scales_with_size():
     from catalogo.status import _buffer_required
 
-    assert _buffer_required(5_861_122_731) >= 32 * 1024**2
-    assert _buffer_required(5_861_122_731) <= 128 * 1024**2
-    assert _buffer_required(63_257_423_054) == 128 * 1024**2
-    assert _buffer_required(None) == 32 * 1024**2
+    MB = 1024**2
+    # Sin duración: ~12 s de vídeo (size/240), con suelo de 8 MB.
+    assert _buffer_required(5_861_122_731) == int(5_861_122_731 / 240)
+    assert 8 * MB <= _buffer_required(5_861_122_731) <= 64 * MB
+    assert _buffer_required(63_257_423_054) == 64 * MB
+    assert _buffer_required(None) == 8 * MB
+
+
+def test_buffer_required_uses_video_seconds_with_runtime():
+    from catalogo.status import _buffer_required
+
+    # 4,088 GB en 48 min: 10 s de vídeo son ~14 MB, no 32 MB.
+    required = _buffer_required(4_088_319_489, 2880)
+    assert required == int(4_088_319_489 / 2880 * 10)
+    assert required < 32 * 1024**2
+
+
+def test_buffer_dynamics_detects_stall_and_eta():
+    from catalogo.status import _buffer_dynamics
+
+    MB = 1024**2
+    _buffer_dynamics("stall-hash", 0, 8 * MB, 32 * MB, now=100.0)
+    stalled, eta = _buffer_dynamics("stall-hash", 0, 8 * MB, 32 * MB, now=110.0)
+    assert stalled is True
+    assert eta is None
+
+    _buffer_dynamics("grow-hash", 0, 4 * MB, 32 * MB, now=200.0)
+    stalled, eta = _buffer_dynamics("grow-hash", 0, 12 * MB, 32 * MB, now=210.0)
+    assert stalled is False
+    assert eta == int((32 - 12) * MB / ((8 * MB) / 10))
 
 
 class BufferQbit:
@@ -178,7 +204,7 @@ def test_buffer_state_counts_contiguous_from_start():
         BufferQbit(states), "hash", files, 0, size
     )
     assert buffer_bytes == 50 * 1024 * 1024
-    assert required == 32 * 1024**2
+    assert required == 8 * 1024**2
     assert tail_ready is True
 
 

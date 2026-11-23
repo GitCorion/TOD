@@ -6,6 +6,7 @@ de qBittorrent, los datos vivos del torrent para progreso/velocidad/ETA.
 
 from __future__ import annotations
 
+import time
 from contextlib import closing
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -172,21 +173,76 @@ def _eta(live: dict[str, Any] | None) -> int | None:
     return value
 
 
-BUFFER_MIN_BYTES = 32 * 1024**2
-BUFFER_MAX_BYTES = 128 * 1024**2
-BUFFER_SECONDS = 60
+BUFFER_MIN_BYTES = 8 * 1024**2
+BUFFER_MAX_BYTES = 64 * 1024**2
+BUFFER_SECONDS = 10
 PIECE_READY = 2
+BUFFER_SAMPLE_WINDOW = 20.0
+BUFFER_STALL_SECONDS = 5.0
+
+# Últimas muestras de búfer por (info_hash, file_index). Se usa para saber
+# si el prefijo contiguo está avanzando o clavado, y para estimar cuánto
+# falta. Es una caché de proceso: status se consulta cada pocos segundos.
+_BUFFER_SAMPLES: dict[tuple[str, int], list[tuple[float, int]]] = {}
 
 
-def _buffer_required(size: int | None) -> int:
-    """Buffer de arranque estimado: ~60 s de vídeo, con topes.
+def _buffer_required(
+    size: int | None, runtime_seconds: int | None = None
+) -> int:
+    """Buffer de arranque: ~10 s de vídeo, con topes.
 
-    Para una película de 2 h: size/120. Un 1080p de 5,86 GB necesita ~48 MB;
-    un 4K enorme se limita a 128 MB para no bloquear el arranque.
+    Un 1080p de 11 Mbps necesita ~14 MB. Esperar 60 s de vídeo (lo que
+    hacía antes) retrasaba el arranque sin necesidad: si el swarm va
+    rápido, el colchón se llena solo. Sin duración conocida se estima
+    12 s con size/240.
     """
     if not size:
         return BUFFER_MIN_BYTES
-    return int(max(BUFFER_MIN_BYTES, min(BUFFER_MAX_BYTES, size / 120)))
+    if runtime_seconds and runtime_seconds > 0:
+        wanted = (size / runtime_seconds) * BUFFER_SECONDS
+    else:
+        wanted = size / 240
+    return int(max(BUFFER_MIN_BYTES, min(BUFFER_MAX_BYTES, wanted)))
+
+
+def _buffer_dynamics(
+    info_hash: str | None,
+    file_index: int | None,
+    buffer_bytes: int | None,
+    buffer_required: int,
+    *,
+    now: float | None = None,
+) -> tuple[bool, int | None]:
+    """¿El búfer está clavado? ¿Cuánto falta para el objetivo?
+
+    ``stalled`` es True si el prefijo contiguo no ha crecido en
+    ``BUFFER_STALL_SECONDS``. ``eta`` solo se calcula con crecimiento
+    positivo; un ETA del fichero mientras el búfer no avanza engaña.
+    """
+    if buffer_bytes is None or buffer_required <= 0:
+        return False, None
+    key = ((info_hash or "").lower(), int(file_index or 0))
+    ts = time.monotonic() if now is None else now
+    samples = _BUFFER_SAMPLES.setdefault(key, [])
+    samples.append((ts, int(buffer_bytes)))
+    cutoff = ts - BUFFER_SAMPLE_WINDOW
+    while samples and samples[0][0] < cutoff:
+        samples.pop(0)
+    if len(_BUFFER_SAMPLES) > 256:
+        for stale in [
+            item for item, rows in _BUFFER_SAMPLES.items()
+            if not rows or rows[-1][0] < ts - 120
+        ]:
+            _BUFFER_SAMPLES.pop(stale, None)
+    if len(samples) < 2:
+        return False, None
+    span = max(0.001, samples[-1][0] - samples[0][0])
+    growth = samples[-1][1] - samples[0][1]
+    stalled = span >= BUFFER_STALL_SECONDS and growth <= 0
+    if growth <= 0 or buffer_bytes >= buffer_required:
+        return stalled, None
+    eta = max(1, int((buffer_required - buffer_bytes) / (growth / span)))
+    return stalled, eta
 
 
 def _buffer_state(
@@ -195,9 +251,10 @@ def _buffer_state(
     files: list[dict],
     file_index: int | None,
     file_size: int | None,
+    runtime_seconds: int | None = None,
 ) -> tuple[int | None, int, bool]:
     """Bytes contiguos listos desde el inicio del fichero y cola lista."""
-    required = _buffer_required(file_size)
+    required = _buffer_required(file_size, runtime_seconds)
     if (
         qbit is None
         or not info_hash
@@ -447,8 +504,12 @@ def asset_status(
             files = []
     if file_progress is not None:
         progress = file_progress
+    runtime_seconds = int(asset["runtime_seconds"] or 0) or None
     buffer_bytes, buffer_required, tail_ready = _buffer_state(
-        qbit, info_hash, files, file_index, file_size
+        qbit, info_hash, files, file_index, file_size, runtime_seconds
+    )
+    buffer_stalled, buffer_eta_seconds = _buffer_dynamics(
+        info_hash, file_index, buffer_bytes, buffer_required
     )
 
     size = None
@@ -511,11 +572,13 @@ def asset_status(
 
     source = resolution.source if resolution is not None else "unavailable"
     if source == "torrent":
+        # La cola del fichero no hace falta para arrancar: se necesita al
+        # llegar al final. Exigirla retrasaba packs donde la última pieza
+        # del torrent no es la del episodio pedido.
         buffered = (
             buffer_bytes is not None
             and buffer_required > 0
             and buffer_bytes >= buffer_required
-            and tail_ready
         )
         stream_ready = bool(
             buffered or (progress >= 1 and live is not None)
@@ -526,6 +589,8 @@ def asset_status(
     pack_progress = None
     if live is not None:
         pack_progress = round(float(live.get("progress") or 0), 4)
+    if stream_ready:
+        buffer_stalled = False
     waiting_reason = None
     if not bool(stream_ready):
         if source in ("unavailable",):
@@ -533,12 +598,8 @@ def asset_status(
         elif source in ("torrent", "arr"):
             if buffer_bytes is None:
                 waiting_reason = "pieces"
-            elif buffer_bytes < buffer_required:
-                waiting_reason = "buffer"
-            elif not tail_ready:
-                waiting_reason = "tail"
             else:
-                waiting_reason = "downloading"
+                waiting_reason = "buffer"
         else:
             waiting_reason = source
     playback_state = _playback_state(
@@ -665,7 +726,7 @@ def asset_status(
                 "SELECT * FROM swarm_stats WHERE release_id = ?",
                 (int(release_row["id"]),),
             ).fetchone()
-    runtime_seconds = int(asset["runtime_seconds"] or 0) or None
+    runtime_seconds = runtime_seconds or int(asset["runtime_seconds"] or 0) or None
     required_speed_bps = (
         int(size / runtime_seconds)
         if size and runtime_seconds
@@ -703,10 +764,16 @@ def asset_status(
         "info_hash": info_hash,
         "progress": round(progress, 4),
         "pack_progress": pack_progress,
+        "is_pack": (
+            bool(release_row["is_pack"]) if release_row is not None else None
+        ),
+        "files_count": len(files) if files else None,
         "waiting_reason": waiting_reason,
         "downloaded_bytes": downloaded,
         "buffer_bytes": buffer_bytes,
         "buffer_required": buffer_required,
+        "buffer_stalled": bool(buffer_stalled),
+        "buffer_eta_seconds": buffer_eta_seconds,
         "tail_ready": tail_ready,
         "runtime_seconds": runtime_seconds,
         "required_speed_bps": required_speed_bps,
