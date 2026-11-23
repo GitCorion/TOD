@@ -162,13 +162,39 @@ def monitor_health(db_path: str | Path, config: Config) -> dict[str, Any]:
     }
 
 
-def setup_status(config: Config) -> dict[str, Any]:
-    """Primeros pasos: qué falta para que TOD pueda funcionar."""
+def setup_status(config: Config, db_path: str | Path) -> dict[str, Any]:
+    """Primeros pasos: qué falta para que TOD pueda funcionar.
+
+    Una integración configurada pero con la última prueba fallida vuelve a
+    considerarse pendiente. Si nunca se ha probado, no se castiga: las
+    instalaciones existentes no se ven obligadas a repetir el asistente.
+    """
     def path_ok(value) -> bool:
         if not value:
             return False
         data = app_settings.path_status(value)
         return bool(data.get("exists") and data.get("is_dir") and data.get("writable"))
+
+    with closing(connect(db_path)) as conn:
+        health = {
+            row["service"]: dict(row)
+            for row in conn.execute(
+                "SELECT service, ok, checked_at, error, detail "
+                "FROM integration_health"
+            ).fetchall()
+        }
+
+    def state(service: str, configured: bool) -> dict[str, Any]:
+        row = health.get(service)
+        validated = None if row is None else bool(row.get("ok"))
+        return {
+            "configured": configured,
+            "done": configured and validated is not False,
+            "validated": validated,
+            "checked_at": row.get("checked_at") if row else None,
+            "error": row.get("error") if row else None,
+            "detail": row.get("detail") if row else None,
+        }
 
     paths = {
         "catalog_library": config.catalog_library,
@@ -179,36 +205,60 @@ def setup_status(config: Config) -> dict[str, Any]:
         key: {"value": str(value), "ok": path_ok(value)}
         for key, value in paths.items()
     }
-    qbittorrent = bool(config.qbittorrent_url and config.qbittorrent_pass)
-    sources = bool(config.prowlarr_api_key or config.jackett_api_key)
-    directories = all(item["ok"] for item in directory_state.values())
-    jellyfin = bool(config.jellyfin_url and config.jellyfin_api_key)
+    qbittorrent = state(
+        "qbittorrent", bool(config.qbittorrent_url and config.qbittorrent_pass)
+    )
+    prowlarr = state("prowlarr", bool(config.prowlarr_api_key))
+    jackett = state("jackett", bool(config.jackett_api_key))
+    sources_configured = [item for item in (prowlarr, jackett) if item["configured"]]
+    sources_done = any(item["done"] for item in sources_configured)
+    sources_validated = None
+    if any(item["validated"] is True for item in sources_configured):
+        sources_validated = True
+    elif sources_configured and all(
+        item["validated"] is False for item in sources_configured
+    ):
+        sources_validated = False
+    directories_configured = all(item["ok"] for item in directory_state.values())
+    directories = state("directories", directories_configured)
+    # Las rutas se comprueban en cada lectura, no dependen de una prueba de red.
+    directories["validated"] = directories_configured
+    directories["done"] = directories_configured
+    jellyfin = state(
+        "jellyfin", bool(config.jellyfin_url and config.jellyfin_api_key)
+    )
     return {
-        "needed": not (qbittorrent and sources and directories),
+        "needed": not (
+            qbittorrent["done"] and sources_done and directories["done"]
+        ),
         "steps": {
             "qbittorrent": {
-                "done": qbittorrent,
+                **qbittorrent,
                 "url": str(config.qbittorrent_url or ""),
                 "user": config.qbittorrent_user or "",
                 "has_secret": bool(config.qbittorrent_pass),
             },
             "sources": {
-                "done": sources,
+                "configured": bool(sources_configured),
+                "done": sources_done,
+                "validated": sources_validated,
                 "prowlarr": {
+                    **prowlarr,
                     "url": str(config.prowlarr_url or ""),
                     "has_secret": bool(config.prowlarr_api_key),
                 },
                 "jackett": {
+                    **jackett,
                     "url": str(config.jackett_url or ""),
                     "has_secret": bool(config.jackett_api_key),
                 },
             },
             "directories": {
-                "done": directories,
+                **directories,
                 "paths": directory_state,
             },
             "jellyfin": {
-                "done": jellyfin,
+                **jellyfin,
                 "url": str(config.jellyfin_url or ""),
                 "has_secret": bool(config.jellyfin_api_key),
             },

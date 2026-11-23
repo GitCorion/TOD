@@ -808,7 +808,7 @@ class Handler(PlaybackHandler):
             raise WebError(404, "no encontrado")
 
         if parts == ["setup"] and not mutate:
-            return self._json(200, api_status.setup_status(app.config), head=head)
+            return self._json(200, api_status.setup_status(app.config, app.db_path), head=head)
 
         if parts and parts[0] in (
             "settings", "scheduler", "attention", "setup", "system",

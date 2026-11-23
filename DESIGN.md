@@ -98,8 +98,9 @@ descarga, origen. No se pintan como estados principales.
 - **Modal**: foco atrapado, `Esc` cierra, foco devuelto al origen.
 - **Aviso**: severidad, motivo, desde cuándo y enlace al ajuste.
 - **Primeros pasos**: asistente de cuatro pasos. Valida antes de guardar,
-  muestra el error concreto y permite saltar o terminar más tarde. No bloquea
-  el uso de TOD.
+  guarda el resultado de la última prueba, muestra el error concreto y permite
+  saltar o terminar más tarde. Si una integración cae, el paso vuelve a
+  marcarse como pendiente. No bloquea el uso de TOD.
 
 ## Accesibilidad
 

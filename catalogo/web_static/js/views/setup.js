@@ -57,6 +57,20 @@ function stepDone(state, key) {
   return Boolean(state.data?.steps?.[key]?.done);
 }
 
+function sourceNote(info, fallback) {
+  if (info?.validated === true) return 'Validado';
+  if (info?.validated === false) return 'La última prueba falló';
+  if (info?.has_secret) return 'Configurado, sin validar';
+  return fallback;
+}
+
+function stepBadge(info) {
+  if (info?.validated === true) return status('Validado', 'ok');
+  if (info?.validated === false) return status('Falló la última prueba', 'bad');
+  if (info?.done) return status('Configurado, sin validar', 'muted');
+  return status('Pendiente', 'muted');
+}
+
 export async function renderSetup({ signal }) {
   let state = {
     data: await api('/api/setup', { signal }),
@@ -78,6 +92,11 @@ export async function renderSetup({ signal }) {
   function paint() {
     const active = STEPS[state.step];
     const info = state.data.steps[active.key] || {};
+    const lastError = active.key === 'sources'
+      ? (info.prowlarr?.error || info.jackett?.error)
+      : active.key === 'directories'
+        ? 'alguna ruta no existe o no es escribible'
+        : info.error;
     $('#view').innerHTML = `<div class="setup-shell">
       <div class="setup-rail" role="navigation" aria-label="Pasos de configuración">
         ${STEPS.map((step, index) => `<button
@@ -91,11 +110,12 @@ export async function renderSetup({ signal }) {
       ${state.finished ? finishView() : `<div class="panel setup-card">
         <div class="panel-head">
           <h2>Paso ${state.step + 1} de ${STEPS.length} · ${esc(active.title)}</h2>
-          ${stepDone(state, active.key) ? status('Configurado', 'ok') : status('Pendiente', 'muted')}
+          ${stepBadge(info)}
         </div>
         <div class="panel-body">
           <p class="muted tiny" style="margin-top:0">${esc(active.help)}</p>
           <p class="setup-docker tiny faint">${esc(active.docker)}</p>
+          ${info.validated === false ? `<div class="notice">La última prueba falló: ${esc(lastError || 'revisa los datos')}. Corrige y vuelve a validar.</div>` : ''}
           ${stepFields(active, info)}
           <div class="setup-result" id="setupResult" role="status"></div>
           <div class="setup-actions">
@@ -127,11 +147,11 @@ export async function renderSetup({ signal }) {
       return `<div class="setup-choice-grid">
         <label class="setup-choice ${state.mode === 'prowlarr' ? 'active' : ''}">
           <input type="radio" name="setupSource" value="prowlarr" ${state.mode === 'prowlarr' ? 'checked' : ''}>
-          <span><strong>Prowlarr</strong><small>${prowlarr.has_secret ? 'Ya configurado' : 'Recomendado'}</small></span>
+          <span><strong>Prowlarr</strong><small>${esc(sourceNote(prowlarr, 'Recomendado'))}</small></span>
         </label>
         <label class="setup-choice ${state.mode === 'jackett' ? 'active' : ''}">
           <input type="radio" name="setupSource" value="jackett" ${state.mode === 'jackett' ? 'checked' : ''}>
-          <span><strong>Jackett</strong><small>${jackett.has_secret ? 'Ya configurado' : 'Alternativa'}</small></span>
+          <span><strong>Jackett</strong><small>${esc(sourceNote(jackett, 'Alternativa'))}</small></span>
         </label>
       </div>
       ${state.mode === 'prowlarr' ? `<div class="setup-grid">

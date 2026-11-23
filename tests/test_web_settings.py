@@ -387,3 +387,60 @@ def test_setup_endpoint_tracks_required_steps(tmp_path):
         server.shutdown()
         server.server_close()
         server.app.runner.stop()
+
+
+def test_setup_requires_last_test_to_pass(tmp_path):
+    server, base = _server(tmp_path)
+    try:
+        # Sin scheduler: el chequeo de salud de fondo no debe pisar el estado
+        # que inserta el propio test.
+        server.app.scheduler.stop()
+        server.app.runner.stop()
+        _request(
+            base,
+            "/api/settings",
+            method="POST",
+            body={"values": {"qbittorrent_pass": "x", "prowlarr_api_key": "k"}},
+            headers={"X-Catalogo": "web"},
+        )
+        with sqlite3.connect(server.app.db_path) as conn:
+            conn.execute(
+                "INSERT OR REPLACE INTO integration_health"
+                "(service, ok, checked_at) VALUES(?,?,?)",
+                ("qbittorrent", 1, "2026-11-23T10:00:00Z"),
+            )
+            conn.execute(
+                "INSERT OR REPLACE INTO integration_health"
+                "(service, ok, checked_at) VALUES(?,?,?)",
+                ("prowlarr", 1, "2026-11-23T10:00:00Z"),
+            )
+            conn.commit()
+        status, payload = _request(base, "/api/setup")
+        assert status == 200
+        assert payload["needed"] is False
+        assert payload["steps"]["qbittorrent"]["validated"] is True
+
+        with sqlite3.connect(server.app.db_path) as conn:
+            conn.execute(
+                "UPDATE integration_health SET ok=0, error='connection refused' "
+                "WHERE service='qbittorrent'"
+            )
+            conn.commit()
+        status, payload = _request(base, "/api/setup")
+        assert payload["needed"] is True
+        assert payload["steps"]["qbittorrent"]["validated"] is False
+        assert "connection refused" in payload["steps"]["qbittorrent"]["error"]
+
+        with sqlite3.connect(server.app.db_path) as conn:
+            conn.execute(
+                "UPDATE integration_health SET ok=1, error=NULL "
+                "WHERE service='qbittorrent'"
+            )
+            conn.commit()
+        status, payload = _request(base, "/api/setup")
+        assert payload["needed"] is False
+        assert payload["steps"]["qbittorrent"]["validated"] is True
+    finally:
+        server.shutdown()
+        server.server_close()
+        server.app.runner.stop()

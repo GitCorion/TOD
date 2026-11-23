@@ -116,6 +116,7 @@ def handle(
             result = integrations.test_integration(parts[1], config)
         except (ValueError, integrations.IntegrationError) as exc:
             raise WebError(400, str(exc)) from exc
+        attention.record(app.db_path, parts[1], result)
         app.audit(
             "web.integration_test",
             payload={

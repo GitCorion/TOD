@@ -180,7 +180,7 @@ function diskLine(item, key) {
 }
 
 export async function renderSettings({ signal, query } = {}) {
-  const [data, schedule, attention, seed, language, system, indexers] = await Promise.all([
+  const [data, schedule, attention, seed, language, system, indexers, setupData] = await Promise.all([
     api('/api/settings', { signal }),
     api('/api/scheduler', { signal }),
     api('/api/attention', { signal }).catch(() => null),
@@ -188,6 +188,7 @@ export async function renderSettings({ signal, query } = {}) {
     api('/api/language', { signal }).catch(() => null),
     api('/api/system', { signal }).catch(() => null),
     api('/api/indexers', { signal }).catch(() => ({ items: [] })),
+    api('/api/setup', { signal }).catch(() => null),
   ]);
   state.attention = attention;
   paintAttention(attention);
@@ -198,35 +199,34 @@ export async function renderSettings({ signal, query } = {}) {
     items.filter((item) => item.key.startsWith(`${meta.prefix}_`)).map((item) => item.key)));
   const otherIntegrations = items.filter((item) => item.section === 'integraciones' && !integrationKeys.has(item.key));
   const dirs = items.filter((item) => item.section === 'directorios');
-  const catalogPath = system?.paths?.catalog_library;
-  const catalogDisk = (system?.disk || []).find((disk) => disk.path === catalogPath);
+  const setupSteps = setupData?.steps || {};
   const setup = [
     {
       key: 'qbittorrent',
       label: 'Conectar qBittorrent',
       help: 'Descarga, siembra y sirve los torrents.',
-      done: Boolean(system?.capabilities?.qbittorrent),
+      done: Boolean(setupSteps.qbittorrent?.done),
       target: 'settings-integrations',
     },
     {
       key: 'sources',
       label: 'Configurar Prowlarr o Jackett',
       help: 'Basta con uno de los dos para descubrir fuentes.',
-      done: Boolean(system?.capabilities?.prowlarr || system?.capabilities?.jackett),
+      done: Boolean(setupSteps.sources?.done),
       target: 'settings-integrations',
     },
     {
       key: 'directories',
       label: 'Revisar los directorios',
       help: 'Carpeta de los .strm, descargas y biblioteca existente.',
-      done: Boolean(catalogPath) && (!catalogDisk || catalogDisk.ok !== false),
+      done: Boolean(setupSteps.directories?.done),
       target: 'settings-directories',
     },
     {
       key: 'jellyfin',
       label: 'Conectar Jellyfin',
       help: 'Opcional: es donde se ven los títulos.',
-      done: Boolean(system?.capabilities?.jellyfin),
+      done: Boolean(setupSteps.jellyfin?.done),
       target: 'settings-integrations',
     },
   ];
