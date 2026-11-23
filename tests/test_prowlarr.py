@@ -110,3 +110,31 @@ def test_torznab_search_sends_ids_and_parses_attrs(monkeypatch):
             "category": "2000",
         }
     ]
+
+
+def test_torznab_search_includes_season_and_episode(monkeypatch):
+    xml = b"<rss><channel></channel></rss>"
+    captured = {}
+
+    class FakeResponse:
+        def read(self):
+            return xml
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return False
+
+    def fake_urlopen(request, timeout=0):
+        captured["url"] = request.full_url
+        return FakeResponse()
+
+    monkeypatch.setattr("urllib.request.urlopen", fake_urlopen)
+    client = ProwlarrClient("http://127.0.0.1:9696/api/v1", "abc")
+    client.torznab_search(
+        1, media_type="series", tvdb_id=479271, season=1, episode=3
+    )
+    assert "tvdbid=479271" in captured["url"]
+    assert "season=1" in captured["url"]
+    assert "ep=3" in captured["url"]

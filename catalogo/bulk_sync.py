@@ -510,7 +510,13 @@ def sync_sources(
                     int(asset["episode"] or 0),
                 )
             ]
-            return exact or matched
+            if exact:
+                return exact
+            # Nunca otro episodio: solo packs de temporada/serie.
+            return [
+                item for item in matched
+                if parse_episode(item.get("title")) is None
+            ]
         return matched
 
     def _search_asset(asset: dict) -> dict:
@@ -549,103 +555,122 @@ def sync_sources(
                 )
             return found
 
-        if parallel_queries and len(queries) > 1:
-            # Las dos variantes a la vez: la primera que sirva gana y la
-            # espera se queda en la más lenta, no en la suma.
-            with ThreadPoolExecutor(max_workers=len(queries)) as pool:
-                futures = [
-                    pool.submit(prowlarr_search, query) for query in queries
-                ]
-                for query, future in zip(queries, futures):
+        # 1) ID primero: es la firma oficial y evita remakes/años
+        # distintos. 2) Si no hay ID o el indexer no lo soporta, texto.
+        id_args: dict = {}
+        if "tmdb" in asset.keys() and asset["tmdb"]:
+            id_args["tmdb_id"] = int(asset["tmdb"])
+        if (
+            kind == "series"
+            and "tvdb_id" in asset.keys()
+            and asset["tvdb_id"]
+        ):
+            id_args["tvdb_id"] = int(asset["tvdb_id"])
+        if "imdb" in asset.keys() and asset["imdb"]:
+            id_args["imdb_id"] = str(asset["imdb"])
+        if kind == "series":
+            season = int(asset["season"] or 0)
+            episode = int(asset["episode"] or 0)
+            if season and episode:
+                id_args["season"] = season
+                id_args["episode"] = episode
+
+        def supports_id(name: str, args: dict) -> bool:
+            item = indexer_by_name.get(name)
+            if item is None:
+                return False
+            caps = item.get("capabilities") or {}
+            key = (
+                "tvSearchParams" if media_type == "series"
+                else "movieSearchParams"
+            )
+            supported = {
+                str(value).lower() for value in caps.get(key) or []
+            }
+            if "tmdb_id" in args and "tmdbid" in supported:
+                return True
+            if "tvdb_id" in args and "tvdbid" in supported:
+                return True
+            if "imdb_id" in args and "imdbid" in supported:
+                return True
+            return False
+
+        def by_id(indexer: tuple[str, int], args: dict) -> list[dict]:
+            name, indexer_id = indexer
+            rows: list[dict] = []
+            for attempt in (1, 2):
+                try:
+                    with _ID_SEARCH:
+                        rows = client.torznab_search(
+                            indexer_id,
+                            media_type=media_type,
+                            limit=50,
+                            **args,
+                        )
+                    break
+                except Exception as exc:
+                    if "429" in str(exc) and attempt == 1:
+                        time.sleep(1.0)
+                        continue
+                    errors.append(f"{asset['key']} [{name} id]: {exc}")
+                    return []
+            for row in rows:
+                row["indexer"] = name
+                row["source"] = "prowlarr"
+            return rows
+
+        def run_id_search(args: dict) -> list[dict]:
+            nonlocal asked
+            targets = [pair for pair in found if supports_id(pair[0], args)]
+            if not args or not targets:
+                return []
+            asked += 1
+            with ThreadPoolExecutor(max_workers=min(2, len(targets))) as pool:
+                chunks = list(pool.map(lambda pair: by_id(pair, args), targets))
+            return [row for chunk in chunks for row in chunk]
+
+        if id_fallback and id_args:
+            id_rows = run_id_search(id_args)
+            asset_results += len(id_rows)
+            accepted = _accepted_for(asset, id_rows, trust=True)
+            if (
+                not accepted
+                and kind == "series"
+                and "season" in id_args
+            ):
+                # Algunos trackers no cruzan temporada/episodio con el ID;
+                # se repite sin ellos y se acepta solo pack o episodio exacto.
+                pack_args = {
+                    key: value for key, value in id_args.items()
+                    if key not in ("season", "episode")
+                }
+                id_rows = run_id_search(pack_args)
+                asset_results += len(id_rows)
+                accepted = _accepted_for(asset, id_rows, trust=True)
+
+        if not accepted:
+            if parallel_queries and len(queries) > 1:
+                # Las dos variantes a la vez: la primera que sirva gana y la
+                # espera se queda en la más lenta, no en la suma.
+                with ThreadPoolExecutor(max_workers=len(queries)) as pool:
+                    futures = [
+                        pool.submit(prowlarr_search, query) for query in queries
+                    ]
+                    for query, future in zip(queries, futures):
+                        asked += 1
+                        results = future.result()
+                        asset_results += len(results)
+                        accepted = _accepted_for(asset, results)
+                        if accepted:
+                            break
+            else:
+                for query in queries:
                     asked += 1
-                    results = future.result()
+                    results = prowlarr_search(query)
                     asset_results += len(results)
                     accepted = _accepted_for(asset, results)
                     if accepted:
                         break
-        else:
-            for query in queries:
-                asked += 1
-                results = prowlarr_search(query)
-                asset_results += len(results)
-                accepted = _accepted_for(asset, results)
-                if accepted:
-                    break
-
-        if not accepted and id_fallback:
-            # Como Radarr/Sonarr: si el texto no basta, prueba por ID.
-            id_args: dict = {}
-            if asset["tmdb"] if "tmdb" in asset.keys() else None:
-                id_args["tmdb_id"] = int(asset["tmdb"])
-            if (
-                kind == "series"
-                and "tvdb_id" in asset.keys()
-                and asset["tvdb_id"]
-            ):
-                id_args["tvdb_id"] = int(asset["tvdb_id"])
-            if (
-                "imdb" in asset.keys()
-                and asset["imdb"]
-            ):
-                id_args["imdb_id"] = str(asset["imdb"])
-
-            def supports_id(name: str) -> bool:
-                item = indexer_by_name.get(name)
-                if item is None:
-                    return False
-                caps = item.get("capabilities") or {}
-                key = (
-                    "tvSearchParams" if media_type == "series"
-                    else "movieSearchParams"
-                )
-                supported = {
-                    str(value).lower() for value in caps.get(key) or []
-                }
-                if "tmdb_id" in id_args and "tmdbid" in supported:
-                    return True
-                if "tvdb_id" in id_args and "tvdbid" in supported:
-                    return True
-                if "imdb_id" in id_args and "imdbid" in supported:
-                    return True
-                return False
-
-            def by_id(indexer: tuple[str, int]) -> list[dict]:
-                name, indexer_id = indexer
-                rows: list[dict] = []
-                for attempt in (1, 2):
-                    try:
-                        with _ID_SEARCH:
-                            rows = client.torznab_search(
-                                indexer_id,
-                                media_type=media_type,
-                                limit=50,
-                                **id_args,
-                            )
-                        break
-                    except Exception as exc:
-                        # Prowlarr limita ráfagas: un reintento corto.
-                        if "429" in str(exc) and attempt == 1:
-                            time.sleep(1.0)
-                            continue
-                        errors.append(f"{asset['key']} [{name} id]: {exc}")
-                        return []
-                for row in rows:
-                    row["indexer"] = name
-                    row["source"] = "prowlarr"
-                return rows
-
-            id_indexers = [
-                pair for pair in found if supports_id(pair[0])
-            ]
-            if id_args and id_indexers:
-                with ThreadPoolExecutor(
-                    max_workers=min(2, len(id_indexers))
-                ) as pool:
-                    chunks = list(pool.map(by_id, id_indexers))
-                id_rows = [row for chunk in chunks for row in chunk]
-                asset_results += len(id_rows)
-                # El índice ya filtró por ID: no se exige el título.
-                accepted = _accepted_for(asset, id_rows, trust=True)
 
         if not accepted:
             # Jackett solo como respaldo: su indexer "all" es lo más lento.

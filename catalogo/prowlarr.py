@@ -223,6 +223,8 @@ class ProwlarrClient:
         tmdb_id: int | None = None,
         tvdb_id: int | None = None,
         imdb_id: str | None = None,
+        season: int | None = None,
+        episode: int | None = None,
         limit: int = 50,
     ) -> list[dict]:
         """Búsqueda Torznab por ID, como la que usan Radarr y Sonarr.
@@ -245,6 +247,10 @@ class ProwlarrClient:
             params.append(("tvdbid", str(int(tvdb_id))))
         if imdb_id:
             params.append(("imdbid", str(imdb_id)))
+        if season is not None:
+            params.append(("season", str(int(season))))
+        if episode is not None:
+            params.append(("ep", str(int(episode))))
         url = (
             f"{self.torznab_base}/{int(indexer_id)}/api?"
             f"{urllib.parse.urlencode(params)}"

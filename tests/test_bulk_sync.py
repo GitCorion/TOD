@@ -462,3 +462,69 @@ def test_sync_sources_accepts_explicit_key_batch(tmp_path):
     )
     assert report["assets_checked"] == 2
     assert report["accepted"] >= 1
+
+
+class IdFirstProwlarr(FakeProwlarr):
+    def __init__(self):
+        super().__init__([])
+        self.id_calls = []
+
+    def torznab_search(self, indexer_id, **kwargs):
+        self.id_calls.append((indexer_id, kwargs))
+        return [
+            {
+                "title": "Heart.of.the.Beast.2026.1080p.mkv",
+                "size": 1000,
+                "seeders": 9,
+                "peers": 1,
+                "infoHash": "idhash",
+                "downloadUrl": "http://x/download",
+                "infoUrl": "https://tracker/id",
+                "guid": "id-first",
+                "tmdbId": 1263337,
+                "category": "2000",
+            }
+        ]
+
+
+def test_external_id_is_searched_before_text(tmp_path):
+    db = seed_db(tmp_path)
+    client = IdFirstProwlarr()
+    report = sync_sources(
+        db, client, limit=5, delay=0, id_fallback=True
+    )
+    assert report["inserted"] == 1
+    assert client.id_calls
+    # El ID resolvió: no se llega a buscar por texto.
+    assert client.searches == []
+
+
+def test_series_rejects_another_episode_but_accepts_a_pack(tmp_path):
+    db = seed_db(tmp_path)
+    conn = sqlite3.connect(db)
+    conn.execute(
+        "INSERT INTO media_items(key,kind,tmdb,title,year,season,episode,"
+        "popularity) VALUES(?,?,?,?,?,?,?,?)",
+        ("series:tmdb:555:1:1", "series", 555, "Serie", 2026, 1, 1, 30.0),
+    )
+    conn.commit()
+    conn.close()
+    other = result(
+        title="Serie.S01E02.1080p.mkv", guid="ep2", infoHash="ep2",
+        indexer="TrackerEspanol (API)",
+    )
+    report = sync_sources(
+        db, FakeProwlarr([other]), limit=1, delay=0,
+        key="series:tmdb:555:1:1", kind="series",
+    )
+    assert report["accepted"] == 0
+
+    pack = result(
+        title="Serie.S01.1080p.PACK.mkv", guid="pack", infoHash="pack",
+        indexer="TrackerEspanol (API)",
+    )
+    report = sync_sources(
+        db, FakeProwlarr([pack]), limit=1, delay=0,
+        key="series:tmdb:555:1:1", kind="series",
+    )
+    assert report["accepted"] == 1
