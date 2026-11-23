@@ -38,7 +38,19 @@ from . import (
     ondemand,
     queries,
 )
-from . import api_ondemand, api_status, language_settings, policy, seed_settings, settings, strm_inventory
+from . import (
+    api_intake,
+    api_ondemand,
+    api_releases,
+    api_status,
+    api_titles,
+    api_tmdb,
+    language_settings,
+    policy,
+    seed_settings,
+    settings,
+    strm_inventory,
+)
 from . import strm as strm_module
 from .arr_data import ArrData
 from .config import Config
@@ -980,7 +992,18 @@ class Handler(PlaybackHandler):
             raise WebError(404, "no encontrado")
 
         if parts and parts[0] == "intake":
-            return self._intake(parts, params, body, head=head, mutate=mutate)
+            result = api_intake.handle(
+                app,
+                parts,
+                params,
+                body,
+                client_ip=self.client_address[0],
+                mutate=mutate,
+            )
+            if result is not None:
+                status_code, payload = result
+                return self._json(status_code, payload, head=head)
+            raise WebError(404, "no encontrado")
 
         if parts and parts[0] == "ondemand":
             result = api_ondemand.handle(
@@ -1000,13 +1023,36 @@ class Handler(PlaybackHandler):
             return self._json(200, {"items": queries.list_trackers(db)}, head=head)
 
         if parts and parts[0] == "titles":
-            return self._titles(parts, params, body, head=head, mutate=mutate)
+            result = api_titles.handle(
+                app,
+                parts,
+                params,
+                body,
+                client_ip=self.client_address[0],
+                mutate=mutate,
+            )
+            if result is not None:
+                status_code, payload = result
+                return self._json(status_code, payload, head=head)
+            raise WebError(404, "no encontrado")
 
         if parts and parts[0] == "tmdb":
-            return self._tmdb(parts, params, head=head)
+            result = api_tmdb.handle(app, parts, params)
+            status_code, payload = result
+            return self._json(status_code, payload, head=head)
 
         if parts and parts[0] == "releases":
-            return self._releases(parts, body, mutate=mutate, head=head)
+            result = api_releases.handle(
+                app,
+                parts,
+                body,
+                client_ip=self.client_address[0],
+                mutate=mutate,
+            )
+            if result is not None:
+                status_code, payload = result
+                return self._json(status_code, payload, head=head)
+            raise WebError(404, "no encontrado")
 
         if parts == ["downloads"] and not mutate:
             qbit, error = app.qbit()
@@ -1584,546 +1630,6 @@ class Handler(PlaybackHandler):
             )
             app.audit("web.tracker_block", payload=result)
             return self._json(200, result, head=head)
-
-        raise WebError(404, "no encontrado")
-
-    def _titles(
-        self,
-        parts: list[str],
-        params: dict[str, str],
-        body: dict[str, Any],
-        *,
-        head: bool,
-        mutate: bool,
-    ) -> None:
-        app = self.app
-        db = app.db_path
-
-        if len(parts) == 1:
-            if mutate:
-                kind = str(body.get("kind") or "movie")
-                tmdb = self._int(body.get("tmdb"), 0)
-                if not tmdb:
-                    raise WebError(400, "falta tmdb")
-                origin = str(body.get("origin") or "tmdb")[:40]
-                follow = bool(body.get("follow", True))
-                if kind == "series":
-                    seasons = body.get("seasons") or []
-                    if not isinstance(seasons, list) or not seasons:
-                        raise WebError(400, "elige al menos una temporada")
-                    seasons = [self._int(value, 0) for value in seasons]
-                    seasons = [value for value in seasons if value > 0]
-                    if not seasons:
-                        raise WebError(400, "temporadas inválidas")
-                    result = admin.add_series(
-                        app.config, tmdb, seasons, origin=origin
-                    )
-                    intake.set_follow(db, result.get("keys") or [], follow)
-                    app.audit("web.add_series", payload={
-                        "tmdb": tmdb, "seasons": seasons,
-                        "episodes": result.get("episodes"),
-                        "origin": origin, "follow": follow,
-                    })
-                else:
-                    result = admin.add_movie(
-                        app.config, tmdb, origin=origin
-                    )
-                    intake.set_follow(db, [result.get("key")], follow)
-                    app.audit("web.add_movie", payload={
-                        "tmdb": tmdb, "key": result.get("key"),
-                        "origin": origin, "follow": follow,
-                    })
-                return self._json(200, result, head=head)
-            return self._json(
-                200,
-                queries.list_titles(
-                    db,
-                    q=params.get("q") or "",
-                    kind=params.get("kind") or "",
-                    status=params.get("status") or "",
-                    availability=params.get("availability") or "",
-                    page=self._int(params.get("page"), 1),
-                    per_page=self._int(params.get("per_page"), 25),
-                    sort=params.get("sort") or "popularity",
-                ),
-                head=head,
-            )
-
-        asset_id = self._int(parts[1], 0)
-        if asset_id <= 0:
-            raise WebError(400, "id inválido")
-        if len(parts) == 2 and not mutate:
-            qbit, _ = app.qbit()
-            detail = queries.title_detail(db, asset_id, qbit=qbit)
-            if detail is None:
-                raise WebError(404, "título no encontrado")
-            item = detail["item"]
-            if item.get("tmdb"):
-                detail["poster_path"] = item.get("poster_path") or admin.tmdb_poster(
-                    app.config,
-                    item["kind"],
-                    int(item["tmdb"]),
-                )
-            detail["ondemand"] = ondemand.item_state(
-                db, app.config, detail["item"], qbit=qbit, arr=app.arr
-            )
-            if detail["item"].get("kind") == "movie" and detail["item"].get("tmdb"):
-                try:
-                    detail["collection"] = admin.tmdb_movie_collection(
-                        app.config, int(detail["item"]["tmdb"])
-                    )
-                except Exception:
-                    detail["collection"] = None
-            return self._json(200, detail, head=head)
-
-        if len(parts) == 3 and parts[2] == "status" and not mutate:
-            with closing(connect(db)) as conn:
-                row = conn.execute(
-                    "SELECT key FROM media_items WHERE id=?", (asset_id,)
-                ).fetchone()
-            if row is None:
-                raise WebError(404, "título no encontrado")
-            qbit, _ = app.qbit()
-            return self._json(
-                200,
-                asset_status(str(db), row["key"], qbit=qbit) or {},
-                head=head,
-            )
-
-        if len(parts) == 3 and parts[2] == "library":
-            if not mutate:
-                raise WebError(405, "usa POST")
-            with closing(connect(db)) as conn:
-                row = conn.execute(
-                    "SELECT * FROM media_items WHERE id=?", (asset_id,)
-                ).fetchone()
-            if row is None:
-                raise WebError(404, "título no encontrado")
-            result = admin.set_library(
-                app.config,
-                key=row["key"],
-                member=bool(body.get("member", True)),
-                monitored=body.get("monitored") if "monitored" in body else None,
-                source="manual",
-            )
-            jellyfin_scan: dict[str, Any] = {"ok": False, "reason": "sin_rutas"}
-            if result.get("member"):
-                path = strm_module.strm_path(
-                    app.config.catalog_library, dict(row)
-                )
-                if path.exists():
-                    jellyfin_scan = jellyfin.notify_updated(
-                        app.config, [path]
-                    )
-            app.audit(
-                "web.title_library",
-                asset_id=asset_id,
-                payload={**result, "jellyfin_scan": jellyfin_scan},
-            )
-            return self._json(
-                200, {**result, "jellyfin_scan": jellyfin_scan}, head=head
-            )
-
-        if len(parts) == 3 and parts[2] == "monitor":
-            if not mutate:
-                raise WebError(405, "usa POST")
-            with closing(connect(db)) as conn:
-                row = conn.execute(
-                    "SELECT key FROM media_items WHERE id=?", (asset_id,)
-                ).fetchone()
-            if row is None:
-                raise WebError(404, "título no encontrado")
-            monitored = bool(body.get("monitored", True))
-            result = admin.set_monitored(
-                app.config, row["key"], monitored=monitored, source="manual"
-            )
-            job_id = None
-            if monitored:
-                try:
-                    job_id = app.runner.submit(
-                        "monitor",
-                        {"keys": [row["key"]], "limit": 1, "delay": 0},
-                        requested_by=self.client_address[0],
-                    )
-                except JobConflict:
-                    job_id = None
-            app.audit(
-                "web.title_monitor",
-                asset_id=asset_id,
-                payload={"key": row["key"], "monitored": monitored, "job_id": job_id},
-            )
-            return self._json(
-                200, {**result, "job_id": job_id}, head=head
-            )
-
-        if len(parts) == 3 and parts[2] == "unpublish":
-            if not mutate:
-                raise WebError(405, "usa POST")
-            with closing(connect(db)) as conn:
-                row = conn.execute(
-                    "SELECT key FROM media_items WHERE id=?", (asset_id,)
-                ).fetchone()
-            if row is None:
-                raise WebError(404, "título no encontrado")
-            result = admin.remove_from_library(app.config, row["key"])
-            app.audit(
-                "web.library_remove",
-                asset_id=asset_id,
-                payload={"key": row["key"], "removed": result["removed"]},
-            )
-            return self._json(200, result, head=head)
-
-        if len(parts) == 3 and parts[2] == "manual-search":
-            if not mutate:
-                raise WebError(405, "usa POST")
-            with closing(connect(db)) as conn:
-                row = conn.execute(
-                    "SELECT key FROM media_items WHERE id=?", (asset_id,)
-                ).fetchone()
-            if row is None:
-                raise WebError(404, "título no encontrado")
-            try:
-                result = admin.manual_search(
-                    app.config,
-                    row["key"],
-                    min_seeders=self._int(body.get("min_seeders"), 0),
-                    no_jackett=bool(body.get("no_jackett")),
-                    query=str(body.get("query") or "").strip() or None,
-                )
-            except Exception as exc:
-                raise WebError(400, "no se pudo buscar", str(exc)[:300])
-            app.audit(
-                "web.manual_search",
-                asset_id=asset_id,
-                payload={
-                    "key": row["key"],
-                    "releases": len(result.get("releases") or []),
-                },
-            )
-            return self._json(200, result, head=head)
-
-        if len(parts) == 3 and parts[2] in ("sync", "export"):
-            if not mutate:
-                raise WebError(405, "usa POST")
-            with closing(connect(db)) as conn:
-                row = conn.execute(
-                    "SELECT id, key, kind FROM media_items WHERE id=?",
-                    (asset_id,),
-                ).fetchone()
-            if row is None:
-                raise WebError(404, "título no encontrado")
-            keys = [row["key"]]
-            if isinstance(body.get("keys"), list):
-                keys = [str(key)[:200] for key in body["keys"]][:200]
-            kind = "series" if row["kind"] == "series" else "movie"
-            if parts[2] == "sync":
-                job_kind = "sync-sources"
-                job_params = {
-                    "keys": keys,
-                    "kind": kind,
-                    "delay": float(body.get("delay") or 0.5),
-                    "min_seeders": self._int(body.get("min_seeders"), 1),
-                    "no_jackett": bool(body.get("no_jackett")),
-                }
-            else:
-                job_kind = "export-strm"
-                job_params = {
-                    "keys": keys,
-                    "min_seeders": self._int(body.get("min_seeders"), 1),
-                    "versions": body.get("versions") or "available",
-                    "require_health": bool(body.get("require_health")),
-                }
-            job_id = app.runner.submit(
-                job_kind, job_params, requested_by=self.client_address[0]
-            )
-            app.audit(
-                "web.title_" + parts[2],
-                asset_id=asset_id,
-                payload={"job_id": job_id, "keys": len(keys)},
-            )
-            return self._json(
-                202,
-                {"job_id": job_id, "job": jobs.get_job(db, job_id)},
-                head=head,
-            )
-
-        raise WebError(404, "no encontrado")
-
-    def _intake(
-        self,
-        parts: list[str],
-        params: dict[str, str],
-        body: dict[str, Any],
-        *,
-        head: bool,
-        mutate: bool,
-    ) -> None:
-        app = self.app
-        db = app.db_path
-
-        if parts in (["intake"], ["intake", "reception"]) and not mutate:
-            return self._json(
-                200,
-                intake.reception(
-                    db,
-                    limit=self._int(params.get("limit"), 8),
-                    include_flows=params.get("flows", "1") != "0",
-                ),
-                head=head,
-            )
-
-        if parts == ["intake", "preflight"]:
-            if not mutate:
-                raise WebError(405, "usa POST")
-            try:
-                result = intake.preflight(
-                    app.config,
-                    str(body.get("text") or ""),
-                    kind=str(body.get("kind") or "movie"),
-                )
-            except intake.IntakeError as exc:
-                raise WebError(400, str(exc)) from exc
-            return self._json(200, result, head=head)
-
-        if parts == ["intake", "import"]:
-            if not mutate:
-                raise WebError(405, "usa POST")
-            try:
-                result = intake.confirm(
-                    app.config,
-                    str(body.get("text") or ""),
-                    kind=str(body.get("kind") or "movie"),
-                    label=str(body.get("label") or "") or None,
-                    requested_by=self.client_address[0],
-                    follow=bool(body.get("follow", True)),
-                )
-            except intake.IntakeError as exc:
-                raise WebError(400, str(exc)) from exc
-            app.audit(
-                "web.intake_import",
-                payload={
-                    "batch_id": result.get("id"),
-                    "added": result.get("added"),
-                    "duplicate": result.get("duplicate"),
-                    "unknown": result.get("unknown"),
-                    "errors": result.get("errors"),
-                },
-            )
-            return self._json(200, result, head=head)
-
-        if parts == ["intake", "torrent"]:
-            if not mutate:
-                raise WebError(405, "usa POST")
-            filename = str(body.get("filename") or "manual.torrent")[:200]
-            encoded = str(body.get("data") or "")
-            try:
-                raw = base64.b64decode(encoded, validate=True)
-            except Exception as exc:
-                raise WebError(400, "archivo inválido") from exc
-            if len(raw) > intake.MAX_TORRENT_BYTES:
-                raise WebError(413, "el .torrent es demasiado grande")
-            try:
-                result = intake.add_torrent(
-                    app.config,
-                    filename=filename,
-                    raw=raw,
-                    requested_by=self.client_address[0],
-                )
-            except intake.IntakeError as exc:
-                raise WebError(400, str(exc)) from exc
-            app.audit(
-                "web.intake_torrent",
-                payload={
-                    "batch_id": result.get("batch_id"),
-                    "name": result.get("name"),
-                    "info_hash": result.get("info_hash"),
-                },
-            )
-            return self._json(200, result, head=head)
-
-        if (
-            len(parts) == 3
-            and parts[1] == "batches"
-            and not mutate
-        ):
-            batch_id = self._int(parts[2], 0)
-            if batch_id <= 0:
-                raise WebError(400, "lote inválido")
-            result = intake.batch_detail(db, batch_id)
-            if result is None:
-                raise WebError(404, "lote no encontrado")
-            return self._json(200, result, head=head)
-
-        raise WebError(404, "no encontrado")
-
-    def _tmdb(
-        self, parts: list[str], params: dict[str, str], *, head: bool
-    ) -> None:
-        app = self.app
-        if len(parts) == 2 and parts[1] == "search":
-            kind = params.get("kind") or "movie"
-            result = admin.tmdb_search(
-                app.config,
-                params.get("q") or "",
-                kind="series" if kind == "series" else "movie",
-                year=self._int(params.get("year"), 0) or None,
-                page=self._int(params.get("page"), 1),
-            )
-            downloaded_ids = ondemand.downloaded_asset_ids(app.db_path)
-            keys = strm_inventory.inventory(app.config.catalog_library)["keys"]
-            for card in result.get("results") or []:
-                if not card.get("tmdb"):
-                    continue
-                kind_card = card.get("kind") or "movie"
-                tmdb = int(card["tmdb"])
-                lib = app.arr.in_library(kind_card, tmdb)
-                card["in_library"] = bool(lib.get("in_library"))
-                card["library_has_file"] = bool(lib.get("has_file"))
-                with closing(connect(app.db_path)) as conn:
-                    rows = conn.execute(
-                        """
-                        SELECT m.id, m.key,
-                               EXISTS(SELECT 1 FROM releases r
-                                      WHERE r.asset_id = m.id) AS has_release
-                        FROM media_items m
-                        WHERE m.kind = ? AND m.tmdb = ?
-                        """,
-                        (kind_card, tmdb),
-                    ).fetchall()
-                if not rows:
-                    card["catalog_state"] = None
-                    card["catalog_downloaded"] = False
-                    continue
-                card["catalog_downloaded"] = any(
-                    int(row["id"]) in downloaded_ids for row in rows
-                )
-                if any(
-                    strm_inventory.is_key_published(dict(row), keys)
-                    for row in rows
-                ):
-                    card["catalog_state"] = "publicado"
-                elif any(int(row["has_release"] or 0) for row in rows):
-                    card["catalog_state"] = "pendiente"
-                else:
-                    card["catalog_state"] = "sin_fuente"
-            return self._json(200, result, head=head)
-        if len(parts) == 3 and parts[1] == "seasons":
-            result = admin.tmdb_seasons(app.config, self._int(parts[2], 0))
-            return self._json(200, result, head=head)
-        if len(parts) == 4 and parts[1] == "episodes":
-            result = admin.tmdb_episodes(
-                app.config, self._int(parts[2], 0), self._int(parts[3], 0)
-            )
-            return self._json(200, result, head=head)
-        raise WebError(404, "no encontrado")
-
-    def _releases(
-        self,
-        parts: list[str],
-        body: dict[str, Any],
-        *,
-        mutate: bool,
-        head: bool,
-    ) -> None:
-        app = self.app
-        db = app.db_path
-        release_id = self._int(parts[1], 0) if len(parts) > 1 else 0
-        if release_id <= 0:
-            raise WebError(400, "release inválido")
-        with closing(connect(db)) as conn:
-            row = conn.execute(
-                """
-                SELECT r.id, r.asset_id, m.key, m.title
-                FROM releases r JOIN media_items m ON m.id = r.asset_id
-                WHERE r.id = ?
-                """,
-                (release_id,),
-            ).fetchone()
-        if row is None:
-            raise WebError(404, "release no encontrado")
-
-        if len(parts) == 3 and parts[2] == "target":
-            if not mutate:
-                raise WebError(405, "usa POST")
-            source_kind = str(body.get("source_kind") or "auto")
-            result = admin.set_target(
-                app.config,
-                row["key"],
-                source_kind,
-                release_id=release_id,
-                file_id=self._int(body.get("file_id"), 0) or None,
-                note=str(body.get("note") or "")[:300] or None,
-            )
-            app.audit(
-                "web.set_target", asset_id=row["asset_id"], payload=result
-            )
-            return self._json(200, result, head=head)
-
-        if len(parts) == 3 and parts[2] == "health":
-            if not mutate:
-                raise WebError(405, "usa POST")
-            job_id = app.runner.submit(
-                "health",
-                {
-                    "key": row["key"],
-                    "limit": 1,
-                    "delay": 0,
-                    "dry_run": bool(body.get("dry_run")),
-                },
-                requested_by=self.client_address[0],
-            )
-            app.audit(
-                "web.release_health",
-                asset_id=row["asset_id"],
-                payload={"job_id": job_id, "release_id": release_id},
-            )
-            return self._json(
-                202, {"job_id": job_id, "job": jobs.get_job(db, job_id)}, head=head
-            )
-
-        if len(parts) == 3 and parts[2] == "prepare":
-            if not mutate:
-                raise WebError(405, "usa POST")
-            try:
-                result = admin.prepare_release(
-                    app.config,
-                    app.play_service,
-                    release_id,
-                    client_ip=self.client_address[0],
-                )
-            except Exception as exc:
-                detail = getattr(exc, "decision", None) or str(exc)[:300]
-                raise WebError(503, "no se pudo preparar", detail)
-            try:
-                radarr, sonarr = admin._arr_clients(app.config)
-                published = admin.export_strm(
-                    app.config.db_path,
-                    app.config.catalog_library,
-                    base_url=app.config.playback_base_url,
-                    key=result.get("key"),
-                    limit=None,
-                    min_seeders=1,
-                    versions_filter="available",
-                    radarr=radarr,
-                    sonarr=sonarr,
-                )
-                paths = published.get("written_paths") or []
-                if paths:
-                    strm_inventory.invalidate(app.config.catalog_library)
-                    jellyfin.notify_updated(app.config, paths[:100])
-                result["strm"] = {
-                    "written": published.get("written", 0),
-                    "paths": paths[:10],
-                }
-            except Exception as exc:
-                result["strm"] = {"error": str(exc)[:200]}
-            app.audit(
-                "web.prepare", asset_id=row["asset_id"], payload={
-                    "release_id": release_id,
-                    "info_hash": result.get("info_hash"),
-                },
-            )
-            return self._json(202, result, head=head)
 
         raise WebError(404, "no encontrado")
 

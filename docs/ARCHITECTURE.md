@@ -16,7 +16,11 @@ catalogo/
 ├── app_settings.py   ajustes tipados, secretos y recarga
 ├── log.py            niveles y formato de log del proceso
 ├── api_status.py     servicios, discos, indexers y salud para la API
-├── api_ondemand.py   catálogo, alta, ajustes y descargas bajo demanda
+├── api_ondemand.py   catálogo, ajustes y descargas bajo demanda
+├── api_titles.py     alta, ficha, biblioteca y seguimiento
+├── api_intake.py     recepción, listas y torrents manuales
+├── api_tmdb.py       búsqueda, temporadas y episodios
+├── api_releases.py   fijar, verificar y preparar versiones
 ├── errors.py         WebError común a la API
 ├── attention.py      avisos agregados de configuración, rutas e integraciones
 ├── integrations.py   pruebas de conexión
