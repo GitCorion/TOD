@@ -36,7 +36,7 @@ class IntegrationError(RuntimeError):
 
 
 SECRET_RE = re.compile(
-    r"(?i)\b(apikey|api_key|token|pass|password|rd_api_key)=([^&\s]+)"
+    r"(?i)\b(apikey|api_key|token|pass|password)=([^&\s]+)"
 )
 HTTP_HINTS = {
     401: ("auth", "La clave o contraseña no es válida, o no tiene permisos."),

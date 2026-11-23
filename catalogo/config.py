@@ -117,7 +117,6 @@ class Config:
     qbittorrent_pass: str | None
     jackett_url: str
     jackett_api_key: str | None
-    rd_api_key: str | None
     max_stream_bytes: int
     tmdb_api_key: str | None = None
     catalog_library: Path = Path("/mnt/catalogo")
@@ -177,7 +176,6 @@ class Config:
                 "JACKETT_URL", "http://127.0.0.1:9117/api/v2.0"
             ),
             jackett_api_key=os.environ.get("JACKETT_API_KEY") or _jackett_key(),
-            rd_api_key=_secret("RD_API_KEY"),
             max_stream_bytes=int(
                 float(_env_value("CATALOGO_MAX_STREAM_GB", "0") or "0")
                 * 1024**3

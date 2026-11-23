@@ -25,7 +25,6 @@ def _config(tmp_path, db=None):
         qbittorrent_pass=None,
         jackett_url="http://127.0.0.1:9117/api/v2.0",
         jackett_api_key=None,
-        rd_api_key=None,
         max_stream_bytes=0,
         tmdb_api_key=None,
         catalog_library=tmp_path / "catalogo",
