@@ -159,6 +159,13 @@ class QbittorrentWriteClient(QbittorrentClient):
             {"hashes": info_hash},
         )
 
+    def toggle_sequential(self, info_hash: str) -> None:
+        """Conmuta descarga secuencial; una vez si estaba apagada."""
+        self._form(
+            "/api/v2/torrents/toggleSequentialDownload",
+            {"hashes": info_hash},
+        )
+
     def set_download_limit(self, info_hash: str, limit: int) -> None:
         """Límite de descarga en bytes/s; -1 o 0 = ilimitado."""
         self._form(

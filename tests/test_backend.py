@@ -29,6 +29,7 @@ class FakeQbit:
         self.forced = []
         self.resumed = []
         self.toggles = []
+        self.sequential_toggles = []
 
     def torrents(self, category=None):
         return list(self.torrents_list)
@@ -51,6 +52,9 @@ class FakeQbit:
 
     def toggle_first_last(self, info_hash):
         self.toggles.append(info_hash)
+
+    def toggle_sequential(self, info_hash):
+        self.sequential_toggles.append(info_hash)
 
     def pause(self, info_hash):
         self.paused = getattr(self, "paused", [])
@@ -124,6 +128,8 @@ def test_existing_running_torrent_is_not_paused_or_resumed(tmp_path):
                 "hash": info_hash(TORRENT),
                 "state": "forcedDL",
                 "progress": 0.1,
+                "seq_dl": True,
+                "f_l_piece_prio": True,
             }
         ],
     )
@@ -136,6 +142,8 @@ def test_existing_running_torrent_is_not_paused_or_resumed(tmp_path):
     assert client.resumed == []
     assert client.forced == []
     assert client.priorities
+    assert client.toggles == []
+    assert client.sequential_toggles == []
 
 
 def test_existing_paused_torrent_is_started_once(tmp_path):
@@ -152,6 +160,27 @@ def test_existing_paused_torrent_is_started_once(tmp_path):
     assert client.added == []
     assert getattr(client, "paused", []) == []
     assert client.resumed == [info_hash(TORRENT)]
+    assert client.forced == [(info_hash(TORRENT), True)]
+
+
+def test_existing_arr_torrent_enables_sequential_and_first_last(tmp_path):
+    db, key, _ = seed(tmp_path, kind="movie")
+    client = FakeQbit(
+        files=[{"index": 0, "name": "Movie.mkv", "size": 1000}],
+        existing=[
+            {
+                "hash": info_hash(TORRENT),
+                "state": "pausedDL",
+                "progress": 0,
+                "seq_dl": False,
+                "f_l_piece_prio": False,
+            }
+        ],
+    )
+    result = prepare_download(str(db), key, client, torrent_bytes=TORRENT)
+    assert result["resumed"] is True
+    assert client.sequential_toggles == [info_hash(TORRENT)]
+    assert client.toggles == [info_hash(TORRENT)]
     assert client.forced == [(info_hash(TORRENT), True)]
 
 

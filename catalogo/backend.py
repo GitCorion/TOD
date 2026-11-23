@@ -101,6 +101,7 @@ class QbitWrite(Protocol):
     def set_file_priorities(self, info_hash: str, priorities: dict[int, int]) -> None: ...
     def set_force_start(self, info_hash: str, value: bool = True) -> None: ...
     def toggle_first_last(self, info_hash: str) -> None: ...
+    def toggle_sequential(self, info_hash: str) -> None: ...
     def pause(self, info_hash: str) -> None: ...
     def resume(self, info_hash: str) -> None: ...
 
@@ -466,13 +467,21 @@ def prepare_download(
         files, target_index, private=(policy.privacy != "public")
     )
     client.set_file_priorities(hash_, priorities)
-    # qBittorrent no aplica firstLastPiecePrio si la bandera ya venía puesta
-    # desde el add: necesita la transición false->true. Se rearma con el
-    # torrent parado (nuevo o pausado) para que baje la última pieza y el
-    # stream pueda arrancar sin esperar a la descarga completa.
-    if existing is None or was_paused:
+    # Un torrent nuevo se añade con seq_dl/first_last; un torrent adoptado de
+    # Radarr/Sonarr puede tenerlos apagados y el búfer contiguo no arranca
+    # nunca. Se activan si faltan. Si ya estaban puestos y el torrent estaba
+    # parado, se rearma first_last con la transición false->true.
+    if existing is None:
         client.toggle_first_last(hash_)
         client.toggle_first_last(hash_)
+    else:
+        if not bool(existing.get("seq_dl")):
+            client.toggle_sequential(hash_)
+        if not bool(existing.get("f_l_piece_prio")):
+            client.toggle_first_last(hash_)
+        elif was_paused:
+            client.toggle_first_last(hash_)
+            client.toggle_first_last(hash_)
 
     with closing(connect(db_path)) as conn:
         conn.execute(
