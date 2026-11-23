@@ -141,7 +141,9 @@ La primera vez, TOD abre el asistente de **Primeros pasos**: valida
 qBittorrent, fuentes y directorios antes de guardar. Si lo cierras, se retoma
 desde **Configuración → Primeros pasos**. El resultado de la última prueba se
 guarda: si una integración deja de responder, su paso vuelve a marcarse como
-pendiente.
+pendiente. Si TOD detecta Docker, el asistente propone las URLs internas
+(`http://qbittorrent:8080`, `http://prowlarr:9696/api/v1`…) y las rutas
+`/media/catalogo` y `/downloads`.
 
 <p align="center">
   <img src="docs/assets/setup-dark.png" alt="Asistente de primeros pasos: qBittorrent, fuentes, directorios y Jellyfin, con validación antes de guardar." width="100%">

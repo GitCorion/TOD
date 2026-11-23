@@ -227,7 +227,22 @@ def setup_status(config: Config, db_path: str | Path) -> dict[str, Any]:
     jellyfin = state(
         "jellyfin", bool(config.jellyfin_url and config.jellyfin_api_key)
     )
+    runtime = _runtime()
+    suggestions = {}
+    if runtime == "docker":
+        suggestions = {
+            "qbittorrent_url": "http://qbittorrent:8080",
+            "qbittorrent_user": "admin",
+            "prowlarr_url": "http://prowlarr:9696/api/v1",
+            "jackett_url": "http://jackett:9117/api/v2.0",
+            "jellyfin_url": "http://jellyfin:8096",
+            "catalog_library": "/media/catalogo",
+            "downloads_root": "/downloads",
+            "seed_root": "/downloads/catalogo",
+        }
     return {
+        "runtime": runtime,
+        "suggestions": suggestions,
         "needed": not (
             qbittorrent["done"] and sources_done and directories["done"]
         ),

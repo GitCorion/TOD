@@ -100,7 +100,8 @@ descarga, origen. No se pintan como estados principales.
 - **Primeros pasos**: asistente de cuatro pasos. Valida antes de guardar,
   guarda el resultado de la última prueba, muestra el error concreto y permite
   saltar o terminar más tarde. Si una integración cae, el paso vuelve a
-  marcarse como pendiente. No bloquea el uso de TOD.
+  marcarse como pendiente. En Docker propone las URLs y rutas internas, sin
+  pisar valores ya validados. No bloquea el uso de TOD.
 
 ## Accesibilidad
 

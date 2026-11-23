@@ -40,7 +40,9 @@ Edita `.env` antes de arrancar:
    key. Configura uno de los dos, o ambos.
 3. **Jellyfin** (`:8096`): completa el asistente y crea una API key.
 4. **TOD** (`:8773`): al abrir, el asistente de **Primeros pasos** valida
-   qBittorrent, fuentes y directorios. También se abre desde Configuración.
+   qBittorrent, fuentes y directorios. Detecta Docker y propone las URLs
+   internas y las rutas `/media/catalogo` y `/downloads`. También se abre
+   desde Configuración.
 5. **Jellyfin**: añade `/media/catalogo/movies` como biblioteca de películas
    y `/media/catalogo/series` como biblioteca de series.
 

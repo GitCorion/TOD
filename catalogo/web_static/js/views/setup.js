@@ -89,6 +89,32 @@ export async function renderSetup({ signal }) {
   state.finished = firstMissing < 0;
   setHeader('Primeros pasos');
 
+  function suggest(key) {
+    return state.data.suggestions?.[key] || '';
+  }
+
+  function urlValue(info, key, current) {
+    const proposal = suggest(key);
+    if (!proposal || info?.validated === true) return current;
+    if (!current) return proposal;
+    if (/^https?:\/\/(127\.0\.0\.1|localhost)(:|\/|$)/i.test(current)) return proposal;
+    return current;
+  }
+
+  function userValue(info, current) {
+    const proposal = suggest('qbittorrent_user');
+    if (!proposal || info?.validated === true) return current;
+    if (!current || current === 'qbittorrent') return proposal;
+    return current;
+  }
+
+  function pathValue(key, current, ok) {
+    const proposal = suggest(key);
+    if (!proposal) return current;
+    if (ok) return current || proposal;
+    return proposal;
+  }
+
   function paint() {
     const active = STEPS[state.step];
     const info = state.data.steps[active.key] || {};
@@ -107,6 +133,7 @@ export async function renderSetup({ signal }) {
         </button>`).join('')}
       </div>
 
+      ${!state.finished && state.data.runtime === 'docker' ? '<div class="notice">Docker detectado: se proponen las URLs y rutas internas de Compose. Puedes cambiarlas antes de validar.</div>' : ''}
       ${state.finished ? finishView() : `<div class="panel setup-card">
         <div class="panel-head">
           <h2>Paso ${state.step + 1} de ${STEPS.length} · ${esc(active.title)}</h2>
@@ -136,8 +163,8 @@ export async function renderSetup({ signal }) {
   function stepFields(step, info) {
     if (step.key === 'qbittorrent') {
       return `<div class="setup-grid">
-        ${input('qbittorrent_url', 'URL de qBittorrent', info.url, { placeholder: 'http://127.0.0.1:8080', hint: 'Sin /api/v2.' })}
-        ${input('qbittorrent_user', 'Usuario', info.user, { placeholder: 'admin' })}
+        ${input('qbittorrent_url', 'URL de qBittorrent', urlValue(info, 'qbittorrent_url', info.url), { placeholder: 'http://127.0.0.1:8080', hint: 'Sin /api/v2.' })}
+        ${input('qbittorrent_user', 'Usuario', userValue(info, info.user), { placeholder: 'admin' })}
         ${secretField('qbittorrent_pass', 'Contraseña', info.has_secret)}
       </div>`;
     }
@@ -155,23 +182,23 @@ export async function renderSetup({ signal }) {
         </label>
       </div>
       ${state.mode === 'prowlarr' ? `<div class="setup-grid">
-        ${input('prowlarr_url', 'URL de Prowlarr', prowlarr.url, { placeholder: 'http://127.0.0.1:9696/api/v1' })}
+        ${input('prowlarr_url', 'URL de Prowlarr', urlValue(prowlarr, 'prowlarr_url', prowlarr.url), { placeholder: 'http://127.0.0.1:9696/api/v1' })}
         ${secretField('prowlarr_api_key', 'API key', prowlarr.has_secret)}
       </div>` : `<div class="setup-grid">
-        ${input('jackett_url', 'URL de Jackett', jackett.url, { placeholder: 'http://127.0.0.1:9117/api/v2.0' })}
+        ${input('jackett_url', 'URL de Jackett', urlValue(jackett, 'jackett_url', jackett.url), { placeholder: 'http://127.0.0.1:9117/api/v2.0' })}
         ${secretField('jackett_api_key', 'API key', jackett.has_secret)}
       </div>`}`;
     }
     if (step.key === 'directories') {
       const paths = info.paths || {};
       return `<div class="setup-grid setup-grid-paths">
-        ${input('catalog_library', 'Carpeta de los .strm', paths.catalog_library?.value, { placeholder: '/media/catalogo' })}
-        ${input('downloads_root', 'Descargas', paths.downloads_root?.value, { placeholder: '/downloads' })}
-        ${input('seed_root', 'Semillas', paths.seed_root?.value, { placeholder: '/downloads/catalogo' })}
+        ${input('catalog_library', 'Carpeta de los .strm', pathValue('catalog_library', paths.catalog_library?.value, paths.catalog_library?.ok), { placeholder: '/media/catalogo' })}
+        ${input('downloads_root', 'Descargas', pathValue('downloads_root', paths.downloads_root?.value, paths.downloads_root?.ok), { placeholder: '/downloads' })}
+        ${input('seed_root', 'Semillas', pathValue('seed_root', paths.seed_root?.value, paths.seed_root?.ok), { placeholder: '/downloads/catalogo' })}
       </div>`;
     }
     return `<div class="setup-grid">
-      ${input('jellyfin_url', 'URL de Jellyfin', info.url, { placeholder: 'http://127.0.0.1:8096' })}
+      ${input('jellyfin_url', 'URL de Jellyfin', urlValue(info, 'jellyfin_url', info.url), { placeholder: 'http://127.0.0.1:8096' })}
       ${secretField('jellyfin_api_key', 'API key', info.has_secret, 'Se crea en Jellyfin → Panel → API keys.')}
     </div>`;
   }

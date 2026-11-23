@@ -444,3 +444,20 @@ def test_setup_requires_last_test_to_pass(tmp_path):
         server.shutdown()
         server.server_close()
         server.app.runner.stop()
+
+
+def test_setup_suggests_docker_values(tmp_path, monkeypatch):
+    monkeypatch.setenv("TOD_RUNTIME", "docker")
+    server, base = _server(tmp_path)
+    try:
+        status, payload = _request(base, "/api/setup")
+        assert status == 200
+        assert payload["runtime"] == "docker"
+        assert payload["suggestions"]["qbittorrent_url"] == "http://qbittorrent:8080"
+        assert payload["suggestions"]["prowlarr_url"] == "http://prowlarr:9696/api/v1"
+        assert payload["suggestions"]["catalog_library"] == "/media/catalogo"
+        assert payload["suggestions"]["downloads_root"] == "/downloads"
+    finally:
+        server.shutdown()
+        server.server_close()
+        server.app.runner.stop()
