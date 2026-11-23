@@ -19,6 +19,7 @@ from .backend import (
     ReleaseUnavailable,
     prepare_download,
 )
+from .qbittorrent import QbittorrentError
 from .resolver import Resolver
 from .stream import DEFAULT_TIMEOUT, QbitRead, stream_torrent_file
 
@@ -43,6 +44,10 @@ class NoPeers(BackendError):
 
 class Warming(BackendError):
     """El torrent tiene pares pero aún no hay datos; se deja descargando."""
+
+
+class EngineUnavailable(BackendError):
+    """qBittorrent no responde o perdió el torrent al reiniciarse."""
 
 
 class PlayService:
@@ -83,7 +88,11 @@ class PlayService:
                 found = None
             if found is not None:
                 return found
-        for torrent in self.qbit_write.torrents():
+        try:
+            torrents = self.qbit_write.torrents()
+        except Exception:
+            return None
+        for torrent in torrents:
             if (torrent.get("hash") or "").lower() == info_hash.lower():
                 return torrent
         return None
@@ -463,6 +472,9 @@ class PlayService:
                 )
             except CapacityError:
                 raise
+            except QbittorrentError as exc:
+                # El motor no responde: no es culpa de esta fuente.
+                raise EngineUnavailable(str(exc)[:200]) from exc
             except ReleaseUnavailable as exc:
                 if candidate is not None:
                     self.mark_failed(candidate)

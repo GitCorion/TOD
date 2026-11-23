@@ -362,6 +362,10 @@ def test_unified_server_serves_playback_routes(tmp_path):
 def test_setup_endpoint_tracks_required_steps(tmp_path):
     server, base = _server(tmp_path)
     try:
+        # Sin chequeos de fondo: un health fallido contra el qBittorrent de
+        # prueba (puerto 1) no debe pisar el estado que fija este test.
+        server.app.scheduler.stop()
+        server.app.runner.stop()
         status, payload = _request(base, "/api/setup")
         assert status == 200
         assert payload["needed"] is True

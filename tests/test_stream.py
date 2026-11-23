@@ -1,10 +1,12 @@
 import io
+import time
 from pathlib import Path
 
 import pytest
 
 from catalogo.stream import (
     RangeNotSatisfiable,
+    SeekNotReady,
     StreamTimeout,
     file_offset,
     find_file,
@@ -143,3 +145,22 @@ def test_on_first_byte_fires_once_per_response(tmp_path):
     )
     assert handler.wfile.getvalue() == b"B" * (2 * MB)
     assert calls == [1]
+
+
+def test_far_seek_fails_fast_with_real_position(tmp_path):
+    big = tmp_path / "big.mkv"
+    big.write_bytes(b"C" * (20 * MB))
+    files = [{"index": 0, "name": "big.mkv", "size": 20 * MB}]
+    states = [2, 2] + [0] * 18
+    qbit = FakeQbit(files, states)
+    handler = FakeHandler()
+    started = time.monotonic()
+    with pytest.raises(SeekNotReady) as caught:
+        stream_torrent_file(
+            handler, qbit, "hash", 0, 15 * MB, 16 * MB - 1,
+            roots=[str(tmp_path)], timeout=5,
+        )
+    assert caught.value.available == 2 * MB
+    assert caught.value.position == 15 * MB
+    assert handler.status is None
+    assert time.monotonic() - started < 1

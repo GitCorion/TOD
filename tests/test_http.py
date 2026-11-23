@@ -1,4 +1,5 @@
 import http.client
+import json
 import sqlite3
 import threading
 import urllib.parse
@@ -305,6 +306,243 @@ def test_fallback_to_next_release(tmp_path):
         assert response.status == 206
         assert body == b"X" * 100
         assert service.releases == [first, second]
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=5)
+
+
+class SlowStartPlayService(FallbackPlayService):
+    """La primera fuente no llega a buffer; la segunda sí."""
+
+    def __init__(self, fail_release_id):
+        super().__init__(fail_release_id)
+        self.waits = []
+        self.discarded = []
+
+    def wait_stream_ready(self, handle, *, timeout=60.0):
+        self.waits.append((handle.get("release_id"), round(timeout, 1)))
+        return handle.get("release_id") != self.fail_release_id
+
+    def discard_failed(self, handle):
+        self.discarded.append(handle.get("release_id"))
+        super().discard_failed(handle)
+
+
+def test_slow_first_source_falls_back_in_same_request(tmp_path):
+    db, _content = build_db(tmp_path)
+    conn = sqlite3.connect(db)
+    asset_id = conn.execute(
+        "SELECT id FROM media_items WHERE key='movie:tmdb:2'"
+    ).fetchone()[0]
+    first = conn.execute(
+        "SELECT id FROM releases WHERE asset_id=?", (asset_id,)
+    ).fetchone()[0]
+    second = conn.execute(
+        "INSERT INTO releases(asset_id,tracker,title,size_bytes,health,seeders) "
+        "VALUES(?,?,?,?,?,?)",
+        (asset_id, "TrackerEspanol2", "Remoto.1080p.mkv", 5000, "alive", 20),
+    ).lastrowid
+    conn.commit()
+    conn.close()
+    service = SlowStartPlayService(first)
+    server = make_server("127.0.0.1", 0, db, play_service=service)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    host, port = server.server_address
+    try:
+        conn = http.client.HTTPConnection(host, port, timeout=10)
+        conn.request(
+            "GET",
+            f"/play?key=movie%3Atmdb%3A2&release={first}",
+            headers={"Range": "bytes=0-99"},
+        )
+        response = conn.getresponse()
+        body = response.read()
+        conn.close()
+        assert response.status == 206
+        assert body == b"X" * 100
+        assert service.releases == [first, second]
+        assert service.discarded == [first]
+        assert [release for release, _ in service.waits] == [first, second]
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=5)
+
+
+def _two_releases(db):
+    conn = sqlite3.connect(db)
+    asset_id = conn.execute(
+        "SELECT id FROM media_items WHERE key='movie:tmdb:2'"
+    ).fetchone()[0]
+    first = conn.execute(
+        "SELECT id FROM releases WHERE asset_id=?", (asset_id,)
+    ).fetchone()[0]
+    second = conn.execute(
+        "INSERT INTO releases(asset_id,tracker,title,size_bytes,health,seeders) "
+        "VALUES(?,?,?,?,?,?)",
+        (asset_id, "TrackerEspanol2", "Remoto.1080p.mkv", 5000, "alive", 3),
+    ).lastrowid
+    conn.commit()
+    conn.close()
+    return asset_id, first, second
+
+
+def test_candidate_order_avoids_a_source_that_already_failed(tmp_path):
+    db, _content = build_db(tmp_path)
+    asset_id, first, second = _two_releases(db)
+    conn = sqlite3.connect(db)
+    conn.execute(
+        "INSERT INTO swarm_stats(release_id,tracker,connected_seeds,swarm_seeds,"
+        "speed_bps,buffer_bytes,required_speed_bps,started_ok,failures,last_seen) "
+        "VALUES(?,?,?,?,?,?,?,?,?,strftime('%Y-%m-%dT%H:%M:%fZ','now'))",
+        (first, "TrackerEspanol2 (API)", 2, 20, 1000, 0, 0, 0, 3),
+    )
+    conn.execute(
+        "INSERT INTO swarm_stats(release_id,tracker,connected_seeds,swarm_seeds,"
+        "speed_bps,buffer_bytes,required_speed_bps,started_ok,failures,last_seen) "
+        "VALUES(?,?,?,?,?,?,?,?,?,strftime('%Y-%m-%dT%H:%M:%fZ','now'))",
+        (second, "TrackerEspanol2", 1, 4, 900000, 0, 0, 1, 0),
+    )
+    conn.commit()
+    conn.close()
+    service = FakePlayService()
+    server = make_server("127.0.0.1", 0, db, play_service=service)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    host, port = server.server_address
+    try:
+        conn = http.client.HTTPConnection(host, port, timeout=5)
+        conn.request(
+            "GET", "/play?key=movie%3Atmdb%3A2&download=1",
+            headers={"Range": "bytes=0-99"},
+        )
+        response = conn.getresponse()
+        response.read()
+        conn.close()
+        assert response.status == 206
+        # A tiene más seeders, pero falló antes: B arranca primero.
+        assert service.ensured == [("movie:tmdb:2", second)]
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=5)
+
+
+def test_available_copy_wins_over_a_cold_torrent(tmp_path):
+    db, content = build_db(tmp_path)
+    asset_id, first, second = _two_releases(db)
+    local_file = tmp_path / "Local.mkv"
+    local_file.write_bytes(b"L" * 300)
+    conn = sqlite3.connect(db)
+    conn.execute(
+        "INSERT INTO torrents(info_hash,release_id,tracker,state,category,"
+        "progress,qbit_state,save_path) VALUES(?,?,?,?,?,?,?,?)",
+        ("hash-local", first, "TrackerEspanol2 (API)", "seeding", "ondemand",
+         1, "stalledUP", str(tmp_path)),
+    )
+    torrent_id = conn.execute(
+        "SELECT id FROM torrents WHERE info_hash='hash-local'"
+    ).fetchone()[0]
+    conn.execute(
+        "INSERT INTO torrent_files(asset_id,release_id,torrent_id,file_index,"
+        "rel_path,size_bytes,state,storage_location,local_path) "
+        "VALUES(?,?,?,?,?,?,?,?,?)",
+        (asset_id, first, torrent_id, 0, "Local.mkv", 300, "ready",
+         "LOCAL_DISK", str(local_file)),
+    )
+    conn.commit()
+    conn.close()
+    service = FakePlayService()
+    server = make_server("127.0.0.1", 0, db, play_service=service)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    host, port = server.server_address
+    try:
+        conn = http.client.HTTPConnection(host, port, timeout=5)
+        conn.request(
+            "GET", "/play?key=movie%3Atmdb%3A2&download=1",
+            headers={"Range": "bytes=0-299"},
+        )
+        response = conn.getresponse()
+        body = response.read()
+        conn.close()
+        assert response.status == 206
+        assert body == b"L" * 300
+        assert service.ensured == []
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=5)
+
+
+class DownEnginePlayService(FakePlayService):
+    def ensure(self, media_id, *, release_id=None, torrent_bytes=None):
+        from catalogo.play_service import EngineUnavailable
+
+        raise EngineUnavailable("qBittorrent no responde")
+
+
+def test_engine_down_returns_retryable_503(tmp_path):
+    db, _content = build_db(tmp_path)
+    service = DownEnginePlayService()
+    server = make_server("127.0.0.1", 0, db, play_service=service)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    host, port = server.server_address
+    try:
+        conn = http.client.HTTPConnection(host, port, timeout=5)
+        conn.request(
+            "GET", "/play?key=movie%3Atmdb%3A2&download=1",
+            headers={"Range": "bytes=0-99"},
+        )
+        response = conn.getresponse()
+        body = json.loads(response.read())
+        conn.close()
+        assert response.status == 503
+        assert body["error"] == "engine_unavailable"
+        assert response.getheader("Retry-After") == "20"
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=5)
+
+
+class SeekPlayService(FakePlayService):
+    def stream_prepared(
+        self, handler, handle, start, end, *, head=False, intent_id=None
+    ):
+        from catalogo.stream import SeekNotReady
+
+        raise SeekNotReady(start, 0)
+
+
+def test_far_seek_returns_pending_instead_of_hanging(tmp_path):
+    db, _content = build_db(tmp_path)
+    conn = sqlite3.connect(db)
+    conn.execute("UPDATE releases SET size_bytes=1000000000")
+    conn.commit()
+    conn.close()
+    service = SeekPlayService()
+    server = make_server("127.0.0.1", 0, db, play_service=service)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    host, port = server.server_address
+    try:
+        conn = http.client.HTTPConnection(host, port, timeout=5)
+        conn.request(
+            "GET",
+            "/play?key=movie%3Atmdb%3A2&download=1",
+            headers={"Range": "bytes=900000000-900099999"},
+        )
+        response = conn.getresponse()
+        body = json.loads(response.read())
+        conn.close()
+        assert response.status == 503
+        assert body["error"] == "seek_not_ready"
+        assert response.getheader("X-Catalogo-Seek") == "pending"
+        assert response.getheader("Retry-After") == "15"
     finally:
         server.shutdown()
         server.server_close()

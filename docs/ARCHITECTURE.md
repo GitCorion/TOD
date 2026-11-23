@@ -49,7 +49,13 @@ catalogo/
 4. Si el torrent ya está preparado, sirve rangos con `206`.
 5. Si está frío, un `GET` con `Range` autoriza el prepare; un escaneo sin
    `Range` sigue recibiendo `403`.
-6. El scheduler sincroniza qBittorrent, espeja Radarr/Sonarr, busca fuentes,
+6. Elige primero lo que ya se puede servir (local/biblioteca), después los
+   torrents con swarms probados. Si la primera fuente no llega a buffer en
+   su ventana, cambia a la siguiente dentro de la misma petición.
+7. Un seek lejano en frío no bloquea: responde `503 seek_not_ready` con
+   `X-Catalogo-Seek: pending` y `Retry-After`, porque qBittorrent descarga en
+   orden y no permite priorizar una pieza suelta.
+8. El scheduler sincroniza qBittorrent, espeja Radarr/Sonarr, busca fuentes,
    crea los `.strm` y devuelve a *arr lo descargado por TOD.
 
 ## Descubrimiento de trackers

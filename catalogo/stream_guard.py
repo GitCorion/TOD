@@ -21,8 +21,8 @@ from .media_probe import audio_verdict, probe_audio
 from .resolver import Resolver
 from .status import _buffer_required, _buffer_state
 
-DEFAULT_INTERVAL = 10.0
-DEFAULT_GRACE_SECONDS = 45.0
+DEFAULT_INTERVAL = 5.0
+DEFAULT_GRACE_SECONDS = 40.0
 DEFAULT_SAFETY = 1.25
 DEFAULT_FAILURE_HOURS = 2
 DEFAULT_MAX_ATTEMPTS = 3

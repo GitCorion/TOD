@@ -32,17 +32,21 @@ from .config import media_type
 from .db import connect
 from .backend import BackendError, CapacityError, NoSource, ReleaseUnavailable
 from .lookup import lookup_strm
-from .play_service import AdmissionDenied, NoPeers, Warming
+from .play_service import AdmissionDenied, EngineUnavailable, NoPeers, Warming
 from .ranges import parse_range
 from .resolver import Resolution, Resolver
 from .status import asset_status
-from .stream import RangeNotSatisfiable, StreamTimeout
+from .stream import RangeNotSatisfiable, SeekNotReady, StreamTimeout
 from .trackers import tracker_priority
 from .torrent import DisabledBackend, TorrentBackend
 
 CHUNK = 256 * 1024
-# Espera máxima cuando Jellyfin arranca un prepare al darle a play.
-AUTO_PREPARE_WAIT = 60.0
+# Espera máxima cuando Jellyfin arranca un prepare al darle a play. La
+# primera fuente tiene margen para que el guardián decida (gracia 40 s +
+# intervalo 5 s); las siguientes, menos, porque ya hay alternativa.
+AUTO_PREPARE_WAIT = 55.0
+AUTO_PREPARE_RETRY_WAIT = 25.0
+AUTO_PREPARE_TOTAL_WAIT = 95.0
 SOURCE_SEARCH_TTL = 300.0
 _SOURCE_SEARCH_LOCK = threading.Lock()
 _SOURCE_SEARCH_AT: dict[str, float] = {}
@@ -581,6 +585,14 @@ class CatalogHandler(BaseHTTPRequestHandler):
                     candidates = [release_id]
             errors: list[dict[str, Any]] = []
             warming_error: dict[str, Any] | None = None
+            seek_error: dict[str, Any] | None = None
+            engine_error: dict[str, Any] | None = None
+            prepare_waiting: dict[str, Any] | None = None
+            prepare_deadline = (
+                time.monotonic() + AUTO_PREPARE_TOTAL_WAIT
+                if auto_prepare
+                else None
+            )
             for candidate_id in candidates:
                 try:
                     candidate = self.resolver.resolve_release(
@@ -639,23 +651,53 @@ class CatalogHandler(BaseHTTPRequestHandler):
                             f"release={candidate_id}",
                             flush=True,
                         )
+                        remaining = (
+                            prepare_deadline - time.monotonic()
+                            if prepare_deadline is not None
+                            else AUTO_PREPARE_WAIT
+                        )
+                        if remaining <= 0:
+                            prepare_waiting = prepare_waiting or {
+                                "error": "auto_prepare_waiting",
+                                "message": (
+                                    "Preparando la fuente; vuelve a "
+                                    "intentarlo en unos segundos."
+                                ),
+                                "key": resolution.key,
+                                "release_id": candidate_id,
+                            }
+                            break
+                        wait_timeout = min(
+                            AUTO_PREPARE_WAIT
+                            if not errors
+                            else AUTO_PREPARE_RETRY_WAIT,
+                            remaining,
+                        )
                         if not self.play_service.wait_stream_ready(
-                            handle, timeout=AUTO_PREPARE_WAIT
+                            handle, timeout=wait_timeout
                         ):
-                            return self._json(
-                                503,
+                            # Esta fuente no llegó a buffer en su ventana:
+                            # se libera y se prueba la siguiente sin
+                            # devolver un 503 que obligue a Jellyfin a
+                            # repetir toda la petición.
+                            self.play_service.discard_failed(handle)
+                            prepare_waiting = prepare_waiting or {
+                                "error": "auto_prepare_waiting",
+                                "message": (
+                                    "Preparando la fuente; vuelve a "
+                                    "intentarlo en unos segundos."
+                                ),
+                                "key": resolution.key,
+                                "release_id": candidate_id,
+                            }
+                            errors.append(
                                 {
-                                    "error": "auto_prepare_waiting",
-                                    "message": (
-                                        "Preparando la fuente; vuelve a "
-                                        "intentarlo en unos segundos."
-                                    ),
-                                    "key": resolution.key,
                                     "release_id": candidate_id,
-                                },
-                                head=head,
-                                extra_headers={"Retry-After": "10"},
+                                    "error": "auto_prepare_timeout",
+                                    "waited_s": round(wait_timeout, 1),
+                                }
                             )
+                            continue
                     else:
                         self.play_service.preflight(handle)
                     self.play_service.stream_prepared(
@@ -691,6 +733,29 @@ class CatalogHandler(BaseHTTPRequestHandler):
                         }
                     )
                     continue
+                except SeekNotReady as exc:
+                    # qBittorrent descarga en orden y no puede priorizar
+                    # una pieza suelta: no se bloquea al reproductor.
+                    seek_error = seek_error or {
+                        "error": "seek_not_ready",
+                        "message": (
+                            "La fuente todavía no llega a ese punto; "
+                            "se está descargando en orden."
+                        ),
+                        "key": resolution.key,
+                        "release_id": candidate_id,
+                        "position": exc.position,
+                        "available": exc.available,
+                    }
+                    errors.append(
+                        {
+                            "release_id": candidate_id,
+                            "error": "seek_not_ready",
+                            "position": exc.position,
+                            "available": exc.available,
+                        }
+                    )
+                    continue
                 except StreamTimeout as exc:
                     warming_error = warming_error or {
                         "error": "warming",
@@ -703,6 +768,26 @@ class CatalogHandler(BaseHTTPRequestHandler):
                         {
                             "release_id": candidate_id,
                             "error": "stream_timeout",
+                            "detail": str(exc)[:200],
+                        }
+                    )
+                    continue
+                except EngineUnavailable as exc:
+                    # qBittorrent caído o reiniciándose: ninguna fuente
+                    # puede arrancar ahora mismo. Se responde 503 corto.
+                    engine_error = engine_error or {
+                        "error": "engine_unavailable",
+                        "message": (
+                            "El motor de descargas no responde; "
+                            "se reintentará solo."
+                        ),
+                        "key": resolution.key,
+                        "detail": str(exc)[:200],
+                    }
+                    errors.append(
+                        {
+                            "release_id": candidate_id,
+                            "error": "engine_unavailable",
                             "detail": str(exc)[:200],
                         }
                     )
@@ -723,6 +808,30 @@ class CatalogHandler(BaseHTTPRequestHandler):
                     warming_error,
                     head=head,
                     extra_headers={"Retry-After": "5"},
+                )
+            if prepare_waiting is not None:
+                return self._json(
+                    503,
+                    {**prepare_waiting, "attempts": errors[:6]},
+                    head=head,
+                    extra_headers={"Retry-After": "10"},
+                )
+            if seek_error is not None:
+                return self._json(
+                    503,
+                    {**seek_error, "attempts": errors[:6]},
+                    head=head,
+                    extra_headers={
+                        "Retry-After": "15",
+                        "X-Catalogo-Seek": "pending",
+                    },
+                )
+            if engine_error is not None:
+                return self._json(
+                    503,
+                    {**engine_error, "attempts": errors[:6]},
+                    head=head,
+                    extra_headers={"Retry-After": "20"},
                 )
             if errors and all(
                 str(error.get("error") or "").lower() == "capacityerror"
@@ -779,7 +888,23 @@ class CatalogHandler(BaseHTTPRequestHandler):
             None,
         )
 
+        def availability(release_id: int) -> int:
+            try:
+                resolution = self.resolver.resolve_release(key, release_id)
+            except Exception:
+                return 2
+            if resolution.source in ("library", "local_seed"):
+                return 0
+            if resolution.source == "torrent":
+                return 1
+            return 2
+
+        available_cache: dict[int, int] = {}
+
         def rank(source: dict) -> tuple:
+            release_id = int(source.get("release_id") or 0)
+            if release_id not in available_cache:
+                available_cache[release_id] = availability(release_id)
             same_audio = 0 if (
                 requested_source
                 and source.get("audio") == requested_source.get("audio")
@@ -787,6 +912,13 @@ class CatalogHandler(BaseHTTPRequestHandler):
             health = {"alive": 0, "unknown": 1, "stale": 2}.get(
                 source.get("health"), 3
             )
+            # Fuente ya probada: 0 arrancó bien, 1 sin datos, 2 falló antes.
+            if source.get("swarm_started_ok"):
+                swarm = 0
+            elif int(source.get("swarm_failures") or 0) > 0:
+                swarm = 2
+            else:
+                swarm = 1
             audio = language_settings.rank(
                 source.get("audio"),
                 preference,
@@ -794,10 +926,16 @@ class CatalogHandler(BaseHTTPRequestHandler):
                 source.get("original_country"),
             )
             return (
+                # Primero lo que ya se puede servir sin esperar descarga.
+                available_cache[release_id],
+                # El release pedido manda si está en el mismo nivel.
+                0 if release_id == requested else 1,
                 audio if audio is not None else 9,
                 tracker_priority(source.get("tracker")),
                 health,
+                swarm,
                 -int(source.get("seeders") or 0),
+                -int(source.get("swarm_speed_bps") or 0),
                 int(source.get("size_bytes") or 0),
                 same_audio,
             )
@@ -820,25 +958,13 @@ class CatalogHandler(BaseHTTPRequestHandler):
                 self.play_service is not None
                 and self.play_service.is_failed(requested)
             )
-            if not failed:
-                if requested in ordered:
-                    ordered.remove(requested)
+            if (
+                not failed
+                and int(requested) not in ordered
+                and availability(int(requested)) < 2
+            ):
                 ordered.insert(0, int(requested))
 
-        def availability(release_id: int) -> int:
-            try:
-                resolution = self.resolver.resolve_release(key, release_id)
-            except Exception:
-                return 2
-            if resolution.source in ("library", "local_seed"):
-                return 0
-            if resolution.source == "torrent":
-                return 1
-            return 2
-
-        # Servir primero lo que ya está disponible; si el release pedido
-        # todavía está frío, no bloquear una versión ya descargada.
-        ordered.sort(key=availability)
         return ordered[:4]
 
     def _auto_prepare_allowed(

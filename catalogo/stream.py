@@ -18,6 +18,8 @@ CHUNK = 1024 * 1024
 BUFFER = 4 * 1024 * 1024
 DEFAULT_TIMEOUT = 20.0
 PIECE_READY = 2
+# Margen para no rechazar un seek que está a punto de llegar.
+SEEK_TOLERANCE = 8 * 1024 * 1024
 
 STREAM_ROOTS = [
     "/mnt/cache/tmp/ondemand",
@@ -32,6 +34,22 @@ STREAM_ROOTS = [
 
 class StreamTimeout(RuntimeError):
     pass
+
+
+class SeekNotReady(StreamTimeout):
+    """El rango pedido queda lejos del frente de descarga.
+
+    qBittorrent descarga en orden y no permite priorizar una pieza suelta:
+    bloquear la petición solo alarga la espera del reproductor. Se informa
+    de la posición real para que el cliente reintente más tarde.
+    """
+
+    def __init__(self, position: int, available: int):
+        super().__init__(
+            f"seek pendiente: posición {position}, disponible {available}"
+        )
+        self.position = int(position)
+        self.available = int(available)
 
 
 class RangeNotSatisfiable(RuntimeError):
@@ -146,6 +164,28 @@ def stream_torrent_file(
     path = wait_for_file(rel_path, roots, timeout=timeout)
 
     initial = min(buffer_bytes, length)
+    states = qbit.piece_states(info_hash)
+    start_piece = max(0, int(offset + start) // piece_size)
+    end_piece = max(
+        start_piece,
+        (int(offset + start) + max(1, initial) - 1) // piece_size,
+    )
+    ready_now = (
+        len(states) > end_piece
+        and all(
+            states[piece] == PIECE_READY
+            for piece in range(start_piece, end_piece + 1)
+        )
+    )
+    if not ready_now and len(states) > end_piece:
+        frontier = 0
+        for piece, state in enumerate(states):
+            if state != PIECE_READY:
+                break
+            frontier = piece + 1
+        available = frontier * piece_size
+        if int(offset + start) > available + SEEK_TOLERANCE:
+            raise SeekNotReady(int(offset + start), available)
     if not wait_pieces(
         qbit, info_hash, offset + start, initial, piece_size, timeout=timeout
     ):
