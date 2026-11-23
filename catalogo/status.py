@@ -751,7 +751,10 @@ def asset_status(
         "reason": resolution.reason if resolution is not None else None,
         "stream_ready": bool(stream_ready),
         "release_id": (
-            int(release_row["id"]) if release_row is not None else None
+            int(release_row["id"])
+            if release_row is not None
+            and release_row["health"] not in ("dead", "stale")
+            else None
         ),
         "quality": release_row["quality"] if release_row is not None else None,
         "audio": release_row["audio"] if release_row is not None else None,

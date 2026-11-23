@@ -394,6 +394,16 @@ class CatalogHandler(BaseHTTPRequestHandler):
             # Camino rápido: si ya está en local/archivo no hay que
             # admitir, descargar ni consultar qBittorrent. La app recibe 202
             # al instante y luego consulta /status.
+            if release_id is not None:
+                try:
+                    pinned = self.resolver.resolve_release(key, release_id)
+                except Exception:
+                    pinned = None
+                if pinned is not None and (
+                    pinned.source == "unavailable"
+                    or pinned.health in ("dead", "stale")
+                ) and self._search_sources(key):
+                    release_id = None
             if release_id is None:
                 resolution = self.resolver.resolve(key)
                 if (
