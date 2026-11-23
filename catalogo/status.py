@@ -55,6 +55,7 @@ def _playback_state(
     intent: Any,
     switched_at: Any,
     current: datetime,
+    progress: float = 0.0,
 ) -> str:
     """Estado de arranque tal y como lo necesita el cliente.
 
@@ -76,7 +77,7 @@ def _playback_state(
         expires = _parse_ts(intent["expires_at"])
         if expires is None or expires > current:
             return "preparing"
-    if source == "torrent":
+    if source == "torrent" and progress > 0:
         return "buffering"
     return "idle"
 
@@ -495,6 +496,7 @@ def asset_status(
         intent=intent,
         switched_at=asset["stream_switched_at"],
         current=current,
+        progress=float(progress or 0),
     )
     prepare_ms = (
         _ms_between(intent["created_at"], intent["ready_at"])

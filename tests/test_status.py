@@ -233,3 +233,11 @@ def test_playback_state_ready_when_local_file_exists(tmp_path):
     status = asset_status(db, "movie:tmdb:1", qbit=None)
     assert status["stream_ready"] is True
     assert status["playback_state"] == "ready"
+
+
+def test_playback_state_is_idle_without_progress_or_intent(tmp_path):
+    db, _asset_id, _release_id = seed(tmp_path, torrent=False)
+    status = asset_status(db, "movie:tmdb:1", qbit=None)
+    assert status["playback_state"] == "idle"
+    assert status["prepare_ms"] is None
+    assert status["first_byte_ms"] is None
