@@ -538,7 +538,8 @@ def asset_status(
         if seed_active else None
     )
     if (
-        seed_deadline is None
+        seed_active
+        and seed_deadline is None
         and seed_started is not None
         and seed_policy is not None
     ):

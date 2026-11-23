@@ -304,3 +304,30 @@ def test_seed_status_ignores_closed_commitments(tmp_path):
     status = asset_status(db, "movie:tmdb:1", qbit=None, now=now)
     assert status["seed"]["state"] == "active"
     assert status["seed"]["remaining_seconds"] == 22 * 3600
+
+
+def test_closed_seed_commitment_has_no_pending_deadline(tmp_path):
+    from datetime import datetime, timedelta, timezone
+
+    now = datetime(2026, 11, 18, 12, 0, tzinfo=timezone.utc)
+    db, _asset_id, _release_id = seed(tmp_path, complete=True, local=True)
+    conn = sqlite3.connect(db)
+    conn.execute(
+        "UPDATE seed_commitments SET state='done', seed_started_at=?, "
+        "seed_required_until=NULL, target_ratio=NULL, info_hash='hash1'",
+        ((now - timedelta(hours=2)).isoformat(),),
+    )
+    conn.commit()
+    conn.close()
+    upsert_policy(
+        str(db),
+        TrackerPolicy(
+            "TrackerEspanol2 (API)", min_seed_hours=0, target_ratio=0,
+            max_active=2, allow_partial=False, privacy="public",
+        ),
+    )
+    status = asset_status(db, "movie:tmdb:1", qbit=None, now=now)
+    assert status["seed"]["state"] == "done"
+    assert status["seed"]["required_until"] is None
+    assert status["seed"]["remaining_seconds"] is None
+    assert status["seed_required_until"] is None
