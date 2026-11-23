@@ -103,7 +103,7 @@ export async function renderSeries({ params, query, signal }) {
           ${still(ep.still_path, name)}
           <div class="cell-title">
             <strong>${esc(name)}</strong>
-            <small>${tag}, ${esc(fmtShortDate(ep.air_date))}${ep.library_added ? ' · En Radarr/Sonarr' : ''}</small>
+            <small>${tag}, ${esc(fmtShortDate(ep.air_date))}${ep.library_added ? ` · En Radarr/Sonarr${ep.downloaded ? '' : ' (sin fichero)'}` : ''}</small>
           </div>
         </a>
       </td>
