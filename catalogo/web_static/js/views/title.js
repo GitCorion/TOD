@@ -103,6 +103,9 @@ export async function renderTitle({ params, query, signal }) {
   `;
 
   const libraryFiles = data.library || [];
+  const aliveReleases = (data.releases || []).filter(
+    (release) => release.health === 'alive',
+  ).length;
   const files = `
     <div class="grid grid-2">
       <div class="panel flush">
@@ -124,7 +127,15 @@ export async function renderTitle({ params, query, signal }) {
             <td data-label="Origen">${badge(file.source || 'externo', 'mono')}</td>
           </tr>`).join('')}</tbody>
         </table></div>` : ''}
-        ${!data.files.length && !libraryFiles.length ? empty('Sin ficheros', 'No hay copias locales ni de archivo indexadas.') : ''}
+        ${!data.files.length && !libraryFiles.length ? empty(
+          'Sin ficheros',
+          aliveReleases
+            ? `Hay ${fmtInt(aliveReleases)} ${aliveReleases === 1 ? 'fuente viva' : 'fuentes vivas'} sin descargar. Abre Fuentes y pulsa Preparar.`
+            : 'No hay copias locales ni de archivo indexadas.',
+          aliveReleases
+            ? '<button class="btn btn-sm" data-action="detail-tab" data-tab="fuentes">Ver fuentes</button>'
+            : '',
+        ) : ''}
       </div>
       <div class="panel flush">
         <div class="panel-head"><h2>Compromisos de siembra</h2></div>
