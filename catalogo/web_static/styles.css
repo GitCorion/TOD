@@ -223,6 +223,7 @@ kbd {
   border-bottom: 1px solid var(--rule);
   background: var(--paper);
   overflow-x: auto; scrollbar-width: none;
+  position: sticky; top: var(--topbar); z-index: 25;
 }
 .section-tabs::-webkit-scrollbar { display: none; }
 .section-tabs a {
