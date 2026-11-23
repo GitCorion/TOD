@@ -113,5 +113,10 @@ principales:
 - La procedencia es un dato, no una inferencia: `media_items.origin` se escribe
   en el alta y no se pisa al actualizar metadatos.
 - El scheduler usa `jobs`, que serializa tareas y evita solapamientos.
+- La lista del catálogo se calcula desde el espejo local (`library_files`),
+  no con llamadas por episodio a Radarr/Sonarr. Se cachea 30 s y las acciones
+  del usuario la invalidan.
+- El inventario de `.strm` se cachea 5 min, se invalida al escribir y se
+  precalienta al arrancar.
 - Las integraciones se prueban antes de guardar y nunca se accede a las bases
   de datos de Radarr/Sonarr.
