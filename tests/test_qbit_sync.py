@@ -536,3 +536,50 @@ def test_completed_arr_torrent_is_reported_for_prune(tmp_path):
     )
     assert "movie:tmdb:400" in report.arr_done_keys
     assert "movie:tmdb:400" not in report.arr_keys
+
+
+class PartialPackQbit(FakeQbit):
+    def __init__(self):
+        super().__init__()
+        self._torrents.append(
+            {
+                "hash": "pack1", "category": "ondemand", "state": "downloading",
+                "progress": 0.4, "save_path": "/mnt/descargas/ondemand",
+                "download_path": "/mnt/cache/tmp/ondemand",
+                "content_path": "/mnt/descargas/ondemand/Pack",
+                "completion_on": -1, "seeding_time": 0,
+                "added_on": EPOCH - 50, "uploaded": 0, "downloaded": 400,
+                "ratio": 0, "size": 1000, "tracker": "TrackerEspanol2",
+            }
+        )
+
+    def files(self, info_hash):
+        if info_hash == "pack1":
+            self.files_calls.append(info_hash)
+            return [
+                {"index": 0, "name": "Pack/E01.mkv", "size": 500,
+                 "progress": 1, "priority": 6},
+                {"index": 1, "name": "Pack/E02.mkv", "size": 500,
+                 "progress": 0, "priority": 0},
+            ]
+        return super().files(info_hash)
+
+
+def test_complete_file_in_incomplete_pack_is_marked_ready(tmp_path):
+    db, _asset_id = seed_db(tmp_path)
+    report = sync(
+        db, PartialPackQbit(), radarr=FakeRadarrAPI(), sonarr=FakeSonarrAPI(),
+        dry_run=False, check_exists=False, now=NOW,
+    )
+    assert report.torrents_written >= 1
+    conn = sqlite3.connect(db)
+    conn.row_factory = sqlite3.Row
+    rows = conn.execute(
+        "SELECT f.state, f.local_path FROM torrent_files f "
+        "JOIN torrents t ON t.id=f.torrent_id WHERE t.info_hash='pack1' "
+        "ORDER BY f.file_index"
+    ).fetchall()
+    conn.close()
+    assert rows[0]["state"] == "ready"
+    assert rows[0]["local_path"]
+    assert rows[1]["state"] == "unknown"

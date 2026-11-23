@@ -483,6 +483,9 @@ def _upsert_file(
     rel_path = item.get("name") or ""
     size = int(item.get("size") or 0)
     progress = float(item.get("progress") or 0)
+    # En un pack, el torrent puede estar al 80 % pero este episodio ya
+    # está completo; su estado es 'ready' y se puede puentear/streamear.
+    file_complete = complete or progress >= 0.999
     downloaded = int(size * progress)
 
     if moving:
@@ -524,11 +527,11 @@ def _upsert_file(
         # El TTL de archivo empieza cuando el move termina, no ahora.
         cloud_uploaded_at = None
     else:
-        base = save_path if complete else base_path
+        base = save_path if file_complete else base_path
         path = str(Path(base) / rel_path) if base else None
         storage = _storage_for(base, archive_root)
         exists = _file_exists(path, archive_root, check_exists)
-        if complete and not exists and check_exists:
+        if file_complete and not exists and check_exists:
             report.missing_files += 1
         if storage == "1FICHIER":
             local_path = None
@@ -536,9 +539,9 @@ def _upsert_file(
         else:
             local_path = path if exists else None
             library_path = None
-        if complete and exists:
+        if file_complete and exists:
             state = "archived" if storage == "1FICHIER" else "ready"
-        elif complete and not exists and check_exists:
+        elif file_complete and not exists and check_exists:
             state = "missing"
         elif progress > 0:
             state = "downloading"

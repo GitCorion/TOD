@@ -120,7 +120,6 @@ def bridge_downloads(
             JOIN torrent_files f ON f.torrent_id = t.id
             JOIN media_items m ON m.id = f.asset_id
             WHERE t.category = 'ondemand'
-              AND t.progress >= 1
               AND f.state IN ('ready', 'archived', 'seeding')
               AND f.asset_id IS NOT NULL
             ORDER BY t.id DESC, f.id DESC

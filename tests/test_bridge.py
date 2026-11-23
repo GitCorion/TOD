@@ -263,3 +263,23 @@ def test_bridge_skips_existing_and_bridges_next_with_limit(tmp_path):
     assert [item["key"] for item in report["bridged"]] == ["movie:tmdb:2"]
     assert (tmp_path / "radarr" / "Dos (2020)" / "Dos (2020).mkv").is_file()
     assert radarr.rescanned == [2]
+
+
+def test_bridge_imports_a_complete_file_from_an_incomplete_pack(tmp_path):
+    db, _source = seed(tmp_path, kind="movie")
+    conn = sqlite3.connect(db)
+    conn.execute("UPDATE torrents SET progress=0.4 WHERE info_hash='bridgehash'")
+    conn.commit()
+    conn.close()
+    radarr = FakeRadarr(
+        {
+            "id": 7,
+            "title": "Test Movie",
+            "year": 2020,
+            "path": str(tmp_path / "radarr" / "Test Movie (2020)"),
+            "hasFile": False,
+        }
+    )
+    report = bridge_downloads(db, radarr, None, limit=5, dry_run=False)
+    assert report["bridged"], report
+    assert (tmp_path / "radarr" / "Test Movie (2020)" / "Test Movie (2020).mkv").is_file()
