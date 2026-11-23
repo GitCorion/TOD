@@ -38,11 +38,12 @@ from . import (
     ondemand,
     queries,
 )
-from . import api_status, language_settings, policy, seed_settings, settings, strm_inventory
+from . import api_ondemand, api_status, language_settings, policy, seed_settings, settings, strm_inventory
 from . import strm as strm_module
 from .arr_data import ArrData
 from .config import Config
 from .db import connect, init_db
+from .errors import WebError
 from .http import CatalogHandler as PlaybackHandler
 from .jobs import JobConflict, JobError
 from .log import get_logger
@@ -63,14 +64,6 @@ MAX_BODY = 1_000_000
 HASH_RE = re.compile(r"^[0-9a-fA-F]{40}$")
 
 INTERNAL_JOB_KINDS = ("attention-check",)
-
-class WebError(RuntimeError):
-    def __init__(self, status: int, message: str, detail: Any = None):
-        super().__init__(message)
-        self.status = status
-        self.message = message
-        self.detail = detail
-
 
 def _now() -> int:
     return int(time.time())
@@ -990,7 +983,18 @@ class Handler(PlaybackHandler):
             return self._intake(parts, params, body, head=head, mutate=mutate)
 
         if parts and parts[0] == "ondemand":
-            return self._ondemand(parts, params, body, head=head, mutate=mutate)
+            result = api_ondemand.handle(
+                app,
+                parts,
+                params,
+                body,
+                client_ip=self.client_address[0],
+                mutate=mutate,
+            )
+            if result is not None:
+                status_code, payload = result
+                return self._json(status_code, payload, head=head)
+            raise WebError(404, "no encontrado")
 
         if parts == ["trackers"] and not mutate:
             return self._json(200, {"items": queries.list_trackers(db)}, head=head)
@@ -1949,245 +1953,6 @@ class Handler(PlaybackHandler):
             if result is None:
                 raise WebError(404, "lote no encontrado")
             return self._json(200, result, head=head)
-
-        raise WebError(404, "no encontrado")
-
-    def _ondemand(
-        self,
-        parts: list[str],
-        params: dict[str, str],
-        body: dict[str, Any],
-        *,
-        head: bool,
-        mutate: bool,
-    ) -> None:
-        app = self.app
-        db = app.db_path
-
-        if parts == ["ondemand", "overview"] and not mutate:
-            qbit, _ = app.qbit()
-            return self._json(
-                200,
-                ondemand.overview(
-                    db, app.config, qbit=qbit, arr=app.arr
-                ),
-                head=head,
-            )
-
-        if parts == ["ondemand", "recent"] and not mutate:
-            return self._json(
-                200,
-                ondemand.recent_published(
-                    db, app.config, limit=self._int(params.get("limit"), 6)
-                ),
-                head=head,
-            )
-
-        if parts == ["ondemand", "catalog"] and not mutate:
-            return self._json(
-                200,
-                ondemand.catalog(
-                    db,
-                    app.config,
-                    q=params.get("q") or "",
-                    kind=params.get("kind") or "",
-                    publication=params.get("publication") or "",
-                    download=params.get("download") or "",
-                    library=params.get("library") or "",
-                    origin=params.get("origin") or "",
-                    incomplete=params.get("incomplete") == "1",
-                    page=self._int(params.get("page"), 1),
-                    per_page=self._int(params.get("per_page"), 25),
-                    group=params.get("group") or "episode",
-                    sort=params.get("sort") or "popularity",
-                    facets=params.get("facets") != "0",
-                ),
-                head=head,
-            )
-
-        if parts == ["ondemand", "pending-summary"] and not mutate:
-            publication = params.get("publication") or "pendiente"
-            if publication not in ("pendiente", "sin_fuente"):
-                raise WebError(400, "estado de Jellyfin no válido")
-            return self._json(
-                200,
-                ondemand.pending_summary(
-                    db,
-                    app.config,
-                    publication=publication,
-                    kind=params.get("kind") or "",
-                    q=params.get("q") or "",
-                ),
-                head=head,
-            )
-
-        if parts == ["ondemand", "sync-pending"]:
-            if not mutate:
-                raise WebError(405, "usa POST")
-            publication = str(body.get("publication") or "pendiente")
-            if publication not in ("pendiente", "sin_fuente"):
-                raise WebError(400, "estado de Jellyfin no válido")
-            kind = str(body.get("kind") or "")
-            if kind not in ("", "movie", "series"):
-                raise WebError(400, "tipo no válido")
-            params = {
-                "publication": publication,
-                "kind": kind,
-                "q": str(body.get("q") or "")[:200],
-                "limit": max(0, self._int(body.get("limit"), 0)),
-                "delay": max(0.0, float(body.get("delay") if body.get("delay") is not None else 1.0)),
-                "min_seeders": max(0, self._int(body.get("min_seeders") if body.get("min_seeders") is not None else 1, 1)),
-                "no_jackett": bool(body.get("no_jackett")),
-            }
-            job_id = app.runner.submit(
-                "sync-pending", params, requested_by=self.client_address[0]
-            )
-            app.audit(
-                "web.sync_pending",
-                payload={"job_id": job_id, **params},
-            )
-            return self._json(
-                202,
-                {"job_id": job_id, "job": jobs.get_job(db, job_id)},
-                head=head,
-            )
-
-        if parts == ["ondemand", "settings"]:
-            if mutate:
-                try:
-                    value = settings.set_ondemand_max_active(
-                        db, self._int(body.get("max_active"), 0)
-                    )
-                except ValueError as exc:
-                    raise WebError(400, str(exc))
-                app.audit(
-                    "web.ondemand_limit", payload={"max_active": value}
-                )
-                return self._json(
-                    200,
-                    {
-                        "max_active": value,
-                        "min": settings.MIN_MAX_ACTIVE,
-                        "max": settings.MAX_MAX_ACTIVE,
-                    },
-                    head=head,
-                )
-            return self._json(
-                200,
-                {
-                    "max_active": settings.ondemand_max_active(
-                        db, getattr(app.config, "max_active_ondemand", 4)
-                    ),
-                    "min": settings.MIN_MAX_ACTIVE,
-                    "max": settings.MAX_MAX_ACTIVE,
-                },
-                head=head,
-            )
-
-        if parts == ["ondemand", "publish"]:
-            if not mutate:
-                raise WebError(405, "usa POST")
-            keys = body.get("keys") or []
-            if isinstance(keys, str):
-                keys = [keys]
-            if not isinstance(keys, list) or not keys:
-                raise WebError(400, "faltan keys")
-            keys = [str(key)[:200] for key in keys][:1000]
-            job_id = app.runner.submit(
-                "export-strm",
-                {"keys": keys},
-                requested_by=self.client_address[0],
-            )
-            app.audit(
-                "web.ondemand_publish", payload={"job_id": job_id, "keys": len(keys)}
-            )
-            return self._json(
-                202,
-                {"job_id": job_id, "job": jobs.get_job(db, job_id)},
-                head=head,
-            )
-
-        if parts == ["ondemand", "acquire"]:
-            if not mutate:
-                raise WebError(405, "usa POST")
-            action = str(body.get("action") or "").strip()
-            if action not in ("publish", "download"):
-                raise WebError(400, "acción no válida")
-            keys = body.get("keys") or []
-            if isinstance(keys, str):
-                keys = [keys]
-            if not isinstance(keys, list) or not keys:
-                raise WebError(400, "faltan keys")
-            keys = [str(key)[:200] for key in keys][:1000]
-            kind = "series" if body.get("kind") == "series" else "movie"
-            if action == "publish":
-                stamp = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
-                with closing(connect(db)) as conn:
-                    conn.execute(
-                        "UPDATE media_items SET library_added = 1, "
-                        "library_added_at = COALESCE(library_added_at, ?), "
-                        "library_source = COALESCE(library_source, 'bulk') "
-                        "WHERE key IN ("
-                        + ",".join("?" for _ in keys)
-                        + ")",
-                        [stamp, *keys],
-                    )
-                    conn.commit()
-            job_kind = "publish-now" if action == "publish" else "download-now"
-            job_id = app.runner.submit(
-                job_kind,
-                {
-                    "keys": keys,
-                    "kind": kind,
-                    "delay": 0.5,
-                    "min_seeders": 1,
-                },
-                requested_by=self.client_address[0],
-                allow_duplicate=True,
-            )
-            app.audit(
-                "web.ondemand_acquire",
-                payload={
-                    "job_id": job_id,
-                    "action": action,
-                    "keys": len(keys),
-                },
-            )
-            return self._json(
-                202,
-                {"job_id": job_id, "job": jobs.get_job(db, job_id)},
-                head=head,
-            )
-
-        if parts == ["ondemand", "download"]:
-            if not mutate:
-                raise WebError(405, "usa POST")
-            key = str(body.get("key") or "").strip()
-            if not key:
-                raise WebError(400, "falta key")
-            release_id = self._int(body.get("release_id"), 0) or None
-            try:
-                result = admin.download_now(
-                    app.config,
-                    app.play_service,
-                    key,
-                    release_id=release_id,
-                    client_ip=self.client_address[0],
-                    force=True,
-                )
-            except Exception as exc:
-                detail = getattr(exc, "decision", None) or str(exc)[:300]
-                raise WebError(503, "no se pudo descargar", detail)
-            app.audit(
-                "web.ondemand_download",
-                payload={
-                    "key": key,
-                    "release_id": result.get("release_id"),
-                    "info_hash": result.get("info_hash"),
-                    "forced": True,
-                },
-            )
-            return self._json(202, result, head=head)
 
         raise WebError(404, "no encontrado")
 

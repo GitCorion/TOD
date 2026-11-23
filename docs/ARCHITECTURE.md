@@ -16,6 +16,8 @@ catalogo/
 ├── app_settings.py   ajustes tipados, secretos y recarga
 ├── log.py            niveles y formato de log del proceso
 ├── api_status.py     servicios, discos, indexers y salud para la API
+├── api_ondemand.py   catálogo, alta, ajustes y descargas bajo demanda
+├── errors.py         WebError común a la API
 ├── attention.py      avisos agregados de configuración, rutas e integraciones
 ├── integrations.py   pruebas de conexión
 ├── arr.py            clientes Radarr/Sonarr (lectura y altas puntuales)
