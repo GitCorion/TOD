@@ -235,6 +235,7 @@ El puerto se fija al arrancar el servicio.
 python3 -m venv .venv
 . .venv/bin/activate
 pip install -e ".[dev]"
+ruff check .
 python -m pytest -q
 ```
 

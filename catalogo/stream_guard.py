@@ -11,6 +11,7 @@ from __future__ import annotations
 import threading
 import time
 from contextlib import closing
+from pathlib import Path
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
@@ -585,12 +586,11 @@ class StreamGuard:
                 "key": key,
                 "from_release": release_id,
                 "reason": reason,
-                "early_delete": early,
                 "attempts": len(failures),
             }
         )
         print(
             f"stream-guard switch key={key} from={release_id} "
-            f"reason={reason} early_delete={early} attempts={len(failures)}",
+            f"reason={reason} attempts={len(failures)}",
             flush=True,
         )

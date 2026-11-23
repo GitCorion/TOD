@@ -480,7 +480,7 @@ class Handler(PlaybackHandler):
                 body = {}
             self._api(parts, params, body, head=head, mutate=mutate)
             if mutate:
-                ondemand.invalidate_catalog()
+                ondemand.invalidate_caches()
             return
         except WebError as exc:
             self._json(

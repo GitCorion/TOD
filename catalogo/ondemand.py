@@ -402,6 +402,12 @@ def invalidate_catalog() -> None:
     _CATALOG_CACHE.clear()
 
 
+def invalidate_caches() -> None:
+    """Invalida catálogo y resumen tras una mutación del usuario."""
+    _CATALOG_CACHE.clear()
+    _OVERVIEW_CACHE.clear()
+
+
 def _catalog_base_cached(db_path, config) -> list[dict[str, Any]]:
     key = (str(db_path), str(config.catalog_library))
     now = time.monotonic()
