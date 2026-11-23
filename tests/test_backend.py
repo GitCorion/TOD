@@ -173,7 +173,7 @@ def test_private_pack_prioritizes_episode_but_downloads_all(tmp_path):
     assert client.added[0]["paused"] is True
     assert client.added[0]["category"] == "ondemand"
     assert client.added[0]["use_download_path"] is False
-    assert client.priorities[0][1] == {0: 1, 1: 6, 2: 1, 3: 1}
+    assert client.priorities[0][1] == {0: 0, 1: 6, 2: 0, 3: 0}
     assert client.forced == [(info_hash(TORRENT), True)]
     assert client.resumed == [info_hash(TORRENT)]
     assert getattr(client, "paused", []) == []
@@ -358,7 +358,7 @@ def test_capacity_ignores_queued_and_checking(tmp_path):
 def test_priorities_private_target_high_not_max():
     """Prioridad 6 mantiene el orden secuencial; la 7 lo rompe."""
     files = [{"index": 0}, {"index": 1}]
-    assert priorities_for(files, 0, private=True) == {0: 6, 1: 1}
+    assert priorities_for(files, 0, private=True) == {0: 6, 1: 0}
 
 
 def test_priorities_private_single_file_normal():
