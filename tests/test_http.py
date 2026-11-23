@@ -183,7 +183,7 @@ class FakePlayService:
     def is_failed(self, release_id):
         return release_id in self.failed
 
-    def ensure(self, media_id, *, release_id=None, torrent_bytes=None):
+    def ensure(self, media_id, *, release_id=None, torrent_bytes=None, force=False):
         self.ensured.append((media_id, release_id))
         return {
             "media_id": media_id,
@@ -261,10 +261,11 @@ class FallbackPlayService(FakePlayService):
         self.fail_release_id = fail_release_id
         self.releases = []
 
-    def ensure(self, media_id, *, release_id=None, torrent_bytes=None):
+    def ensure(self, media_id, *, release_id=None, torrent_bytes=None, force=False):
         self.releases.append(release_id)
         return super().ensure(
-            media_id, release_id=release_id, torrent_bytes=torrent_bytes
+            media_id, release_id=release_id, torrent_bytes=torrent_bytes,
+            force=force,
         )
 
     def preflight(self, handle, *, timeout=6.0):
@@ -478,7 +479,7 @@ def test_available_copy_wins_over_a_cold_torrent(tmp_path):
 
 
 class DownEnginePlayService(FakePlayService):
-    def ensure(self, media_id, *, release_id=None, torrent_bytes=None):
+    def ensure(self, media_id, *, release_id=None, torrent_bytes=None, force=False):
         from catalogo.play_service import EngineUnavailable
 
         raise EngineUnavailable("qBittorrent no responde")
@@ -687,7 +688,7 @@ class NoSourcePlayService(FakePlayService):
             attempts=[{"release_id": 1, "error": "release_unavailable"}],
         )
 
-    def ensure(self, media_id, *, release_id=None, torrent_bytes=None):
+    def ensure(self, media_id, *, release_id=None, torrent_bytes=None, force=False):
         raise self.error
 
 
@@ -764,7 +765,7 @@ class CapacityPlayService(FakePlayService):
 
         self.error = CapacityError("ya hay 4 ondemand activos")
 
-    def ensure(self, media_id, *, release_id=None, torrent_bytes=None):
+    def ensure(self, media_id, *, release_id=None, torrent_bytes=None, force=False):
         raise self.error
 
 
@@ -791,7 +792,7 @@ def test_prepare_capacity_has_message(tmp_path):
 
 
 class BlockedPlayService(FakePlayService):
-    def ensure(self, media_id, *, release_id=None, torrent_bytes=None):
+    def ensure(self, media_id, *, release_id=None, torrent_bytes=None, force=False):
         from catalogo.play_service import AdmissionDenied
 
         raise AdmissionDenied({"reason": "tracker_disabled"})
