@@ -353,6 +353,7 @@ PLAYBACK_PATHS = {
     "/resolve",
     "/sources",
     "/status",
+    "/media-info",
     "/catalog/lookup",
     "/prepare",
     "/lease",

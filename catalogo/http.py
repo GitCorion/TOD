@@ -32,6 +32,7 @@ from .config import media_type
 from .db import connect
 from .backend import BackendError, CapacityError, NoSource, ReleaseUnavailable
 from .lookup import lookup_strm
+from .media_info import build_media_info
 from .play_service import AdmissionDenied, EngineUnavailable, NoPeers, Warming
 from .ranges import parse_range
 from .resolver import Resolution, Resolver
@@ -61,6 +62,9 @@ class _NoProwlarr:
 
     def search(self, *args: Any, **kwargs: Any) -> list[dict]:
         return []
+
+_SEARCH_AT: dict[str, float] = {}
+_SEARCH_COOLDOWN = 300.0
 
 ADMISSION_MESSAGES = {
     "sin_espacio": "No hay espacio suficiente en disco para esta descarga.",
@@ -132,6 +136,49 @@ class CatalogHandler(BaseHTTPRequestHandler):
     def config(self) -> Any | None:
         app = getattr(self, "app", None)
         return getattr(app, "config", None)
+
+    def _search_sources(self, key: str) -> bool:
+        """Busca fuentes nuevas cuando el título no tiene ninguna viva.
+
+        Jellyfin/Medusa llama a /prepare al darle a play. Si el único
+        release conocido está muerto, sin esta búsqueda se devolvía
+        ``sin_fuente`` aunque hubiera versiones nuevas en los indexers.
+        """
+        config = self.config
+        if config is None:
+            return False
+        with closing(connect(self.db_path)) as conn:
+            row = conn.execute(
+                "SELECT kind, air_date FROM media_items "
+                "WHERE key = ? OR media_id = ? LIMIT 1",
+                (key, key),
+            ).fetchone()
+        if row is not None and row["kind"] == "series":
+            air_date = str(row["air_date"] or "")[:10]
+            today = time.strftime("%Y-%m-%d", time.gmtime())
+            if air_date and air_date > today:
+                # Aún no se ha estrenado: no hay nada que buscar.
+                return False
+        now = time.monotonic()
+        if now - _SEARCH_AT.get(key, 0.0) < _SEARCH_COOLDOWN:
+            return False
+        _SEARCH_AT[key] = now
+        try:
+            from .admin import manual_search
+
+            report = manual_search(config, key)
+        except Exception as exc:
+            print(f"prepare search {key}: {str(exc)[:160]}", flush=True)
+            return False
+        summary = (report or {}).get("summary") or {}
+        inserted = int(summary.get("inserted") or 0)
+        updated = int(summary.get("updated") or 0)
+        print(
+            f"prepare search key={key} inserted={inserted} updated={updated} "
+            f"errors={len(summary.get('errors') or [])}",
+            flush=True,
+        )
+        return bool(inserted or updated)
 
     def _alive_sources(self, key: str) -> int:
         with closing(connect(self.db_path)) as conn:
@@ -225,8 +272,8 @@ class CatalogHandler(BaseHTTPRequestHandler):
         if parsed.path == "/healthz":
             return self._json(200, {"status": "ok"}, head=head)
         if parsed.path not in (
-            "/resolve", "/play", "/sources", "/status", "/catalog/lookup",
-            "/prepare", "/lease",
+            "/resolve", "/play", "/sources", "/status", "/media-info",
+            "/catalog/lookup", "/prepare", "/lease",
         ):
             return self._text(404, "no encontrado", head=head)
 
@@ -349,6 +396,11 @@ class CatalogHandler(BaseHTTPRequestHandler):
             # al instante y luego consulta /status.
             if release_id is None:
                 resolution = self.resolver.resolve(key)
+                if (
+                    resolution.source == "unavailable"
+                    and self._search_sources(key)
+                ):
+                    resolution = Resolver(self.db_path).resolve(key)
                 if resolution.source in ("library", "local_seed"):
                     status = asset_status(
                         self.db_path, key,
@@ -386,7 +438,7 @@ class CatalogHandler(BaseHTTPRequestHandler):
             )
             try:
                 handle = self.play_service.ensure(
-                    key, release_id=release_id
+                    key, release_id=release_id, force=True
                 )
             except AdmissionDenied as exc:
                 if exc.decision.get("reason") == "tracker_disabled":
@@ -508,6 +560,23 @@ class CatalogHandler(BaseHTTPRequestHandler):
                     404, {"error": "sin_estado", "key": key}, head=head
                 )
             return self._json(200, status, head=head)
+
+        if parsed.path == "/media-info":
+            config = self.config
+            roots = None
+            if config is not None and hasattr(config, "content_roots"):
+                try:
+                    roots = config.content_roots()
+                except Exception:
+                    roots = None
+            info = build_media_info(
+                self.db_path, key, release_id=release_id, roots=roots
+            )
+            if info is None:
+                return self._json(
+                    404, {"error": "sin_media_info", "key": key}, head=head
+                )
+            return self._json(200, info, head=head)
 
         resolution = (
             self.resolver.resolve_release(key, release_id)
