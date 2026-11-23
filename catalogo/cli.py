@@ -1396,7 +1396,10 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--execute", action="store_true")
 
     p = sub.add_parser("bridge", help="copia al *arr lo descargado por el catálogo")
-    p.add_argument("--limit", type=int, default=1)
+    p.add_argument(
+        "--limit", type=int, default=1,
+        help="descargas por ejecución; un pack cuenta como una",
+    )
     p.add_argument("--execute", action="store_true")
 
     p = sub.add_parser("rss-sync", help="ingesta novedades por RSS/latest")

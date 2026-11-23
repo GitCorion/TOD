@@ -102,6 +102,11 @@ def bridge_downloads(
     limit: int = 1,
     dry_run: bool = True,
 ) -> dict:
+    """Copia a Radarr/Sonarr lo descargado por TOD.
+
+    `limit` cuenta descargas completas: un pack de temporada se puentea
+    entero en la misma pasada, con un solo reescaneo de la serie.
+    """
     report: dict[str, Any] = {
         "checked": 0,
         "bridged": [],
@@ -125,7 +130,9 @@ def bridge_downloads(
             ORDER BY t.id DESC, f.id DESC
             LIMIT ?
             """,
-            (max(50, int(limit) * 20),),
+            # Se recorren varias descargas completas: el límite se aplica al
+            # número de torrents, no a filas.
+            (max(500, int(limit) * 50),),
         ).fetchall()
 
     radarr_root: str | None = None
@@ -150,9 +157,26 @@ def bridge_downloads(
         return sonarr_root, sonarr_profile
 
     bridged_count = 0
+    # `limit` cuenta descargas, no ficheros: un pack se puentea entero en la
+    # misma pasada, con un solo reescaneo de la serie.
+    torrent_bridged = False
+    current_torrent: int | None = None
+    rescanned: set[tuple[str, int]] = set()
+
+    def count_bridge() -> None:
+        nonlocal bridged_count, torrent_bridged
+        if torrent_bridged:
+            return
+        bridged_count += 1
+        torrent_bridged = True
+
     for row in rows:
-        if bridged_count >= int(limit):
-            break
+        torrent_id = int(row["torrent_id"])
+        if torrent_id != current_torrent:
+            if bridged_count >= int(limit):
+                break
+            current_torrent = torrent_id
+            torrent_bridged = False
         report["checked"] += 1
         asset = dict(row)
         source = _source(row)
@@ -195,7 +219,7 @@ def bridge_downloads(
                                 "title": asset["title"],
                             }
                         )
-                        bridged_count += 1
+                        count_bridge()
                         continue
                     created = radarr.add_movie(
                         tmdb=tmdb,
@@ -239,7 +263,7 @@ def bridge_downloads(
                         {"key": asset["key"], "to": str(destination),
                          "action": "add" if added else "copy"}
                     )
-                    bridged_count += 1
+                    count_bridge()
                     continue
                 action = _place(source, destination)
                 radarr.rescan_movie(int(movie["id"]))
@@ -252,7 +276,7 @@ def bridge_downloads(
                         "queue_removed": removed,
                     }
                 )
-                bridged_count += 1
+                count_bridge()
             except Exception as exc:
                 report["errors"].append(
                     f"{asset['key']}: {str(exc)[:150]}"
@@ -282,7 +306,7 @@ def bridge_downloads(
                             "title": asset["title"],
                         }
                     )
-                    bridged_count += 1
+                    count_bridge()
                     continue
                 created = sonarr.add_series(
                     tvdb=asset.get("tvdb_id"),
@@ -345,10 +369,13 @@ def bridge_downloads(
                     {"key": asset["key"], "to": str(destination),
                      "action": "add" if added else "copy"}
                 )
-                bridged_count += 1
+                count_bridge()
                 continue
             action = _place(source, destination)
-            sonarr.rescan_series(int(series["id"]))
+            scan_key = ("series", int(series["id"]))
+            if scan_key not in rescanned:
+                sonarr.rescan_series(int(series["id"]))
+                rescanned.add(scan_key)
             removed = _cancel_queue(
                 sonarr, episode_id=episode.get("id")
             )
@@ -360,7 +387,7 @@ def bridge_downloads(
                     "queue_removed": removed,
                 }
             )
-            bridged_count += 1
+            count_bridge()
         except Exception as exc:
             report["errors"].append(
                 f"{asset['key']}: {str(exc)[:150]}"

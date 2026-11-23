@@ -233,6 +233,100 @@ def _main_video(files: list[dict]) -> dict | None:
     return max(videos, key=lambda item: int(item.get("size") or 0))
 
 
+def _series_episodes(conn, *, tmdb: int, tvdb: int) -> dict[tuple[int, int], int]:
+    """(temporada, episodio) -> id de las fichas de una serie."""
+    if tmdb:
+        rows = conn.execute(
+            "SELECT id, season, episode FROM media_items "
+            "WHERE kind='series' AND (tmdb=? OR tvdb_id=?)",
+            (int(tmdb), int(tvdb or 0)),
+        ).fetchall()
+    elif tvdb:
+        rows = conn.execute(
+            "SELECT id, season, episode FROM media_items "
+            "WHERE kind='series' AND tvdb_id=?",
+            (int(tvdb),),
+        ).fetchall()
+    else:
+        return {}
+    return {
+        (int(row["season"]), int(row["episode"])): int(row["id"])
+        for row in rows
+        if row["season"] is not None and row["episode"] is not None
+    }
+
+
+def _pack_episode_map(conn, direct) -> dict[tuple[int, int], int]:
+    """Episodios de la serie para un pack descargado por TOD.
+
+    `prepare_download` solo enlaza el capítulo pedido. Cuando el pack lo
+    descarga Sonarr, su historial aporta el resto; si lo descarga TOD no hay
+    historial y el pack se mapea por los `SxxEyy` del nombre del fichero
+    contra las fichas locales de la misma serie.
+    """
+    if direct is None or direct["kind"] != "series" or not direct["is_pack"]:
+        return {}
+    return _series_episodes(
+        conn,
+        tmdb=int(direct["tmdb"] or 0),
+        tvdb=int(direct["tvdb_id"] or 0),
+    )
+
+
+def relink_pack_files(conn, *, report: SyncReport | None = None) -> int:
+    """Completa el mapeo de packs con ficheros ya descargados.
+
+    Los ficheros de un pack que no son el capítulo pedido nacen con
+    `asset_id` nulo. Se emparejan aquí por `SxxEyy`, sin volver a pedir la
+    lista a qBittorrent, para que el puente publique todos los episodios.
+    """
+    rows = conn.execute(
+        """
+        SELECT f.id AS file_id, f.rel_path,
+               m.kind, m.tmdb, m.tvdb_id, m.season
+        FROM torrent_files f
+        JOIN torrents t ON t.id = f.torrent_id
+        JOIN releases r ON r.id = t.release_id
+        JOIN media_items m ON m.id = r.asset_id
+        WHERE t.category IN ('ondemand', 'catalogo')
+          AND r.is_pack = 1
+          AND m.kind = 'series'
+          AND f.asset_id IS NULL
+        """
+    ).fetchall()
+    cache: dict[tuple[int, int], dict[tuple[int, int], int]] = {}
+    linked = 0
+    for row in rows:
+        rel_path = row["rel_path"] or ""
+        if Path(rel_path).suffix.lower() not in VIDEO_EXT:
+            continue
+        parsed = _episode_from_name(rel_path)
+        if parsed is None:
+            continue
+        tmdb = int(row["tmdb"] or 0)
+        tvdb = int(row["tvdb_id"] or 0)
+        if not tmdb and not tvdb:
+            continue
+        cache_key = (tmdb, tvdb)
+        episodes = cache.get(cache_key)
+        if episodes is None:
+            episodes = _series_episodes(conn, tmdb=tmdb, tvdb=tvdb)
+            cache[cache_key] = episodes
+        media_id = episodes.get(parsed)
+        if media_id is None:
+            continue
+        conn.execute(
+            "UPDATE torrent_files SET asset_id=?, updated_at="
+            "strftime('%Y-%m-%dT%H:%M:%fZ', 'now') "
+            "WHERE id = ? AND asset_id IS NULL",
+            (media_id, int(row["file_id"])),
+        )
+        linked += 1
+    if report is not None:
+        report.media_linked += linked
+    return linked
+
+
 def radarr_index(client) -> dict[str, dict]:
     """DownloadId -> película (tmdb/título/año), vía API de Radarr."""
     result: dict[str, dict] = {}
@@ -742,7 +836,8 @@ def sync(
                     progress = float(torrent.get("progress") or 0)
                     direct = conn.execute(
                         """
-                        SELECT r.asset_id, m.kind, m.season, m.episode
+                        SELECT r.asset_id, r.is_pack, m.kind, m.season,
+                               m.episode, m.tmdb, m.tvdb_id
                         FROM torrents t
                         JOIN releases r ON r.id = t.release_id
                         JOIN media_items m ON m.id = r.asset_id
@@ -806,6 +901,10 @@ def sync(
                             report.media_linked += 1
                             if created:
                                 report.media_created += 1
+                    # Un pack descargado por TOD no está en el historial de
+                    # Sonarr: se mapea por SxxEyy contra las fichas locales.
+                    for key, media_id in _pack_episode_map(conn, direct).items():
+                        episode_map.setdefault(key, media_id)
 
                     for item in files:
                         asset_id = None
@@ -950,6 +1049,10 @@ def sync(
 
             # Corrige clasificaciones antiguas antes de recalcular punteros.
             _normalize_storage(conn, archive_root)
+
+            # Packs ya descargados: completa los episodios que nacieron sin
+            # ficha (prepare_download solo enlaza el capítulo pedido).
+            relink_pack_files(conn, report=report)
 
             # Recalcular estado/puntero de los media tocados.
             for row in conn.execute(

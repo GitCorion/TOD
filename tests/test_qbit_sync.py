@@ -583,3 +583,98 @@ def test_complete_file_in_incomplete_pack_is_marked_ready(tmp_path):
     assert rows[0]["state"] == "ready"
     assert rows[0]["local_path"]
     assert rows[1]["state"] == "unknown"
+
+
+class StablePackQbit:
+    """Torrent ya indexado: sync no vuelve a pedir la lista de ficheros."""
+
+    def __init__(self, torrent):
+        self._torrent = torrent
+        self.files_calls = []
+
+    def torrents(self, category=None):
+        return [self._torrent]
+
+    def files(self, info_hash):
+        self.files_calls.append(info_hash)
+        return []
+
+
+def test_pack_files_are_linked_to_their_local_episodes(tmp_path):
+    db = tmp_path / "catalogo.db"
+    init_db(db, MIGRATIONS)
+    conn = sqlite3.connect(db)
+    episode_ids = {}
+    for number in (1, 2, 3):
+        key = f"series:tmdb:300:1:{number}"
+        conn.execute(
+            "INSERT INTO media_items(key, media_id, kind, tmdb, tvdb_id, "
+            "title, season, episode) VALUES(?,?,?,?,?,?,?,?)",
+            (key, key, "series", 300, 900, "Serie", 1, number),
+        )
+        episode_ids[number] = conn.execute(
+            "SELECT id FROM media_items WHERE key=?", (key,)
+        ).fetchone()[0]
+    conn.execute(
+        "INSERT INTO releases(asset_id,tracker,title,size_bytes,is_pack) "
+        "VALUES(?,?,?,?,?)",
+        (episode_ids[1], "Tracker", "Serie S01 PACK", 30, 1),
+    )
+    release_id = conn.execute("SELECT id FROM releases").fetchone()[0]
+    conn.execute(
+        "INSERT INTO torrents(info_hash,release_id,tracker,state,category,"
+        "progress,save_path,qbit_state,content_path) "
+        "VALUES(?,?,?,?,?,?,?,?,?)",
+        ("packrelink", release_id, "Tracker", "seeding", "ondemand", 1,
+         "/mnt/descargas/ondemand", "stalledUP",
+         "/mnt/descargas/ondemand/Serie S01 PACK"),
+    )
+    torrent_id = conn.execute("SELECT id FROM torrents").fetchone()[0]
+    for number in (1, 2, 3):
+        rel_path = f"Serie S01 PACK/Serie S01E0{number}.mkv"
+        conn.execute(
+            "INSERT INTO torrent_files(asset_id,release_id,torrent_id,"
+            "file_index,rel_path,local_path,size_bytes,state,storage_location) "
+            "VALUES(?,?,?,?,?,?,?,?,?)",
+            (episode_ids[number] if number == 1 else None, release_id,
+             torrent_id, number - 1, rel_path,
+             f"/mnt/descargas/ondemand/{rel_path}", 10, "ready",
+             "LOCAL_DISK"),
+        )
+    conn.commit()
+    conn.close()
+    qbit = StablePackQbit(
+        {
+            "hash": "packrelink", "category": "ondemand", "state": "stalledUP",
+            "progress": 1, "save_path": "/mnt/descargas/ondemand",
+            "content_path": "/mnt/descargas/ondemand/Serie S01 PACK",
+            "download_path": "/mnt/descargas/ondemand",
+            "completion_on": EPOCH, "seeding_time": 100,
+            "added_on": EPOCH - 1000, "uploaded": 10, "downloaded": 30,
+            "ratio": 0.3, "size": 30, "tracker": "Tracker",
+        }
+    )
+
+    report = sync(db, qbit, dry_run=False, check_exists=False, now=NOW)
+
+    assert qbit.files_calls == []
+    assert report.media_linked >= 2
+    conn = sqlite3.connect(db)
+    conn.row_factory = sqlite3.Row
+    rows = conn.execute(
+        "SELECT asset_id FROM torrent_files WHERE torrent_id=? "
+        "ORDER BY file_index",
+        (torrent_id,),
+    ).fetchall()
+    statuses = {
+        int(row["episode"]): row["status"]
+        for row in conn.execute(
+            "SELECT episode, status FROM media_items WHERE tmdb=300"
+        )
+    }
+    conn.close()
+    assert [row["asset_id"] for row in rows] == [
+        episode_ids[1], episode_ids[2], episode_ids[3]
+    ]
+    assert statuses[2] == "SEEDING_LOCAL"
+    assert statuses[3] == "SEEDING_LOCAL"

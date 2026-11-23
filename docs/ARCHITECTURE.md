@@ -166,3 +166,17 @@ solo retira el registro de la cola del *arr, que cierra su importación por
 rescan. El orden de búsqueda es **ID externo primero** (TMDB/TVDB/IMDb,
 con temporada/episodio en series), después título traducido/original y por
 último Jackett. Así no se confunden remakes ni versiones de otro año.
+
+## Packs de temporada
+
+En un pack, `prepare_download` solo enlaza el capítulo que disparó la
+descarga (`torrent_files.asset_id`). El resto nace sin ficha a propósito: los
+ficheros se van completando al descargarse. Cuando el pack lo descargó
+Sonarr, su historial aporta la lista de episodios; cuando lo descargó TOD no
+hay historial, así que `qbit_sync.relink_pack_files` empareja cada fichero
+`SxxEyy` con las fichas locales de la misma serie (TMDB/TVDB) y rellena su
+`asset_id` sin volver a pedir la lista a qBittorrent.
+
+Con el pack mapeado, el puente publica todos sus episodios en la misma
+pasada y Sonarr los ve tras un único reescaneo. El `limit` del puente cuenta
+descargas, no ficheros.

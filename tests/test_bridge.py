@@ -283,3 +283,85 @@ def test_bridge_imports_a_complete_file_from_an_incomplete_pack(tmp_path):
     report = bridge_downloads(db, radarr, None, limit=5, dry_run=False)
     assert report["bridged"], report
     assert (tmp_path / "radarr" / "Test Movie (2020)" / "Test Movie (2020).mkv").is_file()
+
+
+class FakeSonarrPack:
+    def __init__(self, series, episodes):
+        self.series = series
+        self.episodes = episodes
+        self.rescanned = []
+
+    def series_by_tmdb(self, tmdb):
+        return self.series
+
+    def episode(self, series_id, season, episode):
+        return self.episodes.get((int(season), int(episode)))
+
+    def rescan_series(self, series_id):
+        self.rescanned.append(series_id)
+
+
+def test_bridge_copies_every_file_of_a_pack_in_one_run(tmp_path):
+    db = tmp_path / "catalogo.db"
+    init_db(db, MIGRATIONS)
+    conn = sqlite3.connect(db)
+    episode_ids = {}
+    sources = {}
+    for number in (1, 2, 3):
+        source = tmp_path / f"e{number}.mkv"
+        source.write_bytes(b"video")
+        sources[number] = source
+        key = f"series:tmdb:2:1:{number}"
+        conn.execute(
+            "INSERT INTO media_items(key,kind,tmdb,title,year,season,episode) "
+            "VALUES(?,?,?,?,?,?,?)",
+            (key, "series", 2, "Serie", 2021, 1, number),
+        )
+        episode_ids[number] = conn.execute(
+            "SELECT id FROM media_items WHERE key=?", (key,)
+        ).fetchone()[0]
+    conn.execute(
+        "INSERT INTO releases(asset_id,tracker,title,size_bytes,health,"
+        "is_pack) VALUES(?,?,?,?,?,?)",
+        (episode_ids[1], "Tracker", "Serie S01 PACK", 15, "alive", 1),
+    )
+    release_id = conn.execute("SELECT id FROM releases").fetchone()[0]
+    conn.execute(
+        "INSERT INTO torrents(info_hash,release_id,tracker,state,category,"
+        "progress) VALUES(?,?,?,?,?,?)",
+        ("packhash", release_id, "Tracker", "seeding", "ondemand", 1),
+    )
+    torrent_id = conn.execute("SELECT id FROM torrents").fetchone()[0]
+    for number in (1, 2, 3):
+        conn.execute(
+            "INSERT INTO torrent_files(asset_id,release_id,torrent_id,"
+            "file_index,rel_path,local_path,size_bytes,state) "
+            "VALUES(?,?,?,?,?,?,?,?)",
+            (episode_ids[number], release_id, torrent_id, number - 1,
+             f"Serie S01E0{number}.mkv", str(sources[number]), 5, "ready"),
+        )
+    conn.commit()
+    conn.close()
+    sonarr = FakeSonarrPack(
+        {"id": 9, "title": "Serie", "path": str(tmp_path / "sonarr" / "Serie")},
+        {
+            (1, number): {
+                "seasonNumber": 1,
+                "episodeNumber": number,
+                "title": f"Episodio {number}",
+                "hasFile": False,
+            }
+            for number in (1, 2, 3)
+        },
+    )
+
+    report = bridge_downloads(db, None, sonarr, limit=1, dry_run=False)
+
+    assert len(report["bridged"]) == 3, report
+    for number in (1, 2, 3):
+        destination = (
+            tmp_path / "sonarr" / "Serie" / "Season 1"
+            / f"Serie - S01E0{number} - Episodio {number}.mkv"
+        )
+        assert destination.read_bytes() == b"video"
+    assert sonarr.rescanned == [9]
