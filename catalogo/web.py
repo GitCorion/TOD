@@ -2006,14 +2006,11 @@ class Handler(PlaybackHandler):
             )
 
         if parts == ["ondemand", "catalog"] and not mutate:
-            qbit, _ = app.qbit()
             return self._json(
                 200,
                 ondemand.catalog(
                     db,
                     app.config,
-                    qbit=qbit,
-                    arr=app.arr,
                     q=params.get("q") or "",
                     kind=params.get("kind") or "",
                     publication=params.get("publication") or "",

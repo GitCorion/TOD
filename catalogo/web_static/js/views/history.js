@@ -3,6 +3,8 @@ import { esc, fmtDate } from '../format.js';
 import { eventLabel, jobLabel, jobState } from '../labels.js';
 import { $, badge, empty, setHeader, status } from '../ui.js';
 
+const ROUTINE = new Set(['qbit-limits', 'worker-cycle', 'attention-check']);
+
 export async function renderHistory({ signal }) {
   const [jobs, events] = await Promise.all([
     api('/api/jobs?limit=100', { signal }),
@@ -10,7 +12,8 @@ export async function renderHistory({ signal }) {
   ]);
   setHeader('Historial');
 
-  const jobRows = (jobs.items || []).map((job) => `<tr>
+  const jobItems = (jobs.items || []).filter((job) => !ROUTINE.has(job.kind));
+  const jobRows = jobItems.map((job) => `<tr>
     <td data-label="Fecha" class="nowrap">${fmtDate(job.finished_at || job.created_at)}</td>
     <td data-label="Tarea"><strong>${esc(jobLabel(job.kind))}</strong><div class="tiny faint">${esc(job.id)}</div></td>
     <td data-label="Estado">${status(jobState(job.state).label, jobState(job.state).tone)}</td>
@@ -20,13 +23,13 @@ export async function renderHistory({ signal }) {
   const eventRows = (events.items || []).map((event) => `<tr>
     <td data-label="Fecha" class="nowrap">${fmtDate(event.ts)}</td>
     <td data-label="Acción">${badge(eventLabel(event.kind), 'mono')}</td>
-    <td data-label="Título">${event.asset_id ? `<a href="#/title/${event.asset_id}">#${event.asset_id}</a>` : '—'}</td>
+    <td data-label="Título">${event.asset_id ? `<a href="#/title/${event.asset_id}">Abrir ficha</a>` : '—'}</td>
     <td data-label="Datos"><details class="event-payload"><summary>ver datos</summary><pre>${esc(event.payload || '')}</pre></details></td>
   </tr>`).join('');
 
   $('#view').innerHTML = `
     <div class="panel flush">
-      <div class="panel-head"><h2>Tareas</h2><span class="right tiny faint">últimas 100</span></div>
+      <div class="panel-head"><h2>Historial de tareas</h2><span class="right tiny faint">${jobItems.length} relevantes de las últimas 100</span></div>
       ${jobRows ? `<div class="table-wrap"><table class="table--stack">
         <thead><tr><th>Fecha</th><th>Tarea</th><th>Estado</th><th>Resultado</th></tr></thead>
         <tbody>${jobRows}</tbody>
