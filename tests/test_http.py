@@ -201,7 +201,9 @@ class FakePlayService:
     def discard_failed(self, handle):
         self.failed.add(handle.get("release_id"))
 
-    def stream_prepared(self, handler, handle, start, end, *, head=False):
+    def stream_prepared(
+        self, handler, handle, start, end, *, head=False, intent_id=None
+    ):
         self.calls.append((handle["media_id"], start, end))
         body = b"X" * 100
         handler.send_response(206)

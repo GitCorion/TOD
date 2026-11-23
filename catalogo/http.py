@@ -621,7 +621,7 @@ class CatalogHandler(BaseHTTPRequestHandler):
                          "error": "range_invalid"}
                     )
                     continue
-                play_intents.create(
+                intent = play_intents.create(
                     self.db_path,
                     resolution.key,
                     source=self.play_intent_source,
@@ -659,7 +659,7 @@ class CatalogHandler(BaseHTTPRequestHandler):
                     else:
                         self.play_service.preflight(handle)
                     self.play_service.stream_prepared(
-                        self, handle, start, end
+                        self, handle, start, end, intent_id=intent["id"]
                     )
                     return None
                 except RangeNotSatisfiable:

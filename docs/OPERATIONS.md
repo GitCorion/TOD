@@ -105,7 +105,9 @@ http://127.0.0.1:8773/play?key=movie:tmdb:9737&download=0
   `GET` con `Range` (un reproductor real) autoriza el prepare; un escaneo
   sin `Range` sigue recibiendo 403.
 - `download=1`: fuerza el arranque desde la app o un cliente explícito.
-- `/status?key=...`: progreso, velocidad, seeds y `stream_ready`.
+- `/status?key=...`: progreso, velocidad, seeds y estado de arranque:
+  `stream_ready`, `playback_state` (`preparing`, `switching`, `buffering`,
+  `ready`), `prepare_ms`, `first_byte_ms` y `switch_count`.
 - `/sources?key=...`: versiones vivas y su salud.
 
 Diagnóstico:

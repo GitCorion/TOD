@@ -177,14 +177,27 @@ def test_play_service_admits_prepares_and_streams(tmp_path, monkeypatch):
     assert play_intents.active(str(db), "movie:tmdb:300") is None
 
     # Segundo play: reutiliza torrent y commitment.
-    play_intents.create(str(db), "movie:tmdb:300")
+    intent = play_intents.create(str(db), "movie:tmdb:300")
     handler = FakeHandler()
-    service.stream(handler, "movie:tmdb:300", 0, 99, torrent_bytes=TORRENT)
+    service.stream(
+        handler, "movie:tmdb:300", 0, 99, torrent_bytes=TORRENT,
+        intent_id=intent["id"],
+    )
     assert handler.status == 206
     assert handler.wfile.getvalue() == b"Z" * 100
     assert qbit.resumed == [info_hash(TORRENT)]
     assert qbit.forced == [(info_hash(TORRENT), True)]
     assert len(qbit.added) == 1
+
+    conn = sqlite3.connect(db)
+    conn.row_factory = sqlite3.Row
+    row = conn.execute(
+        "SELECT ready_at, first_byte_at FROM play_intents WHERE id = ?",
+        (intent["id"],),
+    ).fetchone()
+    conn.close()
+    assert row["ready_at"] is not None
+    assert row["first_byte_at"] is not None
 
 
 def test_ensure_falls_back_to_next_release(tmp_path, monkeypatch):

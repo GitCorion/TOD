@@ -95,6 +95,20 @@ def consume(
     return cur.rowcount > 0
 
 
+def ready(
+    db_path: str, intent_id: int, *, now: datetime | None = None
+) -> None:
+    """Marca el momento en que el stream está listo para enviar datos."""
+    current = now or _now()
+    with closing(connect(db_path)) as conn:
+        conn.execute(
+            "UPDATE play_intents SET ready_at = COALESCE(ready_at, ?) "
+            "WHERE id = ?",
+            (current.isoformat(), int(intent_id)),
+        )
+        conn.commit()
+
+
 def first_byte(
     db_path: str, intent_id: int, *, now: datetime | None = None
 ) -> None:

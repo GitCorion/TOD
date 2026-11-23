@@ -560,6 +560,10 @@ class PlayService:
                     pass
 
             on_first_byte = mark_first_byte
+            try:
+                play_intents.ready(self.db_path, intent_id)
+            except Exception:
+                pass
         stream_torrent_file(
             handler,
             self.qbit_read,

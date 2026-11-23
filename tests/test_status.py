@@ -179,3 +179,57 @@ def test_buffer_state_counts_contiguous_from_start():
     assert buffer_bytes == 50 * 1024 * 1024
     assert required == 32 * 1024**2
     assert tail_ready is True
+
+
+def test_playback_state_preparing_and_startup_metrics(tmp_path):
+    from datetime import datetime, timedelta, timezone
+
+    from catalogo import play_intents
+
+    now = datetime(2026, 11, 18, 12, 0, tzinfo=timezone.utc)
+    db, _asset_id, _release_id = seed(tmp_path)
+    intent = play_intents.create(
+        db, "movie:tmdb:1", ttl_minutes=5, now=now
+    )
+    play_intents.ready(db, intent["id"], now=now + timedelta(seconds=2))
+    play_intents.first_byte(
+        db, intent["id"], now=now + timedelta(seconds=3)
+    )
+
+    status = asset_status(
+        db, "movie:tmdb:1", qbit=None, now=now + timedelta(seconds=10)
+    )
+    assert status["playback_state"] == "preparing"
+    assert status["intent_id"] == intent["id"]
+    assert status["prepare_ms"] == 2000
+    assert status["first_byte_ms"] == 3000
+    assert status["switch_count"] == 0
+
+
+def test_playback_state_switching_wins_over_preparing(tmp_path):
+    from datetime import datetime, timedelta, timezone
+
+    now = datetime(2026, 11, 18, 12, 0, tzinfo=timezone.utc)
+    db, _asset_id, _release_id = seed(tmp_path, torrent=False)
+    conn = sqlite3.connect(db)
+    conn.execute(
+        "UPDATE media_items SET stream_generation=2, stream_switched_at=?, "
+        "stream_switch_reason='slow_swarm'",
+        (now.isoformat(),),
+    )
+    conn.commit()
+    conn.close()
+
+    status = asset_status(
+        db, "movie:tmdb:1", qbit=None, now=now + timedelta(seconds=5)
+    )
+    assert status["playback_state"] == "switching"
+    assert status["switch_count"] == 2
+    assert status["stream_switch_reason"] == "slow_swarm"
+
+
+def test_playback_state_ready_when_local_file_exists(tmp_path):
+    db, _asset_id, _release_id = seed(tmp_path, complete=True, local=True)
+    status = asset_status(db, "movie:tmdb:1", qbit=None)
+    assert status["stream_ready"] is True
+    assert status["playback_state"] == "ready"

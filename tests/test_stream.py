@@ -129,3 +129,17 @@ def test_wait_pieces_checks_global_range():
     assert wait_pieces(q, "hash", MB, MB, MB, timeout=0.1)
     assert q.calls == 1
     assert wait_pieces(q, "hash", 0, 6 * MB, MB, timeout=0.01) is False
+
+
+def test_on_first_byte_fires_once_per_response(tmp_path):
+    files, _first, _second = make_files(tmp_path)
+    qbit = FakeQbit(files, [2, 2, 2, 2])
+    handler = FakeHandler()
+    calls = []
+    stream_torrent_file(
+        handler, qbit, "hash", 1, 0, 2 * MB - 1,
+        roots=[str(tmp_path)], timeout=1,
+        on_first_byte=lambda: calls.append(1),
+    )
+    assert handler.wfile.getvalue() == b"B" * (2 * MB)
+    assert calls == [1]

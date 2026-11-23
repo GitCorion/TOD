@@ -25,6 +25,62 @@ def _now() -> datetime:
     return datetime.now(timezone.utc)
 
 
+def _parse_ts(value: Any) -> datetime | None:
+    if not value:
+        return None
+    try:
+        parsed = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed
+
+
+def _ms_between(start: Any, end: Any) -> int | None:
+    first = _parse_ts(start)
+    last = _parse_ts(end)
+    if first is None or last is None:
+        return None
+    return max(0, int((last - first).total_seconds() * 1000))
+
+
+SWITCH_WINDOW_SECONDS = 120
+
+
+def _playback_state(
+    *,
+    stream_ready: bool,
+    source: str,
+    intent: Any,
+    switched_at: Any,
+    current: datetime,
+) -> str:
+    """Estado de arranque tal y como lo necesita el cliente.
+
+    `ready` no depende de la intención: si hay fichero o buffer suficiente,
+    se puede reproducir ya. `switching` gana a `preparing` porque el guard
+    acaba de cambiar de fuente y el cliente debe reiniciar la petición.
+    """
+    if stream_ready:
+        return "ready"
+    if source in ("unavailable",):
+        return "unavailable"
+    switched = _parse_ts(switched_at)
+    if (
+        switched is not None
+        and (current - switched).total_seconds() <= SWITCH_WINDOW_SECONDS
+    ):
+        return "switching"
+    if intent is not None and intent["consumed_at"] is None:
+        expires = _parse_ts(intent["expires_at"])
+        if expires is None or expires > current:
+            return "preparing"
+    if source == "torrent":
+        return "buffering"
+    return "idle"
+
+
 def _live_torrent(
     qbit: StatusQbit | None, info_hash: str | None
 ) -> dict[str, Any] | None:
@@ -291,6 +347,12 @@ def asset_status(
             (asset_id, release_id, release_id),
         ).fetchone()
 
+        intent = conn.execute(
+            "SELECT * FROM play_intents WHERE media_id = ? "
+            "ORDER BY id DESC LIMIT 1",
+            (asset["key"],),
+        ).fetchone()
+
     resolver = Resolver(db_path)
     resolution: Resolution | None = None
     try:
@@ -427,6 +489,23 @@ def asset_status(
     else:
         stream_ready = source in ("library", "local_seed")
     state = _state(resolution, live, progress)
+    playback_state = _playback_state(
+        stream_ready=bool(stream_ready),
+        source=source,
+        intent=intent,
+        switched_at=asset["stream_switched_at"],
+        current=current,
+    )
+    prepare_ms = (
+        _ms_between(intent["created_at"], intent["ready_at"])
+        if intent is not None
+        else None
+    )
+    first_byte_ms = (
+        _ms_between(intent["created_at"], intent["first_byte_at"])
+        if intent is not None
+        else None
+    )
     eta_seconds = _eta(live)
     if file_progress is not None and file_size and speed > 0:
         if file_progress >= 1:
@@ -475,7 +554,13 @@ def asset_status(
         "stream_generation": int(asset["stream_generation"] or 0),
         "stream_switched_at": asset["stream_switched_at"],
         "stream_switch_reason": asset["stream_switch_reason"],
+        "switch_count": int(asset["stream_generation"] or 0),
+        "prepare_ms": prepare_ms,
+        "first_byte_ms": first_byte_ms,
+        "intent_id": int(intent["id"]) if intent is not None else None,
+        "intent_source": intent["source"] if intent is not None else None,
         "state": state,
+        "playback_state": playback_state,
         "source": source,
         "reason": resolution.reason if resolution is not None else None,
         "stream_ready": bool(stream_ready),
