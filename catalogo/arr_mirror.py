@@ -16,6 +16,7 @@ from datetime import date, datetime, timezone
 from typing import Any
 
 from .db import connect
+from .seed_settings import load as load_seed_settings
 from .title_sync import upsert_episodes, upsert_movies
 
 
@@ -64,6 +65,30 @@ def _series_item(row: dict[str, Any]) -> dict[str, Any] | None:
     }
 
 
+def _queue_ids(client, kind: str) -> tuple[set[int], bool]:
+    """IDs con descarga activa en el *arr; `ok` distingue vacío de fallo."""
+    queue = getattr(client, "queue", None)
+    if not callable(queue):
+        return set(), False
+    try:
+        data = queue()
+    except Exception:
+        return set(), False
+    records = data.get("records") if isinstance(data, dict) else data
+    ids: set[int] = set()
+    for record in records or []:
+        try:
+            value = (
+                record.get("movieId") if kind == "radarr"
+                else record.get("episodeId")
+            )
+            if value:
+                ids.add(int(value))
+        except (TypeError, ValueError):
+            continue
+    return ids, True
+
+
 def _movie_item(row: dict[str, Any]) -> dict[str, Any] | None:
     try:
         tmdb = int(row.get("tmdbId") or 0)
@@ -97,6 +122,7 @@ def mirror_radarr(db_path, radarr, *, now: str | None = None) -> dict[str, Any]:
     report: dict[str, Any] = {
         "seen": 0,
         "items": 0,
+        "fallback": 0,
         "skipped": 0,
         "errors": [],
     }
@@ -109,7 +135,9 @@ def mirror_radarr(db_path, radarr, *, now: str | None = None) -> dict[str, Any]:
         return report
 
     items: list[dict[str, Any]] = []
-    updates: list[tuple[int | None, str]] = []
+    updates: list[tuple[int | None, str, int, bool, bool]] = []
+    fallback_enabled = load_seed_settings(db_path)["arr_fallback"]
+    queue_movies, queue_ok = _queue_ids(radarr, "radarr")
     for row in rows:
         report["seen"] += 1
         item = _movie_item(row)
@@ -121,8 +149,16 @@ def mirror_radarr(db_path, radarr, *, now: str | None = None) -> dict[str, Any]:
             (
                 item.get("runtime_seconds"),
                 f"movie:tmdb:{item['tmdb']}",
+                int(row.get("id") or 0),
+                bool(row.get("hasFile")),
+                bool(row.get("monitored", True)),
             )
         )
+    fallback_keys = [
+        key for _runtime, key, movie_id, has_file, monitored in updates
+        if fallback_enabled and queue_ok and monitored and not has_file
+        and movie_id not in queue_movies
+    ]
     if not items and rows:
         return report
 
@@ -130,6 +166,7 @@ def mirror_radarr(db_path, radarr, *, now: str | None = None) -> dict[str, Any]:
     report.update(
         {
             "items": len(items),
+            "fallback": len(fallback_keys),
             "inserted": result.get("inserted", 0),
             "updated": result.get("updated", 0),
         }
@@ -140,9 +177,18 @@ def mirror_radarr(db_path, radarr, *, now: str | None = None) -> dict[str, Any]:
             "(key TEXT PRIMARY KEY)"
         )
         conn.execute("DELETE FROM _arr_seen_movies")
+        conn.execute(
+            "CREATE TEMP TABLE IF NOT EXISTS _arr_fallback_movies "
+            "(key TEXT PRIMARY KEY)"
+        )
+        conn.execute("DELETE FROM _arr_fallback_movies")
         conn.executemany(
             "INSERT OR IGNORE INTO _arr_seen_movies(key) VALUES(?)",
-            [(key,) for _runtime, key in updates],
+            [(key,) for _runtime, key, *_rest in updates],
+        )
+        conn.executemany(
+            "INSERT OR IGNORE INTO _arr_fallback_movies(key) VALUES(?)",
+            [(key,) for key in fallback_keys],
         )
         conn.executemany(
             """
@@ -154,16 +200,35 @@ def mirror_radarr(db_path, radarr, *, now: str | None = None) -> dict[str, Any]:
                 updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
             WHERE key = ?
             """,
-            [(stamp, runtime, key) for runtime, key in updates],
+            [(stamp, runtime, key) for runtime, key, *_rest in updates],
         )
-        # Si estaba en Radarr ya no hace falta perseguirlo desde TOD.
+        # Si estaba en Radarr ya no hace falta perseguirlo desde TOD,
+        # salvo que no tenga fichero ni descarga en cola: ahí TOD busca
+        # como respaldo.
         conn.execute(
             """
             UPDATE media_items SET monitored = 0
             WHERE kind = 'movie' AND monitored = 1
-              AND monitor_source IN ('rss','tmdb','series','auto','qbit')
+              AND monitor_source IN ('rss','tmdb','series','auto','qbit','arr_fallback')
               AND key IN (SELECT key FROM _arr_seen_movies)
+              AND key NOT IN (SELECT key FROM _arr_fallback_movies)
             """
+        )
+        conn.execute(
+            """
+            UPDATE media_items SET
+                monitored = 1,
+                monitored_at = COALESCE(monitored_at, ?),
+                monitor_source = 'arr_fallback',
+                updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+            WHERE kind = 'movie'
+              AND key IN (SELECT key FROM _arr_fallback_movies)
+              AND (
+                  monitor_source IS NULL
+                  OR monitor_source NOT IN ('manual')
+              )
+            """,
+            (stamp,),
         )
         # Lo que ha salido de Radarr vuelve a seguimiento por defecto.
         conn.execute(
@@ -191,6 +256,7 @@ def mirror_sonarr(db_path, sonarr, *, now: str | None = None) -> dict[str, Any]:
         "seen": 0,
         "series": 0,
         "episodes": 0,
+        "fallback": 0,
         "inserted": 0,
         "updated": 0,
         "skipped": 0,
@@ -207,6 +273,9 @@ def mirror_sonarr(db_path, sonarr, *, now: str | None = None) -> dict[str, Any]:
     all_states: list[tuple[int | None, str]] = []
     seen_series: set[int] = set()
     complete_series: set[int] = set()
+    fallback_keys: list[str] = []
+    fallback_enabled = load_seed_settings(db_path)["arr_fallback"]
+    queue_episodes, queue_ok = _queue_ids(sonarr, "sonarr")
     for series in rows:
         report["seen"] += 1
         item = _series_item(series)
@@ -214,6 +283,7 @@ def mirror_sonarr(db_path, sonarr, *, now: str | None = None) -> dict[str, Any]:
             report["skipped"] += 1
             continue
         seen_series.add(int(item["tmdb"]))
+        series_monitored = bool(series.get("monitored", True))
         try:
             episodes = sonarr.episodes(int(series.get("id") or 0))
         except Exception as exc:
@@ -230,6 +300,23 @@ def mirror_sonarr(db_path, sonarr, *, now: str | None = None) -> dict[str, Any]:
                 continue
             if season < 1 or number < 1:
                 continue
+            episode_id = int(episode.get("id") or 0)
+            has_file = bool(
+                episode.get("hasFile") or episode.get("episodeFileId")
+            )
+            episode_monitored = bool(episode.get("monitored", True))
+            episode_key = (
+                f"series:tmdb:{item['tmdb']}:{season}:{number}"
+            )
+            if (
+                fallback_enabled
+                and queue_ok
+                and series_monitored
+                and episode_monitored
+                and not has_file
+                and episode_id not in queue_episodes
+            ):
+                fallback_keys.append(episode_key)
             payload.append(
                 {
                     "season": season,
@@ -242,7 +329,7 @@ def mirror_sonarr(db_path, sonarr, *, now: str | None = None) -> dict[str, Any]:
             all_states.append(
                 (
                     int(series.get("tvdbId") or 0) or None,
-                    f"series:tmdb:{item['tmdb']}:{season}:{number}",
+                    episode_key,
                 )
             )
         if not payload:
@@ -266,6 +353,7 @@ def mirror_sonarr(db_path, sonarr, *, now: str | None = None) -> dict[str, Any]:
         report["skipped"] += int(result.get("skipped") or 0)
         # Sonarr puede devolver cientos de series; no saturar su API.
         time.sleep(0.02)
+    report["fallback"] = len(fallback_keys)
     if not seen_series and rows:
         return report
     with closing(connect(db_path)) as conn:
@@ -281,12 +369,21 @@ def mirror_sonarr(db_path, sonarr, *, now: str | None = None) -> dict[str, Any]:
             "CREATE TEMP TABLE IF NOT EXISTS _arr_complete_series "
             "(tmdb INTEGER PRIMARY KEY)"
         )
+        conn.execute(
+            "CREATE TEMP TABLE IF NOT EXISTS _arr_fallback_episodes "
+            "(key TEXT PRIMARY KEY)"
+        )
         for table in (
             "_arr_seen_episodes",
             "_arr_seen_series",
             "_arr_complete_series",
+            "_arr_fallback_episodes",
         ):
             conn.execute(f"DELETE FROM {table}")
+        conn.executemany(
+            "INSERT OR IGNORE INTO _arr_fallback_episodes(key) VALUES(?)",
+            [(key,) for key in fallback_keys],
+        )
         if all_states:
             conn.executemany(
                 "INSERT OR IGNORE INTO _arr_seen_episodes(key) VALUES(?)",
@@ -314,14 +411,32 @@ def mirror_sonarr(db_path, sonarr, *, now: str | None = None) -> dict[str, Any]:
                 "INSERT OR IGNORE INTO _arr_complete_series(tmdb) VALUES(?)",
                 [(tmdb,) for tmdb in complete_series],
             )
-        # Si está en Sonarr ya no hace falta perseguirlo desde TOD.
+        # Si está en Sonarr ya no hace falta perseguirlo desde TOD,
+        # salvo episodios sin fichero y sin descarga en cola.
         conn.execute(
             """
             UPDATE media_items SET monitored = 0
             WHERE kind = 'series' AND monitored = 1
-              AND monitor_source IN ('rss','tmdb','series','auto','qbit')
+              AND monitor_source IN ('rss','tmdb','series','auto','qbit','arr_fallback')
               AND key IN (SELECT key FROM _arr_seen_episodes)
+              AND key NOT IN (SELECT key FROM _arr_fallback_episodes)
             """
+        )
+        conn.execute(
+            """
+            UPDATE media_items SET
+                monitored = 1,
+                monitored_at = COALESCE(monitored_at, ?),
+                monitor_source = 'arr_fallback',
+                updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+            WHERE kind = 'series'
+              AND key IN (SELECT key FROM _arr_fallback_episodes)
+              AND (
+                  monitor_source IS NULL
+                  OR monitor_source NOT IN ('manual')
+              )
+            """,
+            (stamp,),
         )
         # Episodios/series que han salido de Sonarr vuelven a seguimiento.
         conn.execute(

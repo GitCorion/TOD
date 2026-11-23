@@ -44,6 +44,8 @@ class SyncReport:
     by_category: dict[str, int] = field(default_factory=dict)
     # Títulos del *arr con descarga en curso, para publicar su .strm.
     arr_keys: set[str] = field(default_factory=set)
+    # Títulos del *arr ya completados; su .strm de TOD se puede podar.
+    arr_done_keys: set[str] = field(default_factory=set)
     dry_run: bool = False
 
     def public(self) -> dict[str, Any]:
@@ -59,6 +61,7 @@ class SyncReport:
             "missing_files": self.missing_files,
             "by_category": dict(sorted(self.by_category.items())),
             "arr_keys": sorted(self.arr_keys)[:200],
+            "arr_done_keys": sorted(self.arr_done_keys)[:200],
             "errors": self.errors[:20],
             "dry_run": self.dry_run,
         }
@@ -843,7 +846,6 @@ def sync(
                         report.files_written += 1
                         if (
                             asset_id is not None
-                            and not complete
                             and category in ("radarr", "tv-sonarr")
                         ):
                             key_row = conn.execute(
@@ -851,7 +853,11 @@ def sync(
                                 (int(asset_id),),
                             ).fetchone()
                             if key_row:
-                                report.arr_keys.add(str(key_row["key"]))
+                                target = (
+                                    report.arr_done_keys if complete
+                                    else report.arr_keys
+                                )
+                                target.add(str(key_row["key"]))
                 except Exception as exc:
                     report.errors.append(f"{info_hash[:12]}: {exc}")
 

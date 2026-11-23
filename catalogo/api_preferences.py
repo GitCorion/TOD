@@ -71,6 +71,7 @@ def handle(
                 allow_delete=body.get("allow_delete"),
                 keep_until_library=body.get("keep_until_library"),
                 keep_max_hours=body.get("keep_max_hours"),
+                arr_fallback=body.get("arr_fallback"),
             )
         except (TypeError, ValueError) as exc:
             raise WebError(400, str(exc)[:200])

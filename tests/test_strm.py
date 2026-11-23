@@ -424,3 +424,40 @@ def test_queued_arr_torrent_is_published_without_release(tmp_path):
     )
     assert result["written"] == 1
     assert (out / "movies" / "En cola (2026)" / "En cola (2026).strm").is_file()
+
+
+def test_prune_key_removes_default_and_versions(tmp_path):
+    from catalogo.strm import prune_key
+
+    db = tmp_path / "catalogo.db"
+    init_db(db, MIGRATIONS)
+    conn = sqlite3.connect(db)
+    conn.execute(
+        "INSERT INTO media_items(key,kind,tmdb,title,year) VALUES(?,?,?,?,?)",
+        ("movie:tmdb:13", "movie", 13, "Podar", 2026),
+    )
+    conn.execute(
+        "INSERT INTO media_items(key,kind,tmdb,title,year) VALUES(?,?,?,?,?)",
+        ("movie:tmdb:14", "movie", 14, "Queda", 2026),
+    )
+    conn.commit()
+    conn.close()
+    out = tmp_path / "strm"
+    folder = out / "movies" / "Podar (2026)"
+    folder.mkdir(parents=True)
+    (folder / "Podar (2026).strm").write_text(
+        "http://x/play?key=movie%3Atmdb%3A13&download=0\n"
+    )
+    (folder / "Podar (2026) - 1080p.strm").write_text(
+        "http://x/play?key=movie%3Atmdb%3A13&download=0&release=1\n"
+    )
+    other = out / "movies" / "Queda (2026)"
+    other.mkdir(parents=True)
+    (other / "Queda (2026).strm").write_text(
+        "http://x/play?key=movie%3Atmdb%3A14&download=0\n"
+    )
+
+    removed = prune_key(db, out, "movie:tmdb:13")
+    assert len(removed) == 2
+    assert not list(folder.glob("*.strm"))
+    assert list(other.glob("*.strm"))

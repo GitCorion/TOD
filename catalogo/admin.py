@@ -1537,6 +1537,43 @@ def _publish_arr_strm(config: Config, keys: list[str]) -> dict[str, Any]:
     return {"queued_keys": len(keys), "published": len(paths)}
 
 
+def _prune_arr_strm(config: Config, keys: list[str]) -> dict[str, Any]:
+    """Poda el .strm de TOD cuando el *arr ya tiene el fichero importado."""
+    from contextlib import closing
+
+    from .db import connect
+    from .strm import prune_key
+    from .strm_inventory import invalidate
+
+    if not keys:
+        return {"done_keys": 0, "removed": 0}
+    removed: list[str] = []
+    for key in keys[:500]:
+        with closing(connect(config.db_path)) as conn:
+            row = conn.execute(
+                """
+                SELECT 1 FROM media_items m
+                JOIN library_files lf
+                  ON lf.kind = m.kind AND lf.tmdb = m.tmdb
+                WHERE (m.key = ? OR m.media_id = ?)
+                  AND (
+                      m.kind = 'movie'
+                      OR (lf.season = m.season AND lf.episode = m.episode)
+                  )
+                LIMIT 1
+                """,
+                (key, key),
+            ).fetchone()
+        if row is None:
+            continue
+        removed.extend(
+            prune_key(str(config.db_path), config.catalog_library, key)
+        )
+    if removed:
+        invalidate(config.catalog_library)
+    return {"done_keys": len(keys), "removed": len(removed)}
+
+
 def job_qbit_sync(ctx: JobContext) -> dict[str, Any]:
     ctx.report("sincronizando qBittorrent", progress=0.1)
     radarr, sonarr = _arr_clients(ctx.config)
@@ -1551,8 +1588,12 @@ def job_qbit_sync(ctx: JobContext) -> dict[str, Any]:
     )
     summary = report.public()
     keys = summary.pop("arr_keys", [])
-    if keys and not summary.get("dry_run"):
-        summary["strm"] = _publish_arr_strm(ctx.config, keys)
+    done = summary.pop("arr_done_keys", [])
+    if not summary.get("dry_run"):
+        if keys:
+            summary["strm"] = _publish_arr_strm(ctx.config, keys)
+        if done:
+            summary["prune_strm"] = _prune_arr_strm(ctx.config, done)
     ctx.report("qBittorrent sincronizado", progress=0.95)
     return summary
 
@@ -1868,8 +1909,11 @@ def job_worker_cycle(ctx: JobContext) -> dict[str, Any]:
             check_exists=True,
         ).public()
         keys = report.pop("arr_keys", [])
+        done = report.pop("arr_done_keys", [])
         if keys:
             report["strm"] = _publish_arr_strm(config, keys)
+        if done:
+            report["prune_strm"] = _prune_arr_strm(config, done)
         ctx.report("qBittorrent sincronizado", progress=0.45)
         return report
 

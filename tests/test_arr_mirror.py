@@ -226,3 +226,116 @@ def test_arr_import_clears_auto_monitoring(tmp_path):
         "SELECT monitored FROM media_items WHERE key='movie:tmdb:100'"
     ).fetchone()[0] == 0
     conn.close()
+
+
+class FallbackRadarr:
+    def movies(self):
+        return [
+            {"id": 1, "tmdbId": 101, "title": "Sin fichero", "year": 2020,
+             "monitored": True, "hasFile": False},
+            {"id": 2, "tmdbId": 102, "title": "En cola", "year": 2020,
+             "monitored": True, "hasFile": False},
+            {"id": 3, "tmdbId": 103, "title": "Con fichero", "year": 2020,
+             "monitored": True, "hasFile": True},
+        ]
+
+    def queue(self):
+        return {"records": [{"movieId": 2, "downloadId": "abc"}]}
+
+
+def test_arr_fallback_monitors_only_missing_and_not_queued(tmp_path):
+    db = tmp_path / "catalogo.db"
+    init_db(db, MIGRATIONS)
+    report = mirror_library(db, FallbackRadarr(), None)
+    assert report["radarr"]["fallback"] == 1
+
+    conn = sqlite3.connect(db)
+    conn.row_factory = sqlite3.Row
+    rows = {
+        row["key"]: row for row in conn.execute(
+            "SELECT key, monitored, monitor_source FROM media_items"
+        )
+    }
+    conn.close()
+    assert rows["movie:tmdb:101"]["monitored"] == 1
+    assert rows["movie:tmdb:101"]["monitor_source"] == "arr_fallback"
+    assert rows["movie:tmdb:102"]["monitored"] == 0
+    assert rows["movie:tmdb:103"]["monitored"] == 0
+
+
+def test_arr_fallback_respects_setting(tmp_path):
+    from catalogo.seed_settings import save as save_seed
+
+    db = tmp_path / "catalogo.db"
+    init_db(db, MIGRATIONS)
+    save_seed(
+        str(db), min_hours=72, ratio=1.0, force=True,
+        arr_fallback=False,
+    )
+    mirror_library(db, FallbackRadarr(), None)
+    conn = sqlite3.connect(db)
+    values = [row[0] for row in conn.execute(
+        "SELECT monitored FROM media_items"
+    )]
+    conn.close()
+    assert values == [0, 0, 0]
+
+
+class FallbackSonarr(FakeSonarr):
+    def episodes(self, series_id):
+        return [
+            {"id": 1, "seasonNumber": 1, "episodeNumber": 1,
+             "title": "Sin fichero", "monitored": True, "hasFile": False},
+            {"id": 2, "seasonNumber": 1, "episodeNumber": 2,
+             "title": "En cola", "monitored": True, "hasFile": False},
+            {"id": 3, "seasonNumber": 1, "episodeNumber": 3,
+             "title": "Con fichero", "monitored": True, "hasFile": True},
+        ]
+
+    def queue(self):
+        return {"records": [{"episodeId": 2, "downloadId": "abc"}]}
+
+
+def test_sonarr_fallback_monitors_missing_episodes(tmp_path):
+    db = tmp_path / "catalogo.db"
+    init_db(db, MIGRATIONS)
+    report = mirror_library(db, None, FallbackSonarr())
+    assert report["sonarr"]["fallback"] == 1
+
+    conn = sqlite3.connect(db)
+    conn.row_factory = sqlite3.Row
+    rows = {
+        row["key"]: row for row in conn.execute(
+            "SELECT key, monitored, monitor_source FROM media_items"
+        )
+    }
+    conn.close()
+    assert rows["series:tmdb:200:1:1"]["monitored"] == 1
+    assert rows["series:tmdb:200:1:1"]["monitor_source"] == "arr_fallback"
+    assert rows["series:tmdb:200:1:2"]["monitored"] == 0
+    assert rows["series:tmdb:200:1:3"]["monitored"] == 0
+
+
+class FallbackRadarrWithFile(FallbackRadarr):
+    def movies(self):
+        rows = super().movies()
+        rows[0]["hasFile"] = True
+        return rows
+
+
+def test_fallback_stops_when_arr_gets_the_file(tmp_path):
+    db = tmp_path / "catalogo.db"
+    init_db(db, MIGRATIONS)
+    mirror_library(db, FallbackRadarr(), None)
+    conn = sqlite3.connect(db)
+    assert conn.execute(
+        "SELECT monitored FROM media_items WHERE key='movie:tmdb:101'"
+    ).fetchone()[0] == 1
+    conn.close()
+
+    mirror_library(db, FallbackRadarrWithFile(), None)
+    conn = sqlite3.connect(db)
+    assert conn.execute(
+        "SELECT monitored FROM media_items WHERE key='movie:tmdb:101'"
+    ).fetchone()[0] == 0
+    conn.close()

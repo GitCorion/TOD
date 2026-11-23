@@ -489,3 +489,50 @@ def test_queued_arr_movie_is_mapped_even_at_zero(tmp_path):
     conn.close()
     assert mapped["asset_id"] == media["id"]
     assert mapped["state"] == "unknown"
+
+
+class DoneArrQbit(FakeQbit):
+    def __init__(self):
+        super().__init__()
+        self._torrents.append(
+            {
+                "hash": "arr2", "category": "radarr", "state": "stalledUP",
+                "progress": 1, "save_path": "/mnt/descargas/radarr",
+                "content_path": "/mnt/descargas/radarr/Done.Movie.mkv",
+                "download_path": "/mnt/cache/tmp/radarr",
+                "completion_on": EPOCH, "seeding_time": 100,
+                "added_on": EPOCH - 100, "uploaded": 0, "downloaded": 1000,
+                "ratio": 0, "size": 1000, "tracker": "TrackerEspanol2",
+            }
+        )
+
+    def files(self, info_hash):
+        if info_hash == "arr2":
+            self.files_calls.append(info_hash)
+            return [
+                {"index": 0, "name": "Done.Movie.mkv", "size": 1000,
+                 "progress": 1, "priority": 1}
+            ]
+        return super().files(info_hash)
+
+
+class DoneArrRadarr(QueuedArrRadarr):
+    def movies(self):
+        return super().movies() + [
+            {"id": 3, "tmdbId": 400, "title": "Done Movie", "year": 2025}
+        ]
+
+    def history_all(self, **kwargs):
+        return super().history_all(**kwargs) + [
+            {"downloadId": "ARR2", "movieId": 3}
+        ]
+
+
+def test_completed_arr_torrent_is_reported_for_prune(tmp_path):
+    db, _asset_id = seed_db(tmp_path)
+    report = sync(
+        db, DoneArrQbit(), radarr=DoneArrRadarr(), sonarr=FakeSonarrAPI(),
+        dry_run=False, check_exists=False, now=NOW,
+    )
+    assert "movie:tmdb:400" in report.arr_done_keys
+    assert "movie:tmdb:400" not in report.arr_keys

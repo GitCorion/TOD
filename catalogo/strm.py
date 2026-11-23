@@ -11,6 +11,7 @@ No escribe en Jellyfin. Solo en la carpeta de salida indicada.
 from __future__ import annotations
 
 import re
+import urllib.parse
 from contextlib import closing
 from pathlib import Path
 from xml.sax.saxutils import escape as xml_escape
@@ -522,3 +523,43 @@ def export_strm(
         "kind": kind,
         "skip_library": skip_library,
     }
+
+
+def prune_key(
+    db_path: Path | str, out_dir: Path | str, key: str
+) -> list[str]:
+    """Borra los .strm (principal y versiones) de una clave concreta.
+
+    Se usa cuando el *arr ya ha importado el fichero y su biblioteca es la
+    fuente: el .strm de TOD deja de ser necesario y duplicaría la entrada.
+    """
+    with closing(connect(db_path)) as conn:
+        asset = conn.execute(
+            "SELECT * FROM media_items WHERE key = ? OR media_id = ? LIMIT 1",
+            (key, key),
+        ).fetchone()
+    if asset is None:
+        return []
+    root = Path(out_dir)
+    default = strm_path(root, dict(asset))
+    candidates: set[Path] = {default}
+    if default.parent.is_dir():
+        for path in default.parent.glob("*.strm"):
+            try:
+                content = path.read_text(encoding="utf-8", errors="ignore")
+                query = urllib.parse.parse_qs(
+                    urllib.parse.urlparse(content.strip()).query
+                )
+            except OSError:
+                continue
+            if (query.get("key") or [None])[0] == key:
+                candidates.add(path)
+    removed: list[str] = []
+    for path in candidates:
+        if path.is_file():
+            try:
+                path.unlink()
+                removed.append(str(path))
+            except OSError:
+                continue
+    return removed

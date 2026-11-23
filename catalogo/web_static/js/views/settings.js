@@ -451,6 +451,10 @@ export async function renderSettings({ signal, query } = {}) {
           <label class="field"><span>Máximo de espera (horas)</span>
             <input class="input" type="number" min="0" max="8760" step="1" data-seed-field="keep_max_hours" value="${esc(seedDefaults.keep_max_hours ?? 72)}">
           </label>
+          <label class="inline check" style="align-self:end;padding-bottom:4px">
+            <input type="checkbox" data-seed-field="arr_fallback" ${seedDefaults.arr_fallback !== false ? 'checked' : ''}>
+            Buscar también en Radarr/Sonarr sin fichero ni cola
+          </label>
           <label class="field"><span>&nbsp;</span>
             <button class="btn btn-primary" data-action="seed-save">${icon('check', 'sm')} Guardar siembra</button>
           </label>
