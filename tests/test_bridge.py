@@ -290,6 +290,8 @@ class FakeSonarrPack:
         self.series = series
         self.episodes = episodes
         self.rescanned = []
+        self.rescan_files = []
+        self.destination = None
 
     def series_by_tmdb(self, tmdb):
         return self.series
@@ -299,6 +301,10 @@ class FakeSonarrPack:
 
     def rescan_series(self, series_id):
         self.rescanned.append(series_id)
+        if self.destination is not None:
+            self.rescan_files.append(
+                len(list(Path(self.destination).glob("*.mkv")))
+            )
 
 
 def test_bridge_copies_every_file_of_a_pack_in_one_run(tmp_path):
@@ -354,6 +360,7 @@ def test_bridge_copies_every_file_of_a_pack_in_one_run(tmp_path):
             for number in (1, 2, 3)
         },
     )
+    sonarr.destination = tmp_path / "sonarr" / "Serie" / "Season 1"
 
     report = bridge_downloads(db, None, sonarr, limit=1, dry_run=False)
 
@@ -365,3 +372,5 @@ def test_bridge_copies_every_file_of_a_pack_in_one_run(tmp_path):
         )
         assert destination.read_bytes() == b"video"
     assert sonarr.rescanned == [9]
+    # El reescaneo llega cuando el pack ya está copiado entero.
+    assert sonarr.rescan_files == [3]

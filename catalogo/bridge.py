@@ -161,7 +161,7 @@ def bridge_downloads(
     # misma pasada, con un solo reescaneo de la serie.
     torrent_bridged = False
     current_torrent: int | None = None
-    rescanned: set[tuple[str, int]] = set()
+    rescanned: set[int] = set()
 
     def count_bridge() -> None:
         nonlocal bridged_count, torrent_bridged
@@ -372,10 +372,8 @@ def bridge_downloads(
                 count_bridge()
                 continue
             action = _place(source, destination)
-            scan_key = ("series", int(series["id"]))
-            if scan_key not in rescanned:
-                sonarr.rescan_series(int(series["id"]))
-                rescanned.add(scan_key)
+            # Se reescanea al final, cuando el pack ya está copiado entero.
+            rescanned.add(int(series["id"]))
             removed = _cancel_queue(
                 sonarr, episode_id=episode.get("id")
             )
@@ -391,5 +389,12 @@ def bridge_downloads(
         except Exception as exc:
             report["errors"].append(
                 f"{asset['key']}: {str(exc)[:150]}"
+            )
+    for series_id in sorted(rescanned):
+        try:
+            sonarr.rescan_series(int(series_id))
+        except Exception as exc:
+            report["errors"].append(
+                f"series {series_id}: rescan: {str(exc)[:120]}"
             )
     return report
