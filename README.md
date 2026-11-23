@@ -254,6 +254,7 @@ la opción recomendada para un servidor completo.
 
 - [Docker Compose](docs/DOCKER.md)
 - [Arquitectura](docs/ARCHITECTURE.md)
+- [Diseño de la interfaz](DESIGN.md)
 - [Operación y mantenimiento](docs/OPERATIONS.md)
 - [Integraciones paso a paso](docs/INTEGRATIONS.md)
 - [Glosario de la interfaz](docs/GLOSARIO.md)
