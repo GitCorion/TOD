@@ -1852,6 +1852,133 @@ def job_limits(ctx: JobContext) -> dict[str, Any]:
     )
 
 
+def fallback_sweep(
+    config: Config,
+    *,
+    limit: int = 100,
+    workers: int = 4,
+) -> dict[str, Any]:
+    """Busca fuentes para los títulos de respaldo del *arr.
+
+    Se hace por lotes con las claves exactas; el monitor diario y este
+    barrido comparten `monitor_last_search_at` para no repetir.
+    """
+    from contextlib import closing
+
+    from .db import connect
+    from .strm import export_strm
+    from .strm_inventory import invalidate
+
+    with closing(connect(config.db_path)) as conn:
+        rows = conn.execute(
+            """
+            SELECT key, kind FROM media_items
+            WHERE monitored = 1
+              AND monitor_source = 'arr_fallback'
+              AND status = 'COLD'
+              AND NOT EXISTS (
+                  SELECT 1 FROM torrent_files f WHERE f.asset_id = media_items.id
+              )
+              AND NOT EXISTS (
+                  SELECT 1 FROM library_files lf
+                  WHERE lf.kind = media_items.kind
+                    AND lf.tmdb = media_items.tmdb
+                    AND (
+                        media_items.kind = 'movie'
+                        OR (lf.season = media_items.season
+                            AND lf.episode = media_items.episode)
+                    )
+              )
+            ORDER BY monitor_last_search_at IS NOT NULL,
+                     monitor_last_search_at,
+                     COALESCE(air_date, release_date, '') DESC,
+                     id
+            LIMIT ?
+            """,
+            (max(1, int(limit)),),
+        ).fetchall()
+    if not rows:
+        return {"checked": 0, "accepted": 0, "written": 0, "errors": []}
+    by_kind: dict[str, list[str]] = {}
+    for row in rows:
+        by_kind.setdefault(str(row["kind"]), []).append(str(row["key"]))
+    client = _prowlarr(config)
+    jackett = _jackett(config)
+    report: dict[str, Any] = {
+        "checked": len(rows),
+        "accepted": 0,
+        "written": 0,
+        "errors": [],
+        "results": 0,
+    }
+    for kind, keys in by_kind.items():
+        # SQLite admite ~999 variables; se trocea para no pasarse.
+        for start in range(0, len(keys), 300):
+            chunk = keys[start:start + 300]
+            try:
+                found = sync_sources(
+                    str(config.db_path),
+                    client,
+                    jackett=jackett,
+                    keys=chunk,
+                    limit=len(chunk),
+                    delay=0.2,
+                    kind=kind,
+                    recheck=True,
+                    workers=max(1, int(workers)),
+                    parallel_queries=True,
+                    id_fallback=True,
+                )
+            except Exception as exc:
+                report["errors"].append(f"{kind}: {str(exc)[:200]}")
+                continue
+            report["accepted"] += int(found.get("accepted") or 0)
+            report["results"] += int(found.get("results") or 0)
+            report["errors"].extend(found.get("errors") or [])
+    with closing(connect(config.db_path)) as conn:
+        conn.executemany(
+            "UPDATE media_items SET monitor_last_search_at = ? "
+            "WHERE key = ?",
+            [
+                (time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()), row["key"])
+                for row in rows
+            ],
+        )
+        conn.commit()
+    paths: list[str] = []
+    for row in rows:
+        try:
+            result = export_strm(
+                str(config.db_path),
+                config.catalog_library,
+                base_url=config.playback_base_url,
+                key=str(row["key"]),
+                limit=None,
+                min_seeders=1,
+                versions_filter="available",
+                skip_library=False,
+            )
+            paths.extend(result.get("written_paths") or [])
+        except Exception:
+            continue
+    report["written"] = len(paths)
+    if paths:
+        invalidate(config.catalog_library)
+        jellyfin_notify(config, paths[:500])
+    return report
+
+
+def job_fallback_sweep(ctx: JobContext) -> dict[str, Any]:
+    params = ctx.params
+    report = fallback_sweep(
+        ctx.config,
+        limit=_int(params.get("limit"), 200),
+        workers=min(8, max(1, _int(params.get("workers"), 4))),
+    )
+    ctx.report("respaldo del *arr terminado", progress=0.98)
+    return report
+
+
 def job_monitor(ctx: JobContext) -> dict[str, Any]:
     params = ctx.params
     keys = [str(value) for value in params.get("keys") or [] if value]
@@ -1914,6 +2041,16 @@ def job_worker_cycle(ctx: JobContext) -> dict[str, Any]:
             report["strm"] = _publish_arr_strm(config, keys)
         if done:
             report["prune_strm"] = _prune_arr_strm(config, done)
+        try:
+            from .seed_settings import load as load_seed_settings
+
+            if load_seed_settings(db)["arr_fallback"]:
+                ctx.report("buscando respaldo del *arr", 0.5)
+                report["fallback"] = fallback_sweep(
+                    config, limit=50, workers=3
+                )
+        except Exception as exc:
+            report["fallback_error"] = str(exc)[:200]
         ctx.report("qBittorrent sincronizado", progress=0.45)
         return report
 
@@ -2008,6 +2145,7 @@ JOB_HANDLERS = {
     "arr-mirror": job_arr_mirror,
     "metadata": job_metadata,
     "monitor": job_monitor,
+    "fallback-sweep": job_fallback_sweep,
     "qbit-limits": job_limits,
     "cleanup-leases": job_cleanup_leases,
     "worker-cycle": job_worker_cycle,

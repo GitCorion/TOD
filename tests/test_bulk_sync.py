@@ -443,3 +443,22 @@ def test_id_fallback_finds_a_release_with_another_title(tmp_path):
     conn.close()
     assert row[0] in {item["name"] for item in client.indexers()}
     assert "Dune" in row[1]
+
+
+def test_sync_sources_accepts_explicit_key_batch(tmp_path):
+    db = seed_db(tmp_path)
+    conn = sqlite3.connect(db)
+    conn.execute(
+        "INSERT INTO media_items(key,kind,tmdb,title,original_title,year,"
+        "popularity) VALUES(?,?,?,?,?,?,?)",
+        ("movie:tmdb:1263338", "movie", 1263338, "En el corazón de la bestia",
+         "Heart of the Beast", 2026, 40.0),
+    )
+    conn.commit()
+    conn.close()
+    report = sync_sources(
+        db, FakeProwlarr([result()]), limit=2, delay=0,
+        keys=["movie:tmdb:1263337", "movie:tmdb:1263338"],
+    )
+    assert report["assets_checked"] == 2
+    assert report["accepted"] >= 1

@@ -81,6 +81,7 @@ export const JOB_LABELS = {
   'arr-mirror': 'Espejo Radarr/Sonarr',
   metadata: 'Actualizar metadatos',
   monitor: 'Buscar fuentes en seguimiento',
+  'fallback-sweep': 'Respaldo de Radarr/Sonarr',
   'qbit-limits': 'Límites qBittorrent',
   'cleanup-leases': 'Liberar reproducciones',
   'publish-now': 'Añadir',

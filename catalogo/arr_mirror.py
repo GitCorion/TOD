@@ -19,9 +19,8 @@ from .db import connect
 from .seed_settings import load as load_seed_settings
 from .title_sync import upsert_episodes, upsert_movies
 
-# Un fallback global sobre toda la biblioteca del *arr serían miles de
-# búsquedas; se limita a los estrenos más recientes.
-ARR_FALLBACK_LIMIT = 200
+# Respaldo completo: si el *arr pierde sus ficheros, TOD mantiene el
+# catálogo y busca fuentes para todo lo que falte.
 
 
 def _now() -> str:
@@ -163,16 +162,7 @@ def mirror_radarr(db_path, radarr, *, now: str | None = None) -> dict[str, Any]:
         if fallback_enabled and queue_ok and monitored and not has_file
         and movie_id not in queue_movies
     ]
-    if fallback_keys:
-        release_by_key = {
-            f"movie:tmdb:{item['tmdb']}": item.get("release_date") or ""
-            for item in items
-        }
-        fallback_keys = sorted(
-            fallback_keys,
-            key=lambda key: release_by_key.get(key, ""),
-            reverse=True,
-        )[:ARR_FALLBACK_LIMIT]
+
     if not items and rows:
         return report
 
@@ -370,12 +360,7 @@ def mirror_sonarr(db_path, sonarr, *, now: str | None = None) -> dict[str, Any]:
         report["skipped"] += int(result.get("skipped") or 0)
         # Sonarr puede devolver cientos de series; no saturar su API.
         time.sleep(0.02)
-    if fallback_pairs:
-        fallback_keys = [
-            key for _date_value, key in sorted(
-                fallback_pairs, reverse=True
-            )[:ARR_FALLBACK_LIMIT]
-        ]
+    fallback_keys = [key for _date_value, key in fallback_pairs]
     report["fallback"] = len(fallback_keys)
     if not seen_series and rows:
         return report

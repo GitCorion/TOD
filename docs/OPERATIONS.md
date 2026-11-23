@@ -161,11 +161,13 @@ tod qbit-limits
   pone 0 días/ratio, actualiza sus releases y cierra las siembras abiertas.
   También se puede cambiar el mínimo:
   `tod set-policy Tracker --min-seed-hours 24 --target-ratio 0.5`.
-- **Búsqueda de respaldo en los *arr**: desactivada por defecto. Si se
-  activa en Configuración → Siembra, TOD busca títulos de Radarr/Sonarr que
-  no tengan fichero ni descarga en cola, limitado a los 200 estrenos más
-  recientes. Para un título concreto es más preciso pulsar **Seguir** en su
-  ficha: eso sobrevive a los espejados del *arr y lo busca a diario.
+- **Búsqueda de respaldo en los *arr**: activa por defecto. TOD busca
+  títulos de Radarr/Sonarr que no tengan fichero ni descarga en cola, como
+  si el *arr hubiera perdido sus ficheros. Se procesan por lotes (50 cada
+  ciclo del worker y 200 en el trabajo `fallback-sweep`), con búsqueda por
+  título local, original e ID. Los títulos siguen monitorizados hasta que
+  el *arr recupere el fichero o los ponga en cola. **Seguir** en la ficha
+  sigue siendo la vía para forzar uno concreto.
 - **Retención hasta la biblioteca**: por defecto TOD no permite borrar una
   descarga completada hasta que `library_files` confirma que ya está en
   Radarr/Sonarr. Si el puente falla, espera como máximo

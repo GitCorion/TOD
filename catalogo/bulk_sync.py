@@ -153,6 +153,7 @@ def _select_assets(
     limit: int,
     kind: str = "movie",
     recheck: bool = False,
+    keys: list[str] | None = None,
 ) -> list:
     query = """
         SELECT a.* FROM media_items a
@@ -174,7 +175,15 @@ def _select_assets(
     if year:
         query += " AND a.year = ?"
         params.append(year)
-    if key:
+    if keys:
+        placeholders = ",".join("?" for _ in keys)
+        query += (
+            f" AND (a.key IN ({placeholders})"
+            f" OR a.media_id IN ({placeholders}))"
+        )
+        params.extend(keys)
+        params.extend(keys)
+    elif key:
         query += " AND (a.key = ? OR a.media_id = ?)"
         params.extend([key, key])
     if trackers and not recheck:
@@ -376,6 +385,7 @@ def sync_sources(
     trackers: tuple[str, ...] = GENERAL_TRACKERS,
     min_seeders: int = 1,
     key: str | None = None,
+    keys: list[str] | None = None,
     kind: str = "movie",
     dry_run: bool = False,
     now: datetime | None = None,
@@ -431,6 +441,7 @@ def sync_sources(
         trackers=found_names,
         year=year,
         key=key,
+        keys=keys,
         limit=limit,
         kind=kind,
         recheck=recheck,
