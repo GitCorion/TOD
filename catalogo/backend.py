@@ -237,17 +237,14 @@ def priorities_for(
     *,
     private: bool,
 ) -> dict[int, int]:
-    """En packs se descarga solo el capítulo pedido.
+    """Privados: el pack completo se descarga y se siembra.
 
-    Prioridad 6 (alta) para el fichero objetivo y 0 para el resto: así
-    qBittorrent no reparte piezas entre episodios y el buffer contiguo del
-    capítulo crece sin huecos. Con prioridad 7 repartía fuera de orden y con
-    1 seguía bajando los demás ficheros, dejando huecos que bloqueaban el
-    player.
+    En un tracker privado no se puede descargar solo un episodio: el torrent
+    quedaría incompleto y el ratio/hit-and-run se resienten. El capítulo
+    pedido va a prioridad 6 para que el buffer crezca antes, pero el resto
+    sigue a prioridad 1 y el pack termina.
 
-    Un fichero único mantiene prioridad normal para respetar secuencial y
-    primera/última pieza. Al pedir otro episodio del mismo pack se cambia el
-    objetivo y el anterior vuelve a 0.
+    Públicos: solo se pide el fichero objetivo (parcial permitido).
     """
     result: dict[int, int] = {}
     single = len(files) <= 1
@@ -256,14 +253,12 @@ def priorities_for(
         if private:
             # Un solo fichero: prioridad normal, que es la única forma de
             # que qBittorrent respete secuencial + primera/última pieza.
-            # En packs, solo el capítulo pedido; el resto se pide al
-            # reproducirlo.
-            if single:
+            # En packs, el episodio pedido va por delante pero el resto
+            # también se descarga: el tracker exige el torrent completo.
+            if single or index != target_index:
                 result[index] = 1
-            elif index == target_index:
-                result[index] = 6
             else:
-                result[index] = 0
+                result[index] = 6
         else:
             result[index] = 1 if index == target_index else 0
     return result
