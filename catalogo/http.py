@@ -560,6 +560,15 @@ class CatalogHandler(BaseHTTPRequestHandler):
             # Descarga en curso del *arr: se adopta para reproducir y se
             # fuerza para saltar la cola del cliente. El *arr sigue siendo
             # el dueño de la siembra y de la importación posterior.
+            if not head and not download_allowed and not self.headers.get("Range"):
+                # Un escaneo de Jellyfin no debe arrancar la descarga.
+                return self._json(
+                    503,
+                    {"error": "arr_no_range", "key": resolution.key,
+                     "message": "La descarga del arr está en cola."},
+                    head=head,
+                    extra_headers={"Retry-After": "10"},
+                )
             if self.play_service is None:
                 return self._json(
                     503,
