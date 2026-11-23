@@ -16,11 +16,9 @@ export function setLive(ok) {
   dot.setAttribute('aria-label', ok ? 'Servidor conectado' : 'Servidor sin respuesta');
 }
 
-export function setHeader(title, kicker = '') {
+export function setHeader(title) {
   const titleEl = $('#pageTitle');
-  const kickerEl = $('#pageKicker');
   if (titleEl) titleEl.textContent = title;
-  if (kickerEl) kickerEl.textContent = kicker;
   document.title = `${title}, TOD`;
 }
 

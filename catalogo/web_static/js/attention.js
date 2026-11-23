@@ -13,7 +13,25 @@ export function severityTone(severity) {
 
 export function attentionCount(data) {
   const counts = data?.counts || {};
+  if (counts.total !== undefined) return Number(counts.total) || 0;
   return Number(counts.fail || 0) + Number(counts.warn || 0);
+}
+
+/** Pinta el contador del menú con los mismos datos que la tarjeta. */
+export function paintAttention(data) {
+  const count = attentionCount(data);
+  const fails = Number(data?.counts?.fail || 0);
+  const node = document.querySelector('#navAttention');
+  if (!node) return;
+  node.textContent = count ? String(count) : '';
+  node.classList.toggle('hidden', !count);
+  node.classList.toggle('fail', fails > 0);
+  node.classList.toggle('warn', fails === 0 && count > 0);
+  node.setAttribute(
+    'aria-label',
+    count ? `${count} avisos pendientes` : 'Sin avisos pendientes',
+  );
+  node.title = count ? `${count} avisos pendientes` : 'Sin avisos pendientes';
 }
 
 export function attentionItem(item) {
@@ -72,5 +90,6 @@ export function attentionSummary(data) {
   const counts = data?.counts || {};
   if (!counts.total) return status('Todo en orden', 'ok');
   if (counts.fail) return status(`${counts.fail} fallo${counts.fail === 1 ? '' : 's'}`, 'bad');
-  return status(`${counts.warn} aviso${counts.warn === 1 ? '' : 's'}`, 'warn');
+  if (counts.warn) return status(`${counts.warn} aviso${counts.warn === 1 ? '' : 's'}`, 'warn');
+  return status(`${counts.info} aviso${counts.info === 1 ? '' : 's'}`, 'info');
 }

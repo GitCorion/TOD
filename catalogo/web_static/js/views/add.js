@@ -416,12 +416,12 @@ export async function renderAdd({ query, params, signal }) {
   const batchId = Number(params[0] || 0);
   if (batchId) {
     const data = await api(`/api/intake/batches/${batchId}`, { signal });
-    setHeader(`Lote #${batchId}`, 'Añadir');
+    setHeader(`Lote #${batchId}`);
     $('#view').innerHTML = batchDetailView(data);
     return;
   }
 
-  setHeader('Añadir', '');
+  setHeader('Añadir');
   const recent = await api('/api/intake?flows=0', { signal }).catch(() => ({ batches: [] }));
   const initial = query.get('q') || '';
   $('#view').innerHTML = `
@@ -439,8 +439,8 @@ export async function renderAdd({ query, params, signal }) {
               aria-describedby="addHelp">${esc(initial)}</textarea>
           </label>
           <div class="add-controls">
-            <label class="inline check" title="Busca fuentes y añade el título a Jellyfin cuando haya">
-              <input type="checkbox" id="addFollow" checked> Añadir a Seguimiento
+            <label class="inline check" title="Si ahora no hay fuente, TOD la buscará y añadirá el título a Jellyfin cuando aparezca">
+              <input type="checkbox" id="addFollow" checked> Seguir buscando fuente
             </label>
             <div class="row">
               <button type="button" class="btn btn-ghost" data-action="torrent-pick">
@@ -451,7 +451,7 @@ export async function renderAdd({ query, params, signal }) {
           </div>
           <input type="file" id="torrentFile" accept=".torrent,application/x-bittorrent" class="hidden">
           <p class="tiny faint add-help" id="addHelp">
-            Un título se busca. Un enlace de TMDB o una lista de enlaces o IDs se añade directamente.
+            Un título se busca en TMDB. Un enlace o una lista se añade directamente.
             El .torrent se envía a qBittorrent.
           </p>
         </div>

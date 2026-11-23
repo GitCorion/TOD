@@ -716,11 +716,18 @@ class Handler(PlaybackHandler):
                 None,
             )
             with closing(connect(db)) as conn:
-                monitored = int(
-                    conn.execute(
-                        "SELECT COUNT(*) FROM media_items WHERE monitored = 1"
-                    ).fetchone()[0]
-                )
+                keys = [
+                    row["key"]
+                    for row in conn.execute(
+                        "SELECT key FROM media_items WHERE monitored = 1"
+                    ).fetchall()
+                ]
+            # El menú cuenta lo mismo que la página de Seguimiento: títulos
+            # monitorizados que aún no están en Jellyfin.
+            published = strm_inventory.inventory(
+                app.config.catalog_library
+            )["keys"]
+            monitored = sum(1 for key in keys if key not in published)
             return self._json(
                 200,
                 {
@@ -1226,6 +1233,24 @@ class Handler(PlaybackHandler):
                     pass
             app.audit("web.seed_finish", payload=result)
             return self._json(200, result, head=head)
+
+        if parts == ["indexers"] and not mutate:
+            indexers, error = self._indexers()
+            return self._json(
+                200,
+                {
+                    "items": indexers,
+                    "error": error,
+                    "enabled": sum(
+                        1 for item in indexers if item.get("enabled")
+                    ),
+                    "total": len(indexers),
+                },
+                head=head,
+            )
+
+        if parts == ["monitor", "health"] and not mutate:
+            return self._json(200, self._monitor_health(db), head=head)
 
         if parts == ["monitor"] and not mutate:
             data = ondemand.monitored_items(
@@ -1955,6 +1980,15 @@ class Handler(PlaybackHandler):
                 head=head,
             )
 
+        if parts == ["ondemand", "recent"] and not mutate:
+            return self._json(
+                200,
+                ondemand.recent_published(
+                    db, app.config, limit=self._int(params.get("limit"), 6)
+                ),
+                head=head,
+            )
+
         if parts == ["ondemand", "catalog"] and not mutate:
             qbit, _ = app.qbit()
             return self._json(
@@ -2337,8 +2371,57 @@ class Handler(PlaybackHandler):
 
         raise WebError(404, "no encontrado")
 
-    def _monitor_health(self, db) -> dict[str, Any]:
+    def _indexers(self) -> tuple[list[dict[str, Any]], str | None]:
+        """Indexers de Prowlarr con su estado, cacheado unos segundos."""
         app = self.app
+        indexers: list[dict[str, Any]] = []
+        prowlarr_error = None
+        cache_key = str(app.config.prowlarr_url)
+        cached = _INDEXER_CACHE.get(cache_key)
+        if cached is not None and time.monotonic() - cached[0] < _INDEXER_TTL:
+            return cached[1], cached[2]
+        try:
+            from .prowlarr import ProwlarrClient
+
+            client = ProwlarrClient.from_config(app.config)
+            enabled = {
+                int(row["id"]): bool(row.get("enable"))
+                for row in client.indexers()
+                if row.get("id") is not None
+            }
+            stats = client.indexer_stats()
+            for row in stats.get("indexers") or []:
+                failed = sum(
+                    int(row.get(key) or 0)
+                    for key in (
+                        "numberOfFailedQueries",
+                        "numberOfFailedGrabs",
+                        "numberOfFailedRssQueries",
+                        "numberOfFailedAuthQueries",
+                    )
+                )
+                indexer_id = int(row.get("indexerId") or 0)
+                indexers.append(
+                    {
+                        "id": indexer_id,
+                        "name": row.get("indexerName"),
+                        "enabled": enabled.get(indexer_id, True),
+                        "queries": int(row.get("numberOfQueries") or 0),
+                        "grabs": int(row.get("numberOfGrabs") or 0),
+                        "rss_queries": int(row.get("numberOfRssQueries") or 0),
+                        "failed": failed,
+                        "response_ms": int(row.get("averageResponseTime") or 0),
+                    }
+                )
+            indexers.sort(
+                key=lambda item: (-item["failed"], -item["response_ms"])
+            )
+        except Exception as exc:
+            prowlarr_error = str(exc)[:200]
+        _INDEXER_CACHE[cache_key] = (time.monotonic(), indexers, prowlarr_error)
+        return indexers, prowlarr_error
+
+    def _monitor_health(self, db) -> dict[str, Any]:
         recent = jobs.list_jobs(db, limit=100)
 
         def latest(kind: str):
@@ -2370,61 +2453,23 @@ class Handler(PlaybackHandler):
                 "result": {key: result[key] for key in keys if key in result},
             }
 
-        indexers: list[dict[str, Any]] = []
-        prowlarr_error = None
-        cache_key = str(app.config.prowlarr_url)
-        cached = _INDEXER_CACHE.get(cache_key)
-        if cached is not None and time.monotonic() - cached[0] < _INDEXER_TTL:
-            indexers, prowlarr_error = cached[1], cached[2]
-        else:
-            try:
-                from .prowlarr import ProwlarrClient
+        indexers, prowlarr_error = self._indexers()
+        # El scheduler real es el interno (`jobs`), no los timers de systemd
+        # de la instalación antigua. Si el planificador no está, se muestra
+        # parado; nunca se inventa un estado.
+        tasks = {task["name"]: task for task in list_tasks(db)}
 
-                client = ProwlarrClient.from_config(app.config)
-                enabled = {
-                    int(row["id"]): bool(row.get("enable"))
-                    for row in client.indexers()
-                    if row.get("id") is not None
-                }
-                stats = client.indexer_stats()
-                for row in stats.get("indexers") or []:
-                    failed = sum(
-                        int(row.get(key) or 0)
-                        for key in (
-                            "numberOfFailedQueries",
-                            "numberOfFailedGrabs",
-                            "numberOfFailedRssQueries",
-                            "numberOfFailedAuthQueries",
-                        )
-                    )
-                    indexer_id = int(row.get("indexerId") or 0)
-                    indexers.append(
-                        {
-                            "id": indexer_id,
-                            "name": row.get("indexerName"),
-                            "enabled": enabled.get(indexer_id, True),
-                            "queries": int(row.get("numberOfQueries") or 0),
-                            "grabs": int(row.get("numberOfGrabs") or 0),
-                            "rss_queries": int(row.get("numberOfRssQueries") or 0),
-                            "failed": failed,
-                            "response_ms": int(row.get("averageResponseTime") or 0),
-                        }
-                    )
-                indexers.sort(
-                    key=lambda item: (-item["failed"], -item["response_ms"])
-                )
-            except Exception as exc:
-                prowlarr_error = str(exc)[:200]
-            _INDEXER_CACHE[cache_key] = (
-                time.monotonic(),
-                indexers,
-                prowlarr_error,
-            )
+        def timer(name: str) -> dict[str, Any]:
+            task = tasks.get(name) or {}
+            return {
+                "active": "active" if task.get("enabled") else "inactive",
+                "next_run": task.get("next_run"),
+            }
 
         return {
             "timers": {
-                "rss": _systemctl("catalogo-rss.timer"),
-                "monitor": _systemctl("catalogo-monitor.timer"),
+                "rss": timer("rss-sync"),
+                "monitor": timer("monitor"),
             },
             "last_rss": brief(latest("rss-sync")),
             "last_monitor": brief(latest("monitor")),

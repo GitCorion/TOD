@@ -23,7 +23,7 @@ export async function renderCollection({ params, signal }) {
   const added = parts.filter((part) => part.library_added).length;
   const monitored = parts.filter((part) => part.monitored && !part.library_added).length;
   const noSource = parts.filter((part) => part.in_catalog && part.publication === 'sin_fuente').length;
-  setHeader('Saga', 'Biblioteca');
+  setHeader(data.name || 'Saga');
   document.title = `${data.name || 'Saga'}, TOD`;
 
   const cards = parts.map((part) => {

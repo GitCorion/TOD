@@ -8,6 +8,7 @@ Los estados se calculan con hechos:
 
 from __future__ import annotations
 
+import time
 from contextlib import closing
 from datetime import date, datetime, timezone
 from typing import Any
@@ -16,6 +17,8 @@ from . import queries, settings, strm_inventory
 from .db import connect
 
 PAGE_SIZE = 25
+_OVERVIEW_TTL = 10.0
+_OVERVIEW_CACHE: dict[str, tuple[float, dict[str, Any]]] = {}
 
 
 def _now() -> str:
@@ -41,6 +44,20 @@ def _asset_ids_with_downloads(db_path) -> set[int]:
             """
         ).fetchall()
     return {int(row["asset_id"]) for row in rows}
+
+
+def _asset_ids_with_library(db_path) -> set[int]:
+    with closing(connect(db_path)) as conn:
+        rows = conn.execute(
+            """
+            SELECT DISTINCT m.id FROM media_items m
+            JOIN library_files lf
+              ON lf.kind = m.kind AND lf.tmdb = m.tmdb
+             AND (m.kind = 'movie'
+                  OR (lf.season = m.season AND lf.episode = m.episode))
+            """
+        ).fetchall()
+    return {int(row["id"]) for row in rows}
 
 
 def downloaded_asset_ids(db_path) -> set[int]:
@@ -100,6 +117,8 @@ def _summary_states(db_path, config, qbit=None) -> dict[str, Any]:
     inventory = strm_inventory.inventory(config.catalog_library)
     keys = inventory["keys"]
     with_releases = _asset_ids_with_releases(db_path)
+    with_downloads = _asset_ids_with_downloads(db_path)
+    with_library = _asset_ids_with_library(db_path)
     with closing(connect(db_path)) as conn:
         media = conn.execute(
             """
@@ -117,7 +136,11 @@ def _summary_states(db_path, config, qbit=None) -> dict[str, Any]:
         item = dict(row)
         db_keys.add(item["key"])
         published = strm_inventory.is_key_published(item, keys)
-        has_release = int(item["id"]) in with_releases
+        has_release = (
+            int(item["id"]) in with_releases
+            or int(item["id"]) in with_downloads
+            or int(item["id"]) in with_library
+        )
         if item["kind"] == "movie":
             movies["total"] += 1
             if published:
@@ -199,6 +222,10 @@ def overview(
     qbit=None,
     arr=None,
 ) -> dict[str, Any]:
+    cache_key = f"{db_path}:{int(qbit is not None)}:{int(arr is not None)}"
+    cached = _OVERVIEW_CACHE.get(cache_key)
+    if cached is not None and time.monotonic() - cached[0] < _OVERVIEW_TTL:
+        return cached[1]
     states = _summary_states(db_path, config, qbit=qbit)
     downloads = _download_counts(qbit)
     library = public_arr(arr.overview() if arr is not None else {
@@ -228,7 +255,7 @@ def overview(
     disk = library.get("disk") if library.get("ok") else None
     if not disk:
         disk = queries._disk(config.catalog_library)
-    return {
+    payload = {
         "catalog": {
             "movies": states["movies"],
             "series": states["series"],
@@ -243,6 +270,42 @@ def overview(
         "disk": disk,
         "generated_at": _now(),
     }
+    _OVERVIEW_CACHE[cache_key] = (time.monotonic(), payload)
+    return payload
+
+
+def recent_published(
+    db_path,
+    config,
+    *,
+    limit: int = 6,
+) -> dict[str, Any]:
+    """Últimas incorporaciones que ya están en Jellyfin, sin recorrer el catálogo."""
+    limit = max(1, min(int(limit or 6), 24))
+    keys = strm_inventory.inventory(config.catalog_library)["keys"]
+    with closing(connect(db_path)) as conn:
+        rows = conn.execute(
+            "SELECT id, key, kind, tmdb, title, year, poster_path, updated_at "
+            "FROM media_items ORDER BY updated_at DESC, id DESC LIMIT 400"
+        ).fetchall()
+    items: list[dict[str, Any]] = []
+    seen: set[tuple[str, int]] = set()
+    for row in rows:
+        item = dict(row)
+        if item.get("key") not in keys:
+            continue
+        group = (
+            ("series", int(item["tmdb"] or 0))
+            if item.get("kind") == "series"
+            else ("movie", int(item["id"]))
+        )
+        if group in seen:
+            continue
+        seen.add(group)
+        items.append(item)
+        if len(items) >= limit:
+            break
+    return {"items": items}
 
 
 def catalog(
@@ -301,7 +364,7 @@ def catalog(
                    m.episode, m.status, m.updated_at, m.created_at,
                    m.library_added_at, m.poster_path, m.overview,
                    m.vote_average, m.library_added, m.release_date, m.air_date,
-                   m.origin, m.origin_detail, m.origin_at,
+                   m.monitored, m.origin, m.origin_detail, m.origin_at,
                    COALESCE(m.popularity,0) AS popularity,
                    (SELECT COUNT(*) FROM releases r WHERE r.asset_id=m.id)
                        AS releases,
@@ -1378,7 +1441,9 @@ def search_catalog(db_path, query: str, *, limit: int = 8) -> dict[str, Any]:
 def item_state(db_path, config, item: dict[str, Any], *, qbit=None, arr=None) -> dict[str, Any]:
     inventory = strm_inventory.inventory(config.catalog_library)
     published = strm_inventory.is_key_published(item, inventory["keys"])
-    library_added = bool(item.get("library_added")) or published
+    # Pertenecer a Radarr/Sonarr no es estar en Jellyfin. Son dos estados
+    # distintos y la ficha debe poder distinguirlos.
+    library_added = bool(item.get("library_added"))
     available, available_at = _release_available(
         item.get("release_date") or item.get("air_date")
     )
@@ -1402,7 +1467,7 @@ def item_state(db_path, config, item: dict[str, Any], *, qbit=None, arr=None) ->
     )
     if lib.get("has_file"):
         library_added = True
-    if library_added:
+    if published:
         publication = "publicado"
     elif downloaded or int(item["id"]) in with_releases:
         publication = "pendiente"

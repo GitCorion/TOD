@@ -1,6 +1,6 @@
 import { api } from '../api.js';
-import { attentionCard } from '../attention.js';
-import { esc, fmtBytes, fmtDate, fmtInt } from '../format.js';
+import { attentionCard, paintAttention } from '../attention.js';
+import { esc, fmtBytes, fmtDate, fmtInt, fmtRelative } from '../format.js';
 import { capabilityLabel, eventLabel, SERVICE_LABELS } from '../labels.js';
 import { state } from '../store.js';
 import { $, badge, barPercent, empty, icon, setHeader, status } from '../ui.js';
@@ -50,6 +50,50 @@ function externalPanel(items, capabilities, runtime) {
   </div>`;
 }
 
+function healthAge(value) {
+  if (!value) return null;
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return null;
+  return (Date.now() - date.getTime()) / 3600000;
+}
+
+function timerLine(label, timer, last, expectedHours) {
+  const active = timer?.active === 'active';
+  const age = healthAge(last?.finished_at || last?.created_at);
+  const stale = expectedHours && age !== null && age > expectedHours;
+  const tone = active && !stale ? 'ok' : stale ? 'warn' : 'bad';
+  const text = active ? (stale ? 'Activo, con retraso' : 'Activo') : 'Parado';
+  return `<div class="kv"><span>${esc(label)}</span><span>${status(text, tone)}</span></div>`;
+}
+
+function jobSummary(job, keys) {
+  if (!job) return '<span class="faint">Sin ejecutar</span>';
+  const result = job.result || {};
+  const pieces = keys
+    .filter(([name]) => result[name] !== undefined)
+    .map(([name, one, many]) => {
+      const value = Number(result[name]) || 0;
+      return `${fmtInt(value)} ${value === 1 ? one : many}`;
+    });
+  const when = fmtRelative(job.finished_at || job.created_at);
+  const stateLabel = job.state === 'error' ? 'error' : pieces.length ? pieces.join(', ') : 'sin cambios';
+  return `${esc(when)}, ${esc(stateLabel)}`;
+}
+
+function indexerRows(indexers) {
+  if (!indexers.length) return empty('Sin indexers', 'Prowlarr no devolvió datos.');
+  return indexers.map((indexer) => `<div class="kv">
+    <span>${esc(indexer.name)} ${indexer.enabled === false ? status('Pausado', 'warn') : ''}</span>
+    <span class="row" style="gap:8px">
+      <span class="tiny faint">${fmtInt(indexer.queries)} consultas</span>
+      ${indexer.failed
+        ? status(`${fmtInt(indexer.failed)} ${indexer.failed === 1 ? 'fallo' : 'fallos'}`, 'warn')
+        : status('Sin fallos', 'ok')}
+      <span class="tiny faint">${fmtInt(indexer.response_ms)} ms</span>
+    </span>
+  </div>`).join('');
+}
+
 function schedulerPanel(tasks) {
   const items = tasks || [];
   return `<div class="panel">
@@ -64,14 +108,16 @@ function schedulerPanel(tasks) {
 }
 
 export async function renderSystem({ signal }) {
-  const [system, events, attention] = await Promise.all([
+  const [system, events, attention, health] = await Promise.all([
     api('/api/system', { signal }),
     api('/api/events?limit=60', { signal }),
     api('/api/attention', { signal }).catch(() => null),
+    api('/api/monitor/health', { signal }).catch(() => null),
   ]);
   state.system = system;
   state.attention = attention;
-  setHeader('Estado', 'Sistema');
+  paintAttention(attention);
+  setHeader('Estado');
 
   const services = system.services || [];
   const apps = services.filter((service) => !['qbittorrent.service', 'prowlarr.service', 'jackett.service', 'jellyfin.service'].includes(service.unit));
@@ -94,11 +140,46 @@ export async function renderSystem({ signal }) {
     </div>`;
   }).join('');
 
-  const eventRows = (events.items || []).map((event) => `<tr>
+  const rss = health?.last_rss;
+  const monitor = health?.last_monitor;
+  const rssAge = healthAge(rss?.finished_at || rss?.created_at);
+  const monitorAge = healthAge(monitor?.finished_at || monitor?.created_at);
+  const rssWarning = rssAge !== null && rssAge > 2;
+  const monitorWarning = monitorAge !== null && monitorAge > 25;
+  const timersOk = health?.timers?.rss?.active === 'active'
+    && health?.timers?.monitor?.active === 'active';
+  const healthLabel = !health ? 'Sin datos' : !timersOk ? 'Parado' : rssWarning || monitorWarning ? 'Revisar' : 'Al día';
+  const healthTone = !health ? 'muted' : !timersOk ? 'bad' : rssWarning || monitorWarning ? 'warn' : 'ok';
+
+  const eventGroups = [];
+  for (const event of events.items || []) {
+    const ts = new Date(event.ts).getTime();
+    const last = eventGroups[eventGroups.length - 1];
+    if (
+      last
+      && last.kind === event.kind
+      && last.asset_id === event.asset_id
+      && Math.abs(last.lastTs - ts) < 5 * 60 * 1000
+    ) {
+      last.count += 1;
+      last.payloads.push(event.payload);
+      last.firstTs = Math.min(last.firstTs, ts);
+      last.lastTs = Math.max(last.lastTs, ts);
+    } else {
+      eventGroups.push({
+        ...event,
+        count: 1,
+        payloads: [event.payload],
+        firstTs: ts,
+        lastTs: ts,
+      });
+    }
+  }
+  const eventRows = eventGroups.map((event) => `<tr>
     <td data-label="Fecha" class="nowrap">${fmtDate(event.ts)}</td>
-    <td data-label="Acción">${badge(eventLabel(event.kind), 'mono')}</td>
-    <td data-label="Título">${event.asset_id ? `<a href="#/title/${event.asset_id}">#${event.asset_id}</a>` : '—'}</td>
-    <td data-label="Datos"><details class="event-payload"><summary>ver datos</summary><pre>${esc(event.payload || '')}</pre></details></td>
+    <td data-label="Acción">${badge(eventLabel(event.kind), 'mono')}${event.count > 1 ? ` <span class="tiny faint">×${event.count}</span>` : ''}</td>
+    <td data-label="Título">${event.asset_id ? `<a href="#/title/${event.asset_id}">Abrir ficha</a>` : '—'}</td>
+    <td data-label="Datos"><details class="event-payload"><summary>ver datos</summary><pre>${event.payloads.map((payload) => esc(payload || '')).join('\n\n')}</pre></details></td>
   </tr>`).join('');
 
   $('#view').innerHTML = `
@@ -118,10 +199,31 @@ export async function renderSystem({ signal }) {
           <div class="kv"><span>Trackers</span><span>${(system.trackers || []).filter((item) => item.enabled !== 0).length} activos · ${(system.trackers || []).filter((item) => item.enabled === 0).length} bloqueados · <a class="tiny" href="#/settings?section=siembra">Gestionar</a></span></div>
           <div class="kv"><span>qBittorrent</span><span>${system.qbit?.ok ? `${esc(system.qbit.version)}, ${fmtInt(system.qbit.torrents)} torrents` : `<span class="error">${esc(system.qbit?.error || 'sin conexión')}</span>`}</span></div>
           <div class="kv"><span>Base de datos</span><span class="mono tiny">${esc(system.db?.path || '—')}, ${fmtBytes(system.db?.size || 0)}</span></div>
-          <div class="kv"><span>Títulos / releases</span><span>${fmtInt(system.db?.media_items || 0)} / ${fmtInt(system.db?.releases || 0)}</span></div>
+          <div class="kv"><span>Títulos / versiones</span><span>${fmtInt(system.db?.media_items || 0)} / ${fmtInt(system.db?.releases || 0)}</span></div>
           <div class="kv"><span>Reproductor</span><span>${system.capabilities?.play_service ? status('Activo', 'ok') : status(system.play_error || 'Inactivo', 'muted')}</span></div>
           <div class="kv"><span>Acceso</span><span>${system.auth_required ? 'Token obligatorio' : 'LAN / WireGuard'}</span></div>
           <div class="kv"><span>Detalle interno</span><a class="tiny" href="#/technical">Abrir detalle técnico</a></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="grid grid-2 section">
+      <div class="panel">
+        <div class="panel-head"><h2>Seguimiento y RSS</h2>${status(healthLabel, healthTone)}</div>
+        <div class="panel-body" style="padding-top:6px;padding-bottom:8px">
+          ${timerLine('RSS', health?.timers?.rss, rss, 2)}
+          <div class="kv"><span>Última ingesta</span><span>${jobSummary(rss, [['fetched', 'leído', 'leídos'], ['inserted', 'nuevo', 'nuevos'], ['exported_keys', 'añadido', 'añadidos']])}</span></div>
+          <div class="kv"><span>Seguimientos cerrados</span><span>${rss ? fmtInt(rss.result?.unmonitored_keys || 0) : '—'}</span></div>
+          ${timerLine('Barrido diario', health?.timers?.monitor, monitor, 25)}
+          <div class="kv"><span>Último barrido</span><span>${jobSummary(monitor, [['checked', 'revisado', 'revisados'], ['found', 'encontrado', 'encontrados'], ['waiting', 'esperando', 'esperando']])}</span></div>
+          ${monitorAge !== null && monitorAge > 25 ? '<div class="notice">El barrido diario lleva más de 25 horas sin ejecutarse.</div>' : ''}
+          ${rssAge !== null && rssAge > 2 ? '<div class="notice">El RSS lleva más de 2 horas sin ejecutarse.</div>' : ''}
+        </div>
+      </div>
+      <div class="panel">
+        <div class="panel-head"><h2>Indexers</h2><span class="right tiny faint">${health?.indexers?.length || 0} con actividad · <a href="#/settings?section=indexers">Configurar</a></span></div>
+        <div class="panel-body" style="padding-top:6px;padding-bottom:8px">
+          ${health?.prowlarr_error ? `<div class="notice">${esc(health.prowlarr_error)}</div>` : indexerRows(health?.indexers || [])}
         </div>
       </div>
     </div>

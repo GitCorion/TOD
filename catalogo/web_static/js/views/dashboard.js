@@ -1,34 +1,55 @@
 import { api } from '../api.js';
-import { attentionCard } from '../attention.js';
+import { attentionCard, paintAttention } from '../attention.js';
 import { esc, fmtBytes, fmtInt, fmtRelative } from '../format.js';
 import { jobLabel, jobState } from '../labels.js';
 import { state } from '../store.js';
 import { $, badge, barPercent, empty, icon, poster, setHeader } from '../ui.js';
 
+function withTimeout(promise, ms, fallback) {
+  let timer = null;
+  const timeout = new Promise((resolve) => {
+    timer = setTimeout(() => resolve(fallback), ms);
+  });
+  return Promise.race([promise, timeout]).finally(() => clearTimeout(timer));
+}
+
 export async function renderDashboard({ signal }) {
-  const [data, attention] = await Promise.all([
-    api('/api/ondemand/overview', { signal }),
+  // La portada no puede esperar 15 s a qBittorrent para pintar el catálogo:
+  // lo local se muestra ya y lo que no llegue se marca como sin respuesta.
+  const [data, attention, activity, jobsData, preview] = await Promise.all([
+    withTimeout(
+      api('/api/ondemand/overview', { signal }),
+      6000,
+      state.overview || null,
+    ),
     api('/api/attention', { signal }).catch(() => null),
+    state.activity
+      ? Promise.resolve(state.activity)
+      : api('/api/activity', { signal }).catch(() => null),
+    api('/api/jobs?limit=30', { signal }).catch(() => ({ items: [] })),
+    api('/api/ondemand/recent?limit=6', { signal }).catch(() => ({ items: [] })),
   ]);
   state.attention = attention;
-  const activity = state.activity || await api('/api/activity', { signal }).catch(() => null);
-  const jobsData = await api('/api/jobs?limit=30', { signal }).catch(() => ({ items: [] }));
-  const preview = await api('/api/ondemand/catalog?publication=publicado&group=series&per_page=6&facets=0&sort=recent', { signal }).catch(() => ({ items: [] }));
+  paintAttention(attention);
+  const hasData = Boolean(data && data.generated_at);
+  if (hasData) state.overview = data;
   const routine = new Set(['attention-check', 'qbit-limits', 'worker-cycle']);
   const recentJobs = (jobsData.items || []).filter((job) => !routine.has(job.kind));
-  const catalog = data.catalog || {};
+  const catalog = data?.catalog || {};
   const movies = catalog.movies || {};
   const series = catalog.series || {};
-  const downloads = data.downloads || {};
-  const library = data.library || {};
-  const disk = data.disk || {};
+  const downloads = data?.downloads || {};
+  const library = data?.library || {};
+  const disk = data?.disk || {};
   const active = activity?.running || (activity?.active || [])[0] || null;
   const latest = recentJobs[0] || null;
   const onJellyfin = (movies.published || 0) + (series.published || 0);
   const usedPct = disk.total ? Math.round(((disk.total - (disk.free || 0)) / disk.total) * 100) : 0;
   const missingJellyfin = (movies.pending || 0) + (series.pending || 0);
+  const num = (value) => (hasData ? fmtInt(value) : '—');
+  const bytes = (value) => (hasData ? fmtBytes(value) : '—');
 
-  setHeader('Inicio', 'Contenido');
+  setHeader('Inicio');
 
   const recent = (library.recent || []).slice(0, 7).map((item) => {
     const meta = item.kind === 'movie'
@@ -68,28 +89,29 @@ export async function renderDashboard({ signal }) {
 
   $('#view').innerHTML = `
     <div class="section" style="margin-top:0">${attentionCard(attention, { compact: true })}</div>
+    ${hasData ? '' : `<div class="notice section">No se pudo leer el resumen del servidor a tiempo. Los contadores se actualizarán al recargar.</div>`}
 
     <div class="kpi-grid section">
       <a class="kpi accent" href="#/catalog?publication=publicado" title="Películas, series y episodios que ya aparecen en Jellyfin.">
         <span class="label">En Jellyfin</span>
-        <span class="value">${fmtInt(onJellyfin)}</span>
-        <span class="hint">${fmtInt(movies.published || 0)} películas · ${fmtInt(series.published || 0)} series</span>
-        <span class="hint">${fmtInt(catalog.episodes || 0)} episodios</span>
+        <span class="value">${num(onJellyfin)}</span>
+        <span class="hint">${hasData ? `${fmtInt(movies.published || 0)} películas · ${fmtInt(series.published || 0)} series` : 'Sin datos del servidor'}</span>
+        <span class="hint">${hasData ? `${fmtInt(catalog.episodes || 0)} episodios en total` : ''}</span>
       </a>
       <a class="kpi ${missingJellyfin ? 'amber' : ''}" href="#/catalog?publication=pendiente" title="Tienen una fuente reproducible; solo falta crear su acceso en Jellyfin.">
         <span class="label">Falta en Jellyfin</span>
-        <span class="value">${fmtInt(missingJellyfin)}</span>
-        <span class="hint">para añadir a Jellyfin</span>
+        <span class="value">${num(missingJellyfin)}</span>
+        <span class="hint">${hasData ? 'con fuente, sin añadir' : 'Sin datos del servidor'}</span>
       </a>
       <a class="kpi ${downloads.error ? 'red' : downloads.downloading ? 'amber' : ''}" href="#/downloads" title="Ver descargas en qBittorrent.">
         <span class="label">Descargando</span>
-        <span class="value">${fmtInt(downloads.downloading || 0)}</span>
-        <span class="hint">${fmtInt(downloads.seeding || 0)} sembrando · ${fmtInt(downloads.paused || 0)} pausadas</span>
+        <span class="value">${num(downloads.downloading || 0)}</span>
+        <span class="hint">${hasData ? `${fmtInt(downloads.seeding || 0)} sembrando · ${fmtInt(downloads.paused || 0)} pausadas` : 'Sin datos de qBittorrent'}</span>
       </a>
       <a class="kpi" href="#/system" title="Espacio libre en la carpeta de los .strm.">
         <span class="label">Espacio libre</span>
-        <span class="value">${fmtBytes(disk.free || 0)}</span>
-        <span class="hint">${usedPct} % usado de ${fmtBytes(disk.total || 0)}</span>
+        <span class="value">${bytes(disk.free || 0)}</span>
+        <span class="hint">${hasData ? `${usedPct} % usado de ${fmtBytes(disk.total || 0)}` : 'Sin datos del servidor'}</span>
       </a>
     </div>
 
@@ -129,10 +151,10 @@ export async function renderDashboard({ signal }) {
         <div class="panel">
           <div class="panel-head"><h2>Descargas</h2><a class="right tiny faint" href="#/downloads">Ver todas</a></div>
           <div class="panel-body" style="padding:2px 12px 4px">
-            <div class="kv"><span>Descargando</span><span>${fmtInt(downloads.downloading || 0)}</span></div>
-            <div class="kv"><span>Sembrando</span><span>${fmtInt(downloads.seeding || 0)}</span></div>
-            <div class="kv"><span>Pausadas</span><span>${fmtInt(downloads.paused || 0)}</span></div>
-            <div class="kv"><span>Con error</span><span class="${downloads.error ? 'error' : ''}">${fmtInt(downloads.error || 0)}</span></div>
+            <div class="kv"><span>Descargando</span><span>${num(downloads.downloading || 0)}</span></div>
+            <div class="kv"><span>Sembrando</span><span>${num(downloads.seeding || 0)}</span></div>
+            <div class="kv"><span>Pausadas</span><span>${num(downloads.paused || 0)}</span></div>
+            <div class="kv"><span>Con error</span><span class="${downloads.error ? 'error' : ''}">${num(downloads.error || 0)}</span></div>
           </div>
         </div>
       </div>
@@ -141,14 +163,14 @@ export async function renderDashboard({ signal }) {
     <div class="dash-grid section">
       <div class="panel">
         <div class="panel-head">
-          <h2>Actividad</h2>
-          ${badge(active ? 'en curso' : 'reposo', 'mono')}
+          <h2>Últimas tareas</h2>
+          ${active ? badge('en curso', 'mono') : ''}
           <a class="right tiny faint" href="#/jobs">Ver tareas</a>
         </div>
         <div class="panel-body" style="padding:10px 12px">
           ${activePanel}
           ${recentJobs.length ? `<div style="margin-top:6px">
-            ${recentJobs.filter((job) => !active || job.id !== active.id).slice(0, 5).map((job) => `<div class="kv">
+            ${recentJobs.filter((job) => job.id !== latest?.id && (!active || job.id !== active.id)).slice(0, 5).map((job) => `<div class="kv">
               <span><span class="status ${jobState(job.state).tone} no-dot">${esc(jobState(job.state).label)}</span> ${esc(jobLabel(job.kind))}</span>
               <span class="tiny faint">${esc(fmtRelative(job.finished_at || job.created_at))}</span>
             </div>`).join('')}
@@ -159,10 +181,10 @@ export async function renderDashboard({ signal }) {
       <div class="panel">
         <div class="panel-head"><h2>Radarr y Sonarr</h2><span class="right tiny faint">solo lectura</span></div>
         <div class="panel-body" style="padding:2px 12px 4px">
-          <div class="kv"><span>Películas con fichero</span><span>${fmtInt(library.radarr?.movies_available || 0)}</span></div>
-          <div class="kv"><span>Series con fichero</span><span>${fmtInt(library.sonarr?.series_available || 0)}</span></div>
-          <div class="kv"><span>Episodios</span><span>${fmtInt(library.sonarr?.episodes_available || 0)} de ${fmtInt(library.sonarr?.episodes_total || 0)}</span></div>
-          <div class="kv"><span>Cola</span><span>${fmtInt(library.radarr?.queue || 0)} / ${fmtInt(library.sonarr?.queue || 0)}</span></div>
+          <div class="kv"><span>Películas con fichero</span><span>${num(library.radarr?.movies_available || 0)}</span></div>
+          <div class="kv"><span>Series con fichero</span><span>${num(library.sonarr?.series_available || 0)}</span></div>
+          <div class="kv"><span>Episodios</span><span>${hasData ? `${fmtInt(library.sonarr?.episodes_available || 0)} de ${fmtInt(library.sonarr?.episodes_total || 0)}` : '—'}</span></div>
+          <div class="kv"><span>Cola</span><span>${hasData ? `${fmtInt(library.radarr?.queue || 0)} / ${fmtInt(library.sonarr?.queue || 0)}` : '—'}</span></div>
         </div>
       </div>
     </div>

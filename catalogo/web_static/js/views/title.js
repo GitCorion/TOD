@@ -1,6 +1,6 @@
 import { api } from '../api.js';
 import { esc, episodeTag, fmtBytes, fmtDate, fmtInt, pct } from '../format.js';
-import { eventLabel, healthStatus, originLabel } from '../labels.js';
+import { eventLabel, healthStatus, originLabel, WATCH } from '../labels.js';
 import { updateQuery } from '../router.js';
 import { state } from '../store.js';
 import { $, badge, bar, empty, icon, poster, setHeader, status } from '../ui.js';
@@ -17,7 +17,7 @@ function releaseRow(release) {
     <td data-label="Versión"><div class="cell-title"><strong>${esc(release.title || '—')}</strong><small>${esc(release.tracker || '')}, #${release.id}</small></div></td>
     <td data-label="Calidad">${esc(release.quality || '—')}<div class="tiny faint">${esc(release.audio || '')}</div></td>
     <td data-label="Tamaño" class="num">${fmtBytes(release.size_bytes)}</td>
-    <td data-label="Seeds" class="num">${fmtInt(release.seeders)} / ${fmtInt(release.peers)}</td>
+    <td data-label="Semillas" class="num">${fmtInt(release.seeders)} / ${fmtInt(release.peers)}</td>
     <td data-label="Salud">${status(health.label, health.tone)}</td>
     <td data-label="Privacidad">${badge(release.privacy === 'public' ? 'público' : 'privado', 'mono')} ${release.debrid_cached ? badge('debrid', 'mono') : ''}</td>
     <td data-label="Progreso">${progress}</td>
@@ -37,17 +37,25 @@ export async function renderTitle({ params, query, signal }) {
   const item = data.item || {};
   const statusData = data.status || {};
   const od = data.ondemand || {};
+  const watch = od.published
+    ? WATCH.ready
+    : od.publication === 'pendiente'
+      ? WATCH.pending
+      : item.monitored ? WATCH.monitoring : WATCH.unavailable;
+  const secondary = [
+    od.library_added ? 'En Radarr/Sonarr' : '',
+    od.downloaded ? 'Descargada' : '',
+  ].filter(Boolean).join(' · ');
   state.titleDetail = data;
   const tab = query.get('tab') || 'resumen';
   const tag = episodeTag(item);
-  const pageLabel = item.kind === 'movie' ? 'Película' : 'Episodio';
   const episodeName = item.kind === 'series' ? (item.episode_title || '') : '';
   const heading = episodeName || item.title || '—';
   const synopsis = item.episode_overview || item.overview;
   const seriesContext = episodeName && item.tmdb
     ? `<div class="subtitle"><a href="#/series/${item.tmdb}">${esc(item.title || 'Serie')}</a>${item.year ? ` (${item.year})` : ''}</div>`
     : '';
-  setHeader(pageLabel, 'Biblioteca');
+  setHeader(heading);
   document.title = `${heading}, TOD`;
 
   const seriesLink = item.kind === 'series' && item.tmdb
@@ -69,10 +77,10 @@ export async function renderTitle({ params, query, signal }) {
     <div class="panel">
       <div class="panel-head"><h2>Detalles</h2>${liveState}</div>
       <div class="panel-body" style="padding-top:6px;padding-bottom:8px">
-        <div class="kv"><span>Calidad</span><span>${esc(statusData.quality || '—')}</span></div>
-        <div class="kv"><span>Audio</span><span>${esc(statusData.audio || '—')}</span></div>
+        ${statusData.quality ? `<div class="kv"><span>Calidad</span><span>${esc(statusData.quality)}</span></div>` : ''}
+        ${statusData.audio ? `<div class="kv"><span>Audio</span><span>${esc(statusData.audio)}</span></div>` : ''}
         <div class="kv"><span>Procedencia</span><span>${esc(originLabel(item.origin))}${item.origin_detail ? `<span class="tiny faint"> · ${esc(item.origin_detail)}</span>` : ''}</span></div>
-        <div class="kv"><span>Custodia</span><span>${od.has_file ? 'Radarr/Sonarr' : od.downloaded ? 'Descarga' : '—'}</span></div>
+        <div class="kv"><span>Ubicación</span><span>${od.has_file ? 'Radarr/Sonarr' : od.downloaded ? 'Descarga' : '—'}</span></div>
         ${od.download === 'descargando' || od.download === 'pausado' || od.download === 'error' ? `<div class="kv"><span>Descarga</span><span>${od.download === 'descargando' ? status('Descargando', 'info') : od.download === 'pausado' ? status('Pausado', 'warn') : status('Error', 'bad')}</span></div>` : ''}
       </div>
     </div>
@@ -83,7 +91,7 @@ export async function renderTitle({ params, query, signal }) {
       <div class="panel-head">
         <h2>Versiones disponibles</h2>
         <div class="right row" style="gap:8px">
-          <span class="tiny faint">${data.releases.length} releases</span>
+          <span class="tiny faint">${data.releases.length} versiones</span>
           <button class="btn btn-sm" data-action="manual-search" data-id="${id}" data-title="${esc(item.title || '')}">Buscar manualmente</button>
         </div>
       </div>
@@ -156,16 +164,11 @@ export async function renderTitle({ params, query, signal }) {
           <h2>${esc(heading)} ${item.year && (item.kind === 'movie' || !episodeName) ? `<span class="muted" style="font-size:16px;font-weight:400">(${item.year})</span>` : ''}</h2>
           ${seriesContext}
           <div class="row">
-            ${badge(item.kind === 'movie' ? 'película' : 'episodio', 'mono')}
             ${tag ? badge(tag, 'mono') : ''}
-            ${od.published ? status('En Jellyfin', 'ok') : status('Falta en Jellyfin', 'muted')}
-            ${od.library_added ? status('En Radarr/Sonarr', 'info') : ''}
-            ${item.monitored
-              ? status(od.available === false ? 'Sin estrenar' : 'En seguimiento', od.available === false ? 'muted' : 'info')
-              : status('Sin seguimiento', 'muted')}
-            ${od.downloaded ? status('Descargada', 'ok') : ''}
-            ${od.download === 'descargando' ? status('Descargando', 'info') : ''}
+            ${status(watch.label, watch.tone)}
+            ${od.download === 'descargando' ? status(`Descargando ${pct(od.progress || 0)}%`, 'info') : ''}
           </div>
+          ${secondary ? `<p class="tiny muted" style="margin:6px 0 0">${esc(secondary)}</p>` : ''}
           ${synopsis ? `<p class="overview">${esc(synopsis)}</p>` : ''}
           ${data.collection ? `<a class="collection-link" href="#/collection/${data.collection.id}">
             <span class="tiny">Colección</span>
@@ -174,13 +177,13 @@ export async function renderTitle({ params, query, signal }) {
           </a>` : ''}
           <div class="detail-actions">
             ${!od.library_added && !item.monitored ? `<button class="btn btn-primary" data-action="library-title" data-id="${item.id}" data-key="${esc(item.key)}" data-title="${esc(item.title || '')}" data-releases="${data.releases.length}">${icon('plus')} Catalogar en TOD</button>` : ''}
-            ${od.library_added && !od.published && item.monitored ? `<button class="btn btn-danger" data-action="unmonitor-title" data-id="${item.id}">Dejar de seguir</button>` : ''}
+            ${od.library_added && !od.published && item.monitored ? `<button class="btn btn-ghost" data-action="unmonitor-title" data-id="${item.id}">Dejar de seguir</button>` : ''}
             ${od.library_added && !od.published && !item.monitored && !od.has_file && !od.downloaded ? `<button class="btn" data-action="monitor-title" data-id="${item.id}">Seguir</button>` : ''}
             ${!od.downloaded && data.releases.length ? `<button class="btn" data-action="download-now" data-key="${esc(item.key)}">${icon('download')} Descargar ahora</button>` : ''}
-            ${od.published ? `<button class="btn btn-danger" data-action="unpublish-title" data-id="${item.id}">Quitar de Jellyfin</button>` : ''}
-            <button class="btn btn-ghost" data-action="manual-search" data-id="${item.id}" data-title="${esc(item.title || '')}">${icon('search')} Buscar manualmente</button>
+            <button class="btn btn-ghost" data-action="manual-search" data-id="${item.id}" data-title="${esc(item.title || '')}">${icon('search')} Buscar fuentes</button>
             <button class="btn btn-ghost" data-action="sync-title" data-id="${item.id}">${icon('search')} Buscar y añadir a Jellyfin</button>
             ${item.tmdb ? `<a class="btn btn-ghost" href="${esc(data.tmdb_url || '#')}" target="_blank" rel="noreferrer">${icon('external')} TMDB</a>` : ''}
+            ${od.published ? `<button class="btn btn-sm btn-ghost danger-action" data-action="unpublish-title" data-id="${item.id}">Quitar de TOD</button>` : ''}
           </div>
         </div>
       </div>

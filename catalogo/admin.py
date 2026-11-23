@@ -1173,6 +1173,35 @@ def apply_qbit_limits(
 # Tareas
 
 
+def _title_labels(db_path: str | Any, keys: list[str]) -> dict[str, str]:
+    """Título legible por clave, para no enseñar `movie:tmdb:...` al usuario."""
+    from contextlib import closing
+
+    from .db import connect
+
+    labels: dict[str, str] = {}
+    unique = [key for key in dict.fromkeys(keys) if key]
+    try:
+        with closing(connect(db_path)) as conn:
+            for start in range(0, len(unique), 400):
+                chunk = unique[start:start + 400]
+                marks = ",".join("?" for _ in chunk)
+                rows = conn.execute(
+                    f"SELECT key, title, year FROM media_items WHERE key IN ({marks})",
+                    chunk,
+                ).fetchall()
+                for row in rows:
+                    title = row["title"] or ""
+                    if not title:
+                        continue
+                    labels[row["key"]] = (
+                        f"{title} ({row['year']})" if row["year"] else title
+                    )
+    except Exception:
+        return labels
+    return labels
+
+
 def _sync_keys(
     ctx: JobContext,
     keys: list[str],
@@ -1187,6 +1216,7 @@ def _sync_keys(
 ) -> dict[str, Any]:
     client = _prowlarr(ctx.config)
     jackett = None if no_jackett else _jackett(ctx.config)
+    labels = _title_labels(ctx.config.db_path, keys)
     summary = {
         "keys": len(keys),
         "done": 0,
@@ -1202,7 +1232,8 @@ def _sync_keys(
     for index, key in enumerate(keys):
         ctx.check()
         ctx.report(
-            f"buscando fuentes para {key} ({index + 1}/{len(keys)})",
+            f"buscando fuentes para {labels.get(key, 'un título')} "
+            f"({index + 1}/{len(keys)})",
             progress=progress_base + progress_span * (index / max(1, len(keys))),
         )
         try:
@@ -1404,10 +1435,12 @@ def job_export(ctx: JobContext) -> dict[str, Any]:
         unchanged = 0
         skipped = 0
         reports = []
+        labels = _title_labels(ctx.config.db_path, keys)
         for index, key in enumerate(keys):
             ctx.check()
             ctx.report(
-                f"exportando {key} ({index + 1}/{len(keys)})",
+                f"exportando {labels.get(key, 'un título')} "
+                f"({index + 1}/{len(keys)})",
                 progress=index / max(1, len(keys)),
             )
             report = export_strm(
@@ -1636,10 +1669,12 @@ def job_arr_mirror(ctx: JobContext) -> dict[str, Any]:
 
     exported = 0
     to_notify: list[str] = []
+    labels = _title_labels(ctx.config.db_path, [key for key, _ in pending])
     for index, (key, _kind) in enumerate(pending):
         ctx.check()
         ctx.report(
-            f"añadiendo {key} a Jellyfin ({index + 1}/{len(pending)})",
+            f"añadiendo {labels.get(key, 'un título')} a Jellyfin "
+            f"({index + 1}/{len(pending)})",
             progress=0.72 + 0.2 * (index / max(1, len(pending))),
         )
         report = export_strm(
@@ -1661,10 +1696,12 @@ def job_arr_mirror(ctx: JobContext) -> dict[str, Any]:
         ctx.config.catalog_library,
         limit=publish_limit,
     ) if publish_limit else []
+    library_labels = _title_labels(ctx.config.db_path, published)
     for index, key in enumerate(published):
         ctx.check()
         ctx.report(
-            f"añadiendo biblioteca {key} a Jellyfin ({index + 1}/{len(published)})",
+            f"añadiendo {library_labels.get(key, 'un título')} a Jellyfin "
+            f"({index + 1}/{len(published)})",
             progress=0.92 + 0.06 * (index / max(1, len(published))),
         )
         report = export_strm(

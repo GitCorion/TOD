@@ -1,5 +1,5 @@
 import { api, apiPost, onAuthRequired, onLiveChange } from './api.js';
-import { attentionCard, attentionCount } from './attention.js';
+import { attentionCard, paintAttention } from './attention.js';
 import { esc, fmtBytes, fmtDate, fmtDuration, fmtEta, fmtInt, pct, debounce } from './format.js';
 import { healthStatus, jobLabel, jobState, qbitState, taskDef } from './labels.js';
 import { navigate, parseRoute, route, updateQuery } from './router.js';
@@ -190,20 +190,7 @@ let attentionTimer = null;
 
 function setAttention(data) {
   state.attention = data;
-  const count = attentionCount(data);
-  const fails = Number(data?.counts?.fail || 0);
-  const node = $('#navAttention');
-  if (node) {
-    node.textContent = count ? String(count) : '';
-    node.classList.toggle('hidden', !count);
-    node.classList.toggle('fail', fails > 0);
-    node.classList.toggle('warn', fails === 0 && count > 0);
-    node.setAttribute(
-      'aria-label',
-      count ? `${count} avisos pendientes` : 'Sin avisos pendientes',
-    );
-    node.title = count ? `${count} avisos pendientes` : 'Sin avisos pendientes';
-  }
+  paintAttention(data);
   const panel = $('#attentionPanel');
   const signature = JSON.stringify({
     counts: data?.counts,
@@ -1121,6 +1108,9 @@ document.addEventListener('click', async (event) => {
         const smooth = !window.matchMedia('(prefers-reduced-motion: reduce)').matches;
         target.scrollIntoView({ behavior: smooth ? 'smooth' : 'auto', block: 'start' });
       }
+      $$('.settings-tab').forEach((tab) => {
+        tab.classList.toggle('active', tab === element);
+      });
       return;
     }
     if (action === 'language-save') {
@@ -1353,7 +1343,13 @@ document.addEventListener('click', async (event) => {
       try {
         await apiPost(`/api/monitor/indexers/${element.dataset.id}`, { enabled: next });
         toast(next ? 'Indexer activado' : 'Indexer pausado', 'ok');
-        await route();
+        element.dataset.enabled = next ? '1' : '0';
+        element.textContent = next ? 'Pausar' : 'Activar';
+        const row = element.closest('[data-indexer-row]');
+        const stateNode = row?.querySelector('[data-indexer-state]');
+        if (stateNode) {
+          stateNode.innerHTML = next ? status('Activo', 'ok') : status('Pausado', 'warn');
+        }
       } catch (error) {
         toast(error.message, 'error');
       } finally {

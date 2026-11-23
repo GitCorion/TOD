@@ -8,7 +8,7 @@ export async function renderHistory({ signal }) {
     api('/api/jobs?limit=100', { signal }),
     api('/api/events?limit=100', { signal }),
   ]);
-  setHeader('Historial', 'Operación');
+  setHeader('Historial');
 
   const jobRows = (jobs.items || []).map((job) => `<tr>
     <td data-label="Fecha" class="nowrap">${fmtDate(job.finished_at || job.created_at)}</td>

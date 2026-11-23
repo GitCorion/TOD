@@ -23,7 +23,7 @@ export async function renderTechnical({ query, signal }) {
     sort: query.get('sort') || 'popularity',
     page: Math.max(1, Number(query.get('page')) || 1),
   };
-  setHeader('Detalle técnico', 'Sistema');
+  setHeader('Detalle técnico');
   const params = new URLSearchParams({
     q: filters.q,
     kind: filters.kind,

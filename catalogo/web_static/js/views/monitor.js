@@ -14,6 +14,10 @@ function stateInfo(item) {
       return status('En cola', 'warn');
     case 'waiting':
       return status('Por buscar', 'warn');
+    case 'searching':
+      return item.alive
+        ? status('Fuente encontrada', 'info')
+        : status('Buscando', 'warn');
     default:
       return status('Sin fuente', 'muted');
   }
@@ -22,51 +26,6 @@ function stateInfo(item) {
 function availability(item) {
   if (item.available !== false) return '<span class="tiny faint">Disponible</span>';
   return `<span class="tiny faint">${esc(fmtShortDate(item.available_at))}</span>`;
-}
-
-function healthAge(value) {
-  if (!value) return null;
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return null;
-  return (Date.now() - date.getTime()) / 3600000;
-}
-
-function timerLine(label, timer, last, expectedHours) {
-  const active = timer?.active === 'active';
-  const age = healthAge(last?.finished_at || last?.created_at);
-  const stale = expectedHours && age !== null && age > expectedHours;
-  const tone = active && !stale ? 'ok' : stale ? 'warn' : 'bad';
-  const text = active ? (stale ? 'Activo, con retraso' : 'Activo') : 'Parado';
-  return `<div class="kv"><span>${esc(label)}</span><span>${status(text, tone)}</span></div>`;
-}
-
-function jobSummary(job, keys) {
-  if (!job) return '<span class="faint">Sin ejecutar</span>';
-  const result = job.result || {};
-  const pieces = keys
-    .filter(([name]) => result[name] !== undefined)
-    .map(([name, one, many]) => {
-      const value = Number(result[name]) || 0;
-      return `${fmtInt(value)} ${value === 1 ? one : many}`;
-    });
-  const when = fmtRelative(job.finished_at || job.created_at);
-  const stateLabel = job.state === 'error' ? 'error' : pieces.length ? pieces.join(', ') : 'sin cambios';
-  return `${esc(when)}, ${esc(stateLabel)}`;
-}
-
-function indexerRows(indexers) {
-  if (!indexers.length) return '<div class="empty"><strong>Sin estadísticas</strong>Prowlarr no devolvió datos de indexers.</div>';
-  return indexers.map((indexer) => `<div class="kv">
-    <span>${esc(indexer.name)} ${indexer.enabled === false ? status('Pausado', 'warn') : ''}</span>
-    <span class="row" style="gap:8px">
-      <span class="tiny faint">${fmtInt(indexer.queries)} consultas</span>
-      ${indexer.failed
-        ? status(`${fmtInt(indexer.failed)} fallos`, 'warn')
-        : status('Sin fallos', 'ok')}
-      <span class="tiny faint">${fmtInt(indexer.response_ms)} ms</span>
-      <button class="btn btn-sm btn-ghost" data-action="monitor-indexer" data-id="${indexer.id}" data-enabled="${indexer.enabled === false ? '0' : '1'}">${indexer.enabled === false ? 'Activar' : 'Pausar'}</button>
-    </span>
-  </div>`).join('');
 }
 
 export async function renderMonitor({ query, signal }) {
@@ -86,13 +45,12 @@ export async function renderMonitor({ query, signal }) {
   const data = await api(`/api/monitor?${params}`, { signal });
   const items = data.items || [];
   const summary = data.summary || {};
-  const health = data.health || {};
   state.monitorSummary = summary;
-  setHeader('Seguimiento', 'Contenido');
+  setHeader('Seguimiento');
 
   const chips = [
     ['', 'Todos', summary.total || 0],
-    ['missing', 'Sin fuente', summary.missing || 0],
+    ['missing', 'Pendientes', summary.missing || 0],
     ['pending', 'Sin estrenar', summary.pending || 0],
     ['downloading', 'Descargando', summary.downloading || 0],
   ];
@@ -126,17 +84,6 @@ export async function renderMonitor({ query, signal }) {
     </tr>`;
   }).join('');
 
-  const rss = health.last_rss;
-  const monitor = health.last_monitor;
-  const rssAge = healthAge(rss?.finished_at || rss?.created_at);
-  const monitorAge = healthAge(monitor?.finished_at || monitor?.created_at);
-  const rssWarning = rssAge !== null && rssAge > 2;
-  const monitorWarning = monitorAge !== null && monitorAge > 25;
-  const timersOk = health.timers?.rss?.active === 'active'
-    && health.timers?.monitor?.active === 'active';
-  const healthLabel = !timersOk ? 'Parado' : rssWarning || monitorWarning ? 'Revisar' : 'Al día';
-  const healthTone = !timersOk ? 'bad' : rssWarning || monitorWarning ? 'warn' : 'ok';
-
   $('#view').innerHTML = `
     <div class="breadcrumb"><a href="#/catalog">Biblioteca</a>${icon('chevron')}<span>Seguimiento</span></div>
 
@@ -163,27 +110,6 @@ export async function renderMonitor({ query, signal }) {
           ${chips.map(([value, label, count]) => `<button class="chip ${filters.state === value ? 'active' : ''}" data-action="monitor-filter" data-value="${value}" role="tab" aria-selected="${filters.state === value}">${esc(label)} <b>${fmtInt(count)}</b></button>`).join('')}
         </div>
         <span class="tiny faint">${fmtInt(summary.total || 0)} en seguimiento</span>
-      </div>
-    </div>
-
-    <div class="grid grid-2 section">
-      <div class="panel">
-        <div class="panel-head"><h2>RSS y seguimiento</h2>${status(healthLabel, healthTone)}</div>
-        <div class="panel-body" style="padding-top:6px;padding-bottom:8px">
-          ${timerLine('RSS', health.timers?.rss, rss, 2)}
-          <div class="kv"><span>Última ingesta</span><span>${jobSummary(rss, [['fetched', 'leído', 'leídos'], ['inserted', 'nuevo', 'nuevos'], ['exported_keys', 'añadido', 'añadidos']])}</span></div>
-          <div class="kv"><span>Seguimientos cerrados</span><span>${rss ? fmtInt(rss.result?.unmonitored_keys || 0) : '—'}</span></div>
-          ${timerLine('Barrido diario', health.timers?.monitor, monitor, 25)}
-          <div class="kv"><span>Último barrido</span><span>${jobSummary(monitor, [['checked', 'revisado', 'revisados'], ['found', 'encontrado', 'encontrados'], ['waiting', 'esperando', 'esperando']])}</span></div>
-          ${monitorAge !== null && monitorAge > 25 ? `<div class="notice">El barrido diario lleva más de 25 horas sin ejecutarse.</div>` : ''}
-          ${rssAge !== null && rssAge > 2 ? `<div class="notice">El RSS lleva más de 2 horas sin ejecutarse.</div>` : ''}
-        </div>
-      </div>
-      <div class="panel">
-        <div class="panel-head"><h2>Indexers</h2><span class="right tiny faint">${health.indexers?.length || 0} con actividad</span></div>
-        <div class="panel-body" style="padding-top:6px;padding-bottom:8px">
-          ${health.prowlarr_error ? `<div class="notice">${esc(health.prowlarr_error)}</div>` : indexerRows(health.indexers || [])}
-        </div>
       </div>
     </div>
 

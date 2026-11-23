@@ -22,7 +22,7 @@ const QBIT_STATES = [
 
 const REASONS = {
   no_esta_sembrando: 'No está sembrando',
-  tiempo_minimo_de_seed: 'Falta tiempo de seed',
+  tiempo_minimo_de_seed: 'Falta tiempo de siembra',
   ratio_insuficiente: 'Falta ratio',
   sin_politica: 'Sin política',
   politica_cumplida: 'Listo',
@@ -54,7 +54,7 @@ export async function renderSeeds({ signal }) {
   const data = await api('/api/seeds', { signal });
   const items = data.items || [];
   state.seeds = items;
-  setHeader('Siembra', 'Operación');
+  setHeader('Siembra');
 
   const rows = items.map((item) => {
     const ratio = Number(item.live_ratio ?? 0);

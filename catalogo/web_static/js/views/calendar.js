@@ -17,7 +17,7 @@ export async function renderCalendar({ query, signal }) {
     : 90;
   const data = await api(`/api/calendar?days=${days}`, { signal });
   const items = data.items || [];
-  setHeader('Calendario', 'Contenido');
+  setHeader('Calendario');
 
   const groups = new Map();
   for (const item of items) {

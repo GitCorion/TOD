@@ -14,6 +14,25 @@ const PUBLICATION = {
   sin_fuente: { label: 'Sin fuente', tone: 'muted' },
 };
 
+/**
+ * El estado que ve el usuario. Es el único eje principal: el resto
+ * (origen, Radarr/Sonarr, seguimiento, descarga) son datos secundarios.
+ */
+export const WATCH = {
+  ready: { label: 'En Jellyfin', tone: 'ok' },
+  pending: { label: 'Falta en Jellyfin', tone: 'info' },
+  monitoring: { label: 'En seguimiento', tone: 'info' },
+  unavailable: { label: 'Sin fuente', tone: 'muted' },
+};
+
+export function watchState(item) {
+  if (!item) return WATCH.unavailable;
+  if (item.published) return WATCH.ready;
+  if (item.publication === 'pendiente' || item.downloaded) return WATCH.pending;
+  if (item.monitored) return WATCH.monitoring;
+  return WATCH.unavailable;
+}
+
 const ORIGIN = {
   tmdb: 'TMDB',
   radarr: 'Radarr',
@@ -44,6 +63,7 @@ const JOB_STATE = {
 
 export const JOB_LABELS = {
   health: 'Verificar salud',
+  'attention-check': 'Comprobación de estado',
   'sync-sources': 'Buscar fuentes',
   'rss-sync': 'Novedades RSS',
   backfill: 'Fondo antiguo',
@@ -55,20 +75,20 @@ export const JOB_LABELS = {
   abandon: 'Abandonar descargas',
   reseed: 'Reponer borrados',
   evict: 'Liberar espacio',
-  seeding: 'Normalizar siembra',
-  'prune-library': 'Podar Radarr/Sonarr',
+  seeding: 'Ajustar siembra',
+  'prune-library': 'Limpiar Radarr/Sonarr',
   'sync-library': 'Sincronizar Radarr/Sonarr',
   'arr-mirror': 'Espejo Radarr/Sonarr',
   metadata: 'Actualizar metadatos',
-  monitor: 'Buscar seguimiento',
+  monitor: 'Buscar fuentes en seguimiento',
   'debrid-check': 'Comprobar debrid',
   'qbit-limits': 'Límites qBittorrent',
-  'cleanup-leases': 'Limpiar leases',
+  'cleanup-leases': 'Liberar reproducciones',
   'publish-now': 'Añadir',
   'download-now': 'Descargar ahora',
   'sync-pending': 'Buscar fuentes pendientes',
-  'worker-cycle': 'Ciclo del worker',
-  bridge: 'Puente a Radarr/Sonarr',
+  'worker-cycle': 'Mantenimiento',
+  bridge: 'Enviar a Radarr/Sonarr',
   'restore-strm': 'Reconciliar .strm',
 };
 
@@ -99,6 +119,15 @@ export const EVENT_LABELS = {
   'web.integration_test': 'Prueba de integración',
   'web.scheduler_save': 'Tarea programada actualizada',
   'web.scheduler_run': 'Tarea programada lanzada',
+  'web.seed_settings': 'Ajustes de siembra',
+  'web.seed_policy': 'Política de siembra',
+  'web.seed_finish': 'Compromiso de siembra cerrado',
+  'web.language': 'Preferencia de idioma',
+  'web.attention_check': 'Comprobación de estado',
+  'web.set_target': 'Versión fijada',
+  'web.release_health': 'Salud de la versión',
+  'web.intake_torrent': 'Torrent manual añadido',
+  'web.prepare': 'Preparación de reproducción',
 };
 
 export const CAPABILITY_LABELS = {
@@ -144,7 +173,7 @@ export function publicationStatus(item) {
   if (item.kind === 'series' && item.library_episodes !== undefined) {
     if (item.library_episodes > 0) {
       return {
-        label: `${item.library_episodes}/${item.episodes || 0} añadidos`,
+        label: `${item.library_episodes}/${item.episodes || 0} en Jellyfin`,
         tone: 'ok',
       };
     }
@@ -162,8 +191,14 @@ export function jobLabel(kind) {
   return JOB_LABELS[kind] || kind || 'Tarea';
 }
 
+function humanizeKey(kind) {
+  const text = String(kind || '').replace(/^web\./, '').replace(/[._]+/g, ' ').trim();
+  if (!text) return '';
+  return text.charAt(0).toUpperCase() + text.slice(1);
+}
+
 export function eventLabel(kind) {
-  return EVENT_LABELS[kind] || kind || 'Evento';
+  return EVENT_LABELS[kind] || humanizeKey(kind) || 'Evento';
 }
 
 export function capabilityLabel(name) {
@@ -225,7 +260,7 @@ export const TASKS = [
     kind: 'health', title: 'Verificar salud', category: 'captura',
     desc: 'Consulta Prowlarr en vivo y actualiza seeders, peers y estado.',
     fields: [
-      { name: 'limit', label: 'Releases', type: 'number', value: 25, min: 1 },
+      { name: 'limit', label: 'Versiones', type: 'number', value: 25, min: 1 },
       { name: 'delay', label: 'Pausa (s)', type: 'number', value: 1, step: 0.1 },
       { name: 'tracker', label: 'Tracker (opcional)', type: 'text' },
       { name: 'key', label: 'Clave (opcional)', type: 'text' },
@@ -234,7 +269,7 @@ export const TASKS = [
   },
   {
     kind: 'sync-sources', title: 'Buscar fuentes', category: 'captura',
-    desc: 'Busca releases en Prowlarr y Jackett para títulos fríos.',
+    desc: 'Busca versiones en Prowlarr y Jackett para títulos sin fuente.',
     fields: [
       { name: 'year', label: 'Año', type: 'number', value: CURRENT_YEAR, min: 1900, max: 2100 },
       { name: 'kind', label: 'Tipo', type: 'select', value: 'movie', options: [['movie', 'Películas'], ['series', 'Series']] },
@@ -335,15 +370,15 @@ export const TASKS = [
   },
   {
     kind: 'seeding', title: 'Mantener siembra mínima', category: 'siembra',
-    desc: 'Fuerza el seed hasta horas/ratio; después suelta y qBittorrent decide.',
+    desc: 'Fuerza la siembra hasta horas/ratio; después suelta y qBittorrent decide.',
     fields: [
       { name: 'limit', label: 'Torrents', type: 'number', value: 50, min: 1 },
       { name: 'dry_run', label: 'Solo previsualizar', type: 'checkbox', value: false },
     ],
   },
   {
-    kind: 'cleanup-leases', title: 'Limpiar leases', category: 'siembra',
-    desc: 'Elimina leases de reproducción con más de una hora.',
+    kind: 'cleanup-leases', title: 'Liberar reproducciones', category: 'siembra',
+    desc: 'Cierra reproducciones inactivas de más de una hora.',
     fields: [],
   },
   {
@@ -358,9 +393,9 @@ export const TASKS = [
   },
   {
     kind: 'debrid-check', title: 'Comprobar debrid', category: 'sistema',
-    desc: 'Prueba caché de Real-Debrid para releases públicos.',
+    desc: 'Prueba la caché de Real-Debrid para versiones públicas.',
     fields: [
-      { name: 'limit', label: 'Releases', type: 'number', value: 10, min: 1 },
+      { name: 'limit', label: 'Versiones', type: 'number', value: 10, min: 1 },
       { name: 'delay', label: 'Pausa (s)', type: 'number', value: 1, step: 0.1 },
       { name: 'dry_run', label: 'Solo previsualizar', type: 'checkbox', value: true },
     ],

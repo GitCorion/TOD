@@ -21,7 +21,7 @@ export async function renderJobs({ signal }) {
   const jobs = data.items || [];
   const active = jobs.find((job) => job.state === 'running') || jobs.find((job) => job.state === 'queued');
   state.jobs = jobs;
-  setHeader('Tareas', 'Operación');
+  setHeader('Tareas');
 
   const taskGroups = TASK_CATEGORIES.map((category) => {
     const tasks = TASKS.filter((task) => task.category === category.key);

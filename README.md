@@ -16,6 +16,12 @@ con qBittorrent, Jellyfin, Prowlarr, Jackett y, opcionalmente, Radarr/Sonarr.
 Esos servicios siguen siendo independientes: el `docker-compose.yml` incluido
 los levanta juntos para que la instalación sea de un solo comando.
 
+<p align="center">
+  <img src="docs/assets/dashboard-dark.png" alt="Panel de TOD: avisos, catálogo en Jellyfin, últimas incorporaciones y estado de las descargas." width="100%">
+</p>
+
+<p align="center"><sub>TOD está en beta activa. La interfaz y la API pueden cambiar entre versiones menores.</sub></p>
+
 No hace falta editar bases de datos ni archivos de configuración de Prowlarr.
 Las URLs y API keys se introducen en la web y TOD aplica el resto. En Docker,
 `.env` solo aporta valores iniciales como UID/GID, IP permitida y claves.

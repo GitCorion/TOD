@@ -68,14 +68,40 @@ function groupStatus(group) {
   return status(label, tone);
 }
 
+const QUALITY_TOKEN = /\b(?:WEB[\s-]?DL|WEBRip|BluRay|BDRip|BRRip|HDTV|DVDRip|2160p|1080p|720p|480p|x265|x264|H\.?264|H\.?265|HEVC|AVC|AAC|AC3|EAC3|DDP?5\.1|Atmos|HDR10?|REMUX|ISO)\b/i;
+
+function prettyName(raw) {
+  const text = String(raw || '')
+    .replace(/\.[a-z0-9]{2,4}$/i, '')
+    .replace(/[._]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+  const clean = (value) => value
+    .replace(/\[[^\]]*\]?/g, ' ')
+    .replace(/\s+/g, ' ')
+    .replace(/[\s\-–—:([{]+$/g, '')
+    .trim();
+  const year = text.match(/\b(?:19|20)\d{2}\b/);
+  if (year) {
+    return `${clean(text.slice(0, year.index))} (${year[0]})`;
+  }
+  const cut = text.search(QUALITY_TOKEN);
+  return clean(cut > 0 ? text.slice(0, cut) : text) || text;
+}
+
 function torrentRow(item, canDelete = false) {
   const stateLabel = qbitState(item.state);
   const selected = state.torrentSelection.has(item.info_hash);
+  const linked = Boolean(item.media_id || item.key);
+  const display = linked ? (item.release_title || item.name || item.title) : prettyName(item.name);
+  const source = item.tracker
+    || (item.category && item.category !== 'ondemand' ? item.category : 'Bajo demanda');
+  const meta = [source, fmtBytes(item.size)].filter(Boolean).join(' · ');
   return `<div class="dl-torrent">
     <input type="checkbox" data-action="torrent-select" data-hash="${esc(item.info_hash)}" ${selected ? 'checked' : ''} aria-label="Seleccionar torrent">
     <div class="name">
-      <strong title="${esc(item.name || '')}">${esc(item.name || item.title || '—')}</strong>
-      <small>${esc(item.tracker || item.category || '')}${item.release_title && item.release_title !== item.name ? `, ${esc(item.release_title)}` : ''}</small>
+      <strong title="${esc(item.name || '')}">${esc(display || '—')}</strong>
+      <small>${esc(meta)}</small>
     </div>
     <div class="progress-cell">${bar(item.progress, item.progress >= 1 ? 'green' : '')}<span>${pct(item.progress)}%</span></div>
     <div class="tiny muted nowrap speed">${fmtSpeed(item.dlspeed || 0)}, ${fmtInt(item.num_seeds)} seeds, ETA ${fmtEta(item.eta)}</div>
@@ -91,13 +117,12 @@ export async function renderDownloads({ query, signal }) {
   const text = query.get('q') || '';
   const filter = query.get('state') || '';
   const sort = query.get('sort') || 'recent';
-  const [data, settings, seed] = await Promise.all([
+  const [data, seed] = await Promise.all([
     api('/api/downloads?category=ondemand', { signal }),
-    api('/api/ondemand/settings', { signal }).catch(() => ({ max_active: 4, min: 1, max: 10 })),
     api('/api/seed', { signal }).catch(() => null),
   ]);
   const canDelete = Boolean(seed?.defaults?.allow_delete);
-  setHeader('Descargas', 'Operación');
+  setHeader('Descargas');
 
   const allGroups = groupItems(data.items || []).filter((group) => {
     const haystack = `${group.title} ${group.items.map((item) => item.name || '').join(' ')} ${group.keyName || ''}`.toLowerCase();
@@ -154,7 +179,7 @@ export async function renderDownloads({ query, signal }) {
     <div class="toolbar">
       <label class="field grow">
         <span>Buscar</span>
-        <input data-input="downloads-q" value="${esc(text)}" placeholder="Título o release" autocomplete="off" aria-label="Buscar descargas">
+        <input data-input="downloads-q" value="${esc(text)}" placeholder="Título o fichero" autocomplete="off" aria-label="Buscar descargas">
       </label>
       <label class="field" style="width:150px">
         <span>Orden</span>
@@ -166,11 +191,6 @@ export async function renderDownloads({ query, signal }) {
           <option value="tracker" ${sort === 'tracker' ? 'selected' : ''}>Tracker</option>
         </select>
       </label>
-      <label class="field" style="width:160px">
-        <span>Límite on-demand</span>
-        <input type="number" name="max_active" min="${settings.min || 1}" max="${settings.max || 10}" value="${settings.max_active || 4}" aria-label="Descargas simultáneas">
-      </label>
-      <button class="btn" data-action="save-limit">Guardar</button>
     </div>
 
     <div class="chips section" style="margin-bottom:12px">

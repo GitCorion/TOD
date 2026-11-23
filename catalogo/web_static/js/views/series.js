@@ -7,13 +7,12 @@ import { $, badge, bar, empty, icon, poster, setHeader, status } from '../ui.js'
 function episodeStatus(ep) {
   if (ep.published) return status('En Jellyfin', 'ok');
   if (ep.download === 'descargando') return status(`Descargando ${pct(ep.progress)}%`, 'info');
-  if (ep.download === 'pausado') return status('Pausado', 'warn');
-  if (ep.download === 'error') return status('Error', 'bad');
-  if (ep.downloaded) return status('Descargado', 'ok');
+  if (ep.download === 'pausado') return status('Descarga pausada', 'warn');
+  if (ep.download === 'error') return status('Error de descarga', 'bad');
+  if (ep.downloaded) return status('Falta en Jellyfin', 'info');
   if (ep.incomplete) return status('Sin fuente', 'warn');
   if (ep.library_added && ep.monitored && ep.available === false) return status('Sin estrenar', 'muted');
-  if (ep.library_added && ep.monitored) return `${status('En Radarr/Sonarr', 'info')} ${status('En seguimiento', 'info')}`;
-  if (ep.library_added) return status('En Radarr/Sonarr', 'info');
+  if (ep.monitored) return status('En seguimiento', 'info');
   if (!ep.in_catalog) return status('Sin catalogar', 'muted');
   return status('Sin fuente', 'muted');
 }
@@ -27,6 +26,19 @@ function still(path, title) {
 
 function totalRequested(totals) {
   return Boolean(totals.library || totals.monitored);
+}
+
+function seriesState(totals) {
+  const episodes = Number(totals.episodes || 0);
+  const published = Number(totals.published || 0);
+  if (published > 0 && published >= episodes) return status('En Jellyfin', 'ok');
+  if (published > 0) {
+    return status(`${fmtInt(published)}/${fmtInt(episodes)} en Jellyfin`, 'info');
+  }
+  if (Number(totals.incomplete || 0) > 0 || Number(totals.monitored || 0) > 0) {
+    return status('En seguimiento', 'info');
+  }
+  return status('Sin fuente', 'muted');
 }
 
 function seasonLabel(season) {
@@ -48,21 +60,31 @@ export async function renderSeries({ params, query, signal }) {
     .filter((entry) => entry.season === 0)
     .flatMap((entry) => entry.episodes || [])
     .filter((episode) => !episode.in_catalog).length;
-  const allAdded = totals.catalog_episodes > 0
-    && (totals.covered || 0) >= totals.catalog_episodes;
+  const allAdded = (totals.episodes || 0) > 0
+    && (totals.covered || 0) >= (totals.episodes || 0);
   const notAdded = Math.max(0, (totals.episodes || 0) - (totals.catalog_episodes || 0));
+  const seriesSummary = [
+    totals.library ? `${fmtInt(totals.library)} en Radarr/Sonarr` : '',
+    totals.monitored ? `${fmtInt(totals.monitored)} en seguimiento` : '',
+    totals.incomplete ? `${fmtInt(totals.incomplete)} sin fuente` : '',
+    notAdded ? `${fmtInt(notAdded)} sin catalogar` : '',
+  ].filter(Boolean).join(' · ');
   const seriesMode = totals.library || totals.monitored ? 'update' : 'add';
   const seriesAction = totalRequested(totals) ? 'Catalogar episodios que faltan' : 'Catalogar serie';
-  const seasonAdded = (seasonData?.catalog_episodes || 0) > 0
-    && (seasonData?.covered || 0) >= (seasonData?.catalog_episodes || 0);
+  const seasonAdded = (seasonData?.episode_count || 0) > 0
+    && (seasonData?.covered || 0) >= (seasonData?.episode_count || 0);
   const seasonMode = seasonData?.library || seasonData?.monitored ? 'update' : 'add';
   const seasonAction = seasonData?.library || seasonData?.monitored
     ? 'Catalogar episodios que faltan'
     : 'Catalogar temporada';
-  setHeader('Serie', 'Biblioteca');
+  setHeader(series.title || 'Serie');
   document.title = `${series.title || 'Serie'}, TOD`;
 
-  const rows = (seasonData?.episodes || []).map((ep) => {
+  const episodes = seasonData?.episodes || [];
+  const showSources = episodes.some((ep) => Number(ep.releases) > 0);
+  const showProgress = episodes.some((ep) => ep.download === 'descargando' || ep.progress);
+  const columns = 3 + (showSources ? 1 : 0) + (showProgress ? 1 : 0);
+  const rows = episodes.map((ep) => {
     const tag = `T${String(ep.season).padStart(2, '0')}E${String(ep.episode).padStart(2, '0')}`;
     const name = ep.name || `Episodio ${ep.episode}`;
     const actions = ep.in_catalog
@@ -74,22 +96,20 @@ export async function renderSeries({ params, query, signal }) {
       : '<span class="faint">—</span>';
     const sources = ep.releases
       ? `${fmtInt(ep.releases)} <span class="faint">/ ${fmtInt(ep.alive)} vivos</span>`
-      : ep.library_added
-        ? (ep.incomplete ? status('Sin fuente', 'warn') : status('En Radarr/Sonarr', 'info'))
-        : '<span class="faint">—</span>';
+      : '<span class="faint">—</span>';
     return `<tr class="${ep.in_catalog ? '' : 'row-missing'}">
       <td data-label="Episodio">
         <a class="episode-title-cell" href="#/title/${ep.id}">
           ${still(ep.still_path, name)}
           <div class="cell-title">
             <strong>${esc(name)}</strong>
-            <small>${tag}, ${esc(fmtShortDate(ep.air_date))}</small>
+            <small>${tag}, ${esc(fmtShortDate(ep.air_date))}${ep.library_added ? ' · En Radarr/Sonarr' : ''}</small>
           </div>
         </a>
       </td>
       <td data-label="Estado">${episodeStatus(ep)}</td>
-      <td data-label="Fuentes">${sources}</td>
-      <td data-label="Progreso">${ep.download === 'descargando' || ep.progress ? `<div class="progress-cell">${bar(ep.progress)}<span>${pct(ep.progress)}%</span></div>` : '<span class="faint">—</span>'}</td>
+      ${showSources ? `<td data-label="Fuentes">${sources}</td>` : ''}
+      ${showProgress ? `<td data-label="Progreso">${ep.download === 'descargando' || ep.progress ? `<div class="progress-cell">${bar(ep.progress)}<span>${pct(ep.progress)}%</span></div>` : '<span class="faint">—</span>'}</td>` : ''}
       <td class="actions" data-label="">${actions}</td>
     </tr>`;
   }).join('');
@@ -116,19 +136,16 @@ export async function renderSeries({ params, query, signal }) {
           <h2>${esc(series.title || 'Serie')} ${series.year ? `<span class="muted" style="font-size:16px;font-weight:400">(${series.year})</span>` : ''}</h2>
           <div class="row">
             ${badge('serie', 'mono')}
-            ${status(`${fmtInt(totals.episodes || 0)} episodios`, 'muted')}
-            ${status(`${fmtInt(totals.library || 0)} en Radarr/Sonarr`, 'info')}
-            ${totals.monitored ? status(`${fmtInt(totals.monitored)} en seguimiento`, 'info') : ''}
-            ${totals.incomplete ? status(`${fmtInt(totals.incomplete)} sin fuente`, 'warn') : ''}
-            ${notAdded ? status(`${fmtInt(notAdded)} sin catalogar`, 'muted') : ''}
-            ${series.in_library ? badge('en Radarr/Sonarr', 'mono') : ''}
+            ${badge(`${fmtInt(totals.episodes || 0)} episodios`, 'mono')}
+            ${seriesState(totals)}
           </div>
+          ${seriesSummary ? `<p class="tiny muted" style="margin:6px 0 0">${esc(seriesSummary)}</p>` : ''}
           ${series.overview ? `<p class="overview">${esc(series.overview)}</p>` : ''}
           <div class="detail-actions">
             ${allAdded ? '' : `<button class="btn btn-primary" data-action="library-series" data-tmdb="${tmdb}" data-title="${esc(series.title || '')}" data-mode="${seriesMode}">${icon('plus')} ${seriesAction}</button>`}
             <button class="btn" data-action="sync-series" data-tmdb="${tmdb}">${icon('search')} Buscar y añadir a Jellyfin</button>
-            ${totals.library ? `<button class="btn btn-danger" data-action="unpublish-series" data-tmdb="${tmdb}">Quitar</button>` : ''}
             <a class="btn btn-ghost" href="${esc(data.tmdb_url || '#')}" target="_blank" rel="noreferrer">${icon('external')} TMDB</a>
+            ${totals.library ? `<button class="btn btn-sm btn-ghost danger-action" data-action="unpublish-series" data-tmdb="${tmdb}">Quitar de TOD</button>` : ''}
           </div>
         </div>
       </div>
@@ -166,8 +183,8 @@ export async function renderSeries({ params, query, signal }) {
         </div>
         <div class="table-wrap">
           <table class="table--stack">
-            <thead><tr><th>Episodio</th><th>Estado</th><th>Fuentes</th><th>Progreso</th><th></th></tr></thead>
-            <tbody>${rows || `<tr><td colspan="5">${empty('Sin episodios', 'TMDB no devolvió episodios para esta temporada.')}</td></tr>`}</tbody>
+            <thead><tr><th>Episodio</th><th>Estado</th>${showSources ? '<th>Fuentes</th>' : ''}${showProgress ? '<th>Progreso</th>' : ''}<th></th></tr></thead>
+            <tbody>${rows || `<tr><td colspan="${columns}">${empty('Sin episodios', 'TMDB no devolvió episodios para esta temporada.')}</td></tr>`}</tbody>
           </table>
         </div>
       </div>

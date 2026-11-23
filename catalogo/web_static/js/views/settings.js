@@ -1,5 +1,5 @@
 import { api } from '../api.js';
-import { attentionSummary } from '../attention.js';
+import { attentionSummary, paintAttention } from '../attention.js';
 import { esc, fmtBytes, fmtDate, fmtInt } from '../format.js';
 import { state } from '../store.js';
 import { $, badge, icon, setHeader, status } from '../ui.js';
@@ -117,6 +117,18 @@ function paramsEditor(task) {
   </details>`;
 }
 
+function indexerRow(indexer) {
+  return `<div class="kv" data-indexer-row>
+    <span>${esc(indexer.name)} <span data-indexer-state>${indexer.enabled === false ? status('Pausado', 'warn') : status('Activo', 'ok')}</span></span>
+    <span class="row" style="gap:8px">
+      <span class="tiny faint">${fmtInt(indexer.queries)} consultas</span>
+      ${indexer.failed ? status(`${fmtInt(indexer.failed)} ${indexer.failed === 1 ? 'fallo' : 'fallos'}`, 'warn') : status('Sin fallos', 'ok')}
+      <span class="tiny faint">${fmtInt(indexer.response_ms)} ms</span>
+      <button class="btn btn-sm btn-ghost" data-action="monitor-indexer" data-id="${indexer.id}" data-enabled="${indexer.enabled === false ? '0' : '1'}">${indexer.enabled === false ? 'Activar' : 'Pausar'}</button>
+    </span>
+  </div>`;
+}
+
 function schedulerRow(task) {
   const cadence = task.schedule === 'interval'
     ? `<input class="input input-sm" type="number" min="10" step="10" data-task="${esc(task.name)}" data-field="interval" value="${esc(task.interval)}"> s`
@@ -168,22 +180,57 @@ function diskLine(item, key) {
 }
 
 export async function renderSettings({ signal, query } = {}) {
-  const [data, schedule, attention, seed, language, system] = await Promise.all([
+  const [data, schedule, attention, seed, language, system, indexers] = await Promise.all([
     api('/api/settings', { signal }),
     api('/api/scheduler', { signal }),
     api('/api/attention', { signal }).catch(() => null),
     api('/api/seed', { signal }).catch(() => null),
     api('/api/language', { signal }).catch(() => null),
     api('/api/system', { signal }).catch(() => null),
+    api('/api/indexers', { signal }).catch(() => ({ items: [] })),
   ]);
   state.attention = attention;
+  paintAttention(attention);
   const languagePreference = language?.preference || 'any';
-  setHeader('Configuración', 'Sistema');
+  setHeader('Configuración');
   const items = data.settings || [];
   const integrationKeys = new Set(INTEGRATIONS.flatMap((meta) =>
     items.filter((item) => item.key.startsWith(`${meta.prefix}_`)).map((item) => item.key)));
   const otherIntegrations = items.filter((item) => item.section === 'integraciones' && !integrationKeys.has(item.key));
   const dirs = items.filter((item) => item.section === 'directorios');
+  const catalogPath = system?.paths?.catalog_library;
+  const catalogDisk = (system?.disk || []).find((disk) => disk.path === catalogPath);
+  const setup = [
+    {
+      key: 'qbittorrent',
+      label: 'Conectar qBittorrent',
+      help: 'Descarga, siembra y sirve los torrents.',
+      done: Boolean(system?.capabilities?.qbittorrent),
+      target: 'settings-integrations',
+    },
+    {
+      key: 'sources',
+      label: 'Configurar Prowlarr o Jackett',
+      help: 'Basta con uno de los dos para descubrir fuentes.',
+      done: Boolean(system?.capabilities?.prowlarr || system?.capabilities?.jackett),
+      target: 'settings-integrations',
+    },
+    {
+      key: 'directories',
+      label: 'Revisar los directorios',
+      help: 'Carpeta de los .strm, descargas y biblioteca existente.',
+      done: Boolean(catalogPath) && (!catalogDisk || catalogDisk.ok !== false),
+      target: 'settings-directories',
+    },
+    {
+      key: 'jellyfin',
+      label: 'Conectar Jellyfin',
+      help: 'Opcional: es donde se ven los títulos.',
+      done: Boolean(system?.capabilities?.jellyfin),
+      target: 'settings-integrations',
+    },
+  ];
+  const setupDone = setup.filter((step) => step.done).length;
   const playback = items.filter((item) => item.section === 'reproduccion');
   const security = items.filter((item) => item.section === 'seguridad');
   const seedDefaults = seed?.defaults || { min_hours: 72, ratio: 1, force: true, allow_delete: false };
@@ -215,8 +262,8 @@ export async function renderSettings({ signal, query } = {}) {
     const detail = [
       stats.privacy || known.privacy || current.privacy || '',
       stats.releases !== undefined
-        ? `${fmtInt(stats.releases)} releases`
-        : known.releases ? `${fmtInt(known.releases)} releases` : '',
+        ? `${fmtInt(stats.releases)} versiones`
+        : known.releases ? `${fmtInt(known.releases)} versiones` : '',
       stats.alive !== undefined ? `${fmtInt(stats.alive)} vivos` : '',
       stats.blocked ? `${fmtInt(stats.blocked)} bloqueados` : '',
     ].filter(Boolean).join(' · ');
@@ -243,8 +290,8 @@ export async function renderSettings({ signal, query } = {}) {
     <div class="panel pad section">
       <div class="row between" style="align-items:flex-start">
         <div style="flex:1;min-width:280px">
-          <strong>Integraciones y biblioteca</strong>
-          <p class="muted tiny" style="margin:4px 0 0">Conecta qBittorrent, Prowlarr/Jackett y Jellyfin. Radarr/Sonarr se espejan automáticamente. Los cambios se aplican al guardar; la URL de reproducción requiere reinicio.</p>
+          <strong>Ajustes de TOD</strong>
+          <p class="muted tiny" style="margin:4px 0 0">Integraciones, indexers, directorios, reproducción y tareas. Los cambios se aplican al guardar; la URL de reproducción requiere reinicio.</p>
         </div>
         <div class="row">
           <a href="#/system" title="Ver avisos en Estado" style="text-decoration:none">${attentionSummary(attention)}</a>
@@ -255,6 +302,7 @@ export async function renderSettings({ signal, query } = {}) {
       ${data.restart_required?.length ? `<div class="notice">Requieren reinicio: ${data.restart_required.map((key) => esc(items.find((item) => item.key === key)?.label || key)).join(', ')}</div>` : ''}
       <nav class="settings-nav" aria-label="Secciones de configuración">
         <button class="settings-tab" data-action="settings-jump" data-target="settings-integrations">Integraciones</button>
+        <button class="settings-tab" data-action="settings-jump" data-target="settings-indexers">Indexers</button>
         <button class="settings-tab" data-action="settings-jump" data-target="settings-directories">Directorios</button>
         <button class="settings-tab" data-action="settings-jump" data-target="settings-playback">Reproducción</button>
         <button class="settings-tab" data-action="settings-jump" data-target="settings-security">Seguridad</button>
@@ -264,6 +312,27 @@ export async function renderSettings({ signal, query } = {}) {
       </nav>
     </div>
 
+    ${setupDone < setup.length ? `<div class="panel section" id="settings-setup">
+      <div class="panel-head">
+        <h2>Primeros pasos</h2>
+        <span class="right tiny faint">${setupDone} de ${setup.length} listos</span>
+      </div>
+      <div class="panel-body">
+        <div class="setup-list">
+          ${setup.map((step) => `<div class="setup-step ${step.done ? 'done' : ''}">
+            <span class="setup-mark">${step.done ? icon('check', 'sm') : ''}</span>
+            <div class="setup-copy">
+              <strong>${esc(step.label)}</strong>
+              <span class="tiny faint">${esc(step.help)}</span>
+            </div>
+            ${step.done
+              ? status('Hecho', 'ok')
+              : `<button class="btn btn-sm" data-action="settings-jump" data-target="${step.target}">Configurar</button>`}
+          </div>`).join('')}
+        </div>
+      </div>
+    </div>` : ''}
+
     <div class="section" id="settings-integrations">
       <div class="panel-head"><h2>${sectionDot(attention, 'integraciones')}Integraciones</h2><span class="right tiny faint settings-hint">Prowlarr, Jackett, qBittorrent, Jellyfin, Radarr/Sonarr</span></div>
       <div class="settings-grid">
@@ -271,6 +340,20 @@ export async function renderSettings({ signal, query } = {}) {
           items.filter((item) => item.key.startsWith(`${meta.prefix}_`)), meta, data.paths, attention,
         )).join('')}
         ${otherIntegrations.length ? integrationCard(otherIntegrations, { name: 'otros', label: 'Otros servicios' }, data.paths, attention) : ''}
+      </div>
+    </div>
+
+    <div class="panel section" id="settings-indexers">
+      <div class="panel-head">
+        <h2>Indexers</h2>
+        <span class="right tiny faint">${indexers.enabled || 0} de ${indexers.total || 0} activos</span>
+      </div>
+      <div class="panel-body" style="padding-top:4px;padding-bottom:8px">
+        <p class="muted tiny" style="margin-top:0">Pausar un indexer lo desactiva en Prowlarr y afecta también a Radarr y Sonarr. Las estadísticas se leen de Prowlarr.</p>
+        ${indexers.error ? `<div class="notice">${esc(indexers.error)}</div>` : ''}
+        ${(indexers.items || []).length
+          ? indexers.items.map(indexerRow).join('')
+          : empty('Sin indexers', 'Configura Prowlarr o Jackett para descubrir fuentes.')}
       </div>
     </div>
 
@@ -356,7 +439,7 @@ export async function renderSettings({ signal, query } = {}) {
           </label>
         </div>
         <p class="muted tiny" style="margin:12px 0 8px">
-          «Descargar» solo permite o bloquea descargas nuevas. «Bloquear» marca sus releases como no disponibles y, si lo eliges, borra sus <span class="mono">.strm</span>.
+          «Descargar» solo permite o bloquea descargas nuevas. «Bloquear» marca sus versiones como no disponibles y, si lo eliges, borra sus <span class="mono">.strm</span>.
         </p>
         <div class="table-wrap">
           <table class="table--stack">
@@ -386,6 +469,17 @@ export async function renderSettings({ signal, query } = {}) {
       <button class="btn btn-primary" data-action="settings-save">${icon('check', 'sm')} Guardar configuración</button>
     </div>
   `;
+
+  const section = query?.get('section');
+  if (section) {
+    const target = document.getElementById(`settings-${section}`);
+    if (target) {
+      target.scrollIntoView({ block: 'start' });
+      document.querySelectorAll('.settings-tab').forEach((tab) => {
+        tab.classList.toggle('active', tab.dataset.target === `settings-${section}`);
+      });
+    }
+  }
 
   if (!state.settingsDirtyHandler) {
     state.settingsDirtyHandler = (event) => {

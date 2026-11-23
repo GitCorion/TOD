@@ -1,6 +1,6 @@
 import { api } from '../api.js';
 import { esc, fmtInt } from '../format.js';
-import { originLabel } from '../labels.js';
+import { originLabel, WATCH, watchState } from '../labels.js';
 import { state } from '../store.js';
 import { $, badge, empty, icon, poster, setHeader, status, thumb } from '../ui.js';
 
@@ -9,26 +9,19 @@ function primaryStatus(item) {
     if (item.kind === 'series' && item.episodes) {
       return status(`${fmtInt(item.published_episodes || 0)}/${fmtInt(item.episodes)} en Jellyfin`, 'ok');
     }
-    return status('En Jellyfin', 'ok');
+    return status(WATCH.ready.label, WATCH.ready.tone);
   }
-  if (item.download === 'descargando') return status('Descargando', 'info');
-  if (item.download === 'pausado') return status('Pausado', 'warn');
-  if (item.download === 'error') return status('Error', 'bad');
-  if (item.downloaded) return status('Descargado', 'ok');
-  if (item.library_added) {
-    if (item.kind === 'series' && item.episodes) {
-      return status(`${fmtInt(item.library_episodes || 0)}/${fmtInt(item.episodes)} en Radarr/Sonarr`, 'info');
-    }
-    return item.alive
-      ? status('En Radarr/Sonarr', 'info')
-      : status('En Radarr/Sonarr · sin fuente', 'warn');
+  if (item.download === 'descargando') {
+    const progress = Math.round(Number(item.progress || 0) * 100);
+    return status(progress ? `Descargando ${progress}%` : 'Descargando', 'info');
   }
-  if (item.publication === 'pendiente' || item.alive) {
-    return item.alive
-      ? status(`${item.alive} fuentes`, 'info')
-      : status('Sin verificar', 'warn');
+  if (item.download === 'pausado') return status('Descarga pausada', 'warn');
+  if (item.download === 'error') return status('Error de descarga', 'bad');
+  if (item.publication === 'pendiente' || item.downloaded || item.alive) {
+    return status(WATCH.pending.label, WATCH.pending.tone);
   }
-  return status('Sin fuente', 'muted');
+  const state = watchState(item);
+  return status(state.label, state.tone);
 }
 
 function card(item, selected) {
@@ -98,7 +91,7 @@ export async function renderCatalog({ query, signal }) {
     page: Math.max(1, Number(query.get('page')) || 1),
   };
   state.filters = filters;
-  setHeader('Biblioteca', 'Contenido');
+  setHeader('Biblioteca');
 
   const params = new URLSearchParams({
     q: filters.q,

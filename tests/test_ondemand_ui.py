@@ -473,3 +473,22 @@ def test_metadata_backfill_updates_all_episodes(tmp_path):
     assert all(row[2] == 8.0 for row in rows)
     assert all(row[3] for row in rows)
     assert pending_targets(db) == []
+
+
+def test_recent_published_only_returns_titles_with_strm(tmp_path):
+    db = _seed(tmp_path)
+    config = _config(tmp_path, db)
+    conn = sqlite3.connect(db)
+    conn.row_factory = sqlite3.Row
+    row = dict(conn.execute(
+        "SELECT key, kind, title, year, season, episode FROM media_items "
+        "WHERE key='movie:tmdb:1'"
+    ).fetchone())
+    conn.close()
+    from catalogo.strm import strm_path
+
+    path = strm_path(config.catalog_library, row)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text("http://127.0.0.1:8773/play?key=movie:tmdb:1", encoding="utf-8")
+    data = ondemand.recent_published(db, config)
+    assert [item["key"] for item in data["items"]] == ["movie:tmdb:1"]
