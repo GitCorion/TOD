@@ -470,17 +470,6 @@ export async function renderSettings({ signal, query } = {}) {
     </div>
   `;
 
-  const section = query?.get('section');
-  if (section) {
-    const target = document.getElementById(`settings-${section}`);
-    if (target) {
-      target.scrollIntoView({ block: 'start' });
-      document.querySelectorAll('.settings-tab').forEach((tab) => {
-        tab.classList.toggle('active', tab.dataset.target === `settings-${section}`);
-      });
-    }
-  }
-
   if (!state.settingsDirtyHandler) {
     state.settingsDirtyHandler = (event) => {
       if (state.view !== 'settings') return;
@@ -494,6 +483,7 @@ export async function renderSettings({ signal, query } = {}) {
 
   const sections = {
     integraciones: 'settings-integrations',
+    indexers: 'settings-indexers',
     directorios: 'settings-directories',
     reproduccion: 'settings-playback',
     seguridad: 'settings-security',
@@ -507,6 +497,9 @@ export async function renderSettings({ signal, query } = {}) {
       document.getElementById(target)?.scrollIntoView({
         behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth',
         block: 'start',
+      });
+      document.querySelectorAll('.settings-tab').forEach((tab) => {
+        tab.classList.toggle('active', tab.dataset.target === target);
       });
       const focus = query.get('focus');
       if (!focus) return;

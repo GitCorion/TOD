@@ -14,6 +14,7 @@ catalogo/
 ├── backend.py        qBittorrent de escritura, admisión y capacidad
 ├── scheduler.py      tareas periódicas internas
 ├── app_settings.py   ajustes tipados, secretos y recarga
+├── log.py            niveles y formato de log del proceso
 ├── attention.py      avisos agregados de configuración, rutas e integraciones
 ├── integrations.py   pruebas de conexión
 ├── arr.py            clientes Radarr/Sonarr (lectura y altas puntuales)
@@ -90,6 +91,9 @@ principales:
 | `/api/overview`, `/api/activity` | panel |
 | `/api/attention`, `/api/attention/check` | avisos de estado y comprobación bajo demanda |
 | `/api/ondemand/*` | catálogo, añadir, descargar |
+| `/api/ondemand/recent` | últimas incorporaciones ya publicadas |
+| `/api/indexers` | indexers de Prowlarr y su estado |
+| `/api/monitor/health` | salud de RSS, barrido e indexers |
 | `/api/intake`, `/api/intake/preflight`, `/api/intake/import` | recepción, análisis y alta de listas |
 | `/api/intake/torrent` | `.torrent` manual a qBittorrent |
 | `/api/intake/batches/{id}` | detalle de un lote |

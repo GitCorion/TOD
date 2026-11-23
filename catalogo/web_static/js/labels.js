@@ -301,7 +301,7 @@ export const TASKS = [
     ],
   },
   {
-    kind: 'export-strm', title: 'Exportar .strm', category: 'biblioteca',
+    kind: 'export-strm', title: 'Crear entradas de Jellyfin', category: 'biblioteca',
     desc: 'Genera los ficheros estables de Jellyfin.',
     fields: [
       { name: 'year', label: 'Año (vacío = todo)', type: 'number', value: CURRENT_YEAR, min: 1900 },
@@ -323,7 +323,7 @@ export const TASKS = [
     ],
   },
   {
-    kind: 'monitor', title: 'Buscar seguimiento', category: 'biblioteca',
+    kind: 'monitor', title: 'Buscar fuentes en seguimiento', category: 'biblioteca',
     desc: 'Busca títulos ya estrenados o emitidos. Los futuros esperan su fecha.',
     fields: [
       { name: 'limit', label: 'Títulos', type: 'number', value: 50, min: 1 },
@@ -345,7 +345,7 @@ export const TASKS = [
     ],
   },
   {
-    kind: 'prune-library', title: 'Podar Radarr/Sonarr', category: 'biblioteca',
+    kind: 'prune-library', title: 'Limpiar Radarr/Sonarr', category: 'biblioteca',
     desc: 'Borra .strm de títulos que ya están en Radarr/Sonarr.',
     fields: [
       { name: 'execute', label: 'Ejecutar de verdad (no dry-run)', type: 'checkbox', value: false },

@@ -103,7 +103,7 @@ export async function renderSeeds({ signal }) {
           <button class="chip" data-action="open-task" data-kind="seeding">${icon('refresh', 'sm')} Mantener siembra mínima</button>
           <a class="chip" href="#/settings?section=siembra">Ajustes de siembra</a>
         </div>
-        <p class="muted tiny" style="margin:12px 0 0">TOD fuerza el seed hasta cumplir horas y ratio. Después lo suelta y qBittorrent aplica sus reglas. Por defecto TOD no elimina; puedes permitir el borrado desde TOD en Configuración → Siembra.</p>
+        <p class="muted tiny" style="margin:12px 0 0">TOD fuerza la siembra hasta cumplir horas y ratio. Después la suelta y qBittorrent aplica sus reglas. Por defecto TOD no elimina; puedes permitir el borrado desde TOD en Configuración → Trackers y siembra.</p>
       </div>
     </div>
 
