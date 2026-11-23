@@ -49,6 +49,9 @@ AUTO_PREPARE_WAIT = 55.0
 AUTO_PREPARE_RETRY_WAIT = 25.0
 AUTO_PREPARE_TOTAL_WAIT = 95.0
 SOURCE_SEARCH_TTL = 300.0
+# Al reintentar un release que acaba de fallar no esperamos los 5 min
+# completos, pero tampoco machacamos al indexer en cada pulsación.
+FORCED_SEARCH_TTL = 60.0
 _SOURCE_SEARCH_LOCK = threading.Lock()
 _SOURCE_SEARCH_AT: dict[str, float] = {}
 _SOURCE_SEARCH_RESULT: dict[str, bool] = {}
@@ -62,9 +65,6 @@ class _NoProwlarr:
 
     def search(self, *args: Any, **kwargs: Any) -> list[dict]:
         return []
-
-_SEARCH_AT: dict[str, float] = {}
-_SEARCH_COOLDOWN = 300.0
 
 ADMISSION_MESSAGES = {
     "sin_espacio": "No hay espacio suficiente en disco para esta descarga.",
@@ -137,49 +137,6 @@ class CatalogHandler(BaseHTTPRequestHandler):
         app = getattr(self, "app", None)
         return getattr(app, "config", None)
 
-    def _search_sources(self, key: str) -> bool:
-        """Busca fuentes nuevas cuando el título no tiene ninguna viva.
-
-        Jellyfin/Medusa llama a /prepare al darle a play. Si el único
-        release conocido está muerto, sin esta búsqueda se devolvía
-        ``sin_fuente`` aunque hubiera versiones nuevas en los indexers.
-        """
-        config = self.config
-        if config is None:
-            return False
-        with closing(connect(self.db_path)) as conn:
-            row = conn.execute(
-                "SELECT kind, air_date FROM media_items "
-                "WHERE key = ? OR media_id = ? LIMIT 1",
-                (key, key),
-            ).fetchone()
-        if row is not None and row["kind"] == "series":
-            air_date = str(row["air_date"] or "")[:10]
-            today = time.strftime("%Y-%m-%d", time.gmtime())
-            if air_date and air_date > today:
-                # Aún no se ha estrenado: no hay nada que buscar.
-                return False
-        now = time.monotonic()
-        if now - _SEARCH_AT.get(key, 0.0) < _SEARCH_COOLDOWN:
-            return False
-        _SEARCH_AT[key] = now
-        try:
-            from .admin import manual_search
-
-            report = manual_search(config, key)
-        except Exception as exc:
-            print(f"prepare search {key}: {str(exc)[:160]}", flush=True)
-            return False
-        summary = (report or {}).get("summary") or {}
-        inserted = int(summary.get("inserted") or 0)
-        updated = int(summary.get("updated") or 0)
-        print(
-            f"prepare search key={key} inserted={inserted} updated={updated} "
-            f"errors={len(summary.get('errors') or [])}",
-            flush=True,
-        )
-        return bool(inserted or updated)
-
     def _alive_sources(self, key: str) -> int:
         with closing(connect(self.db_path)) as conn:
             row = conn.execute(
@@ -195,19 +152,22 @@ class CatalogHandler(BaseHTTPRequestHandler):
             ).fetchone()
         return int(row["n"] if row is not None else 0)
 
-    def _search_sources(self, key: str) -> bool:
+    def _search_sources(self, key: str, *, force: bool = False) -> bool:
         """Busca fuentes al vuelo, una vez por título y ventana de tiempo.
 
         Permite un catálogo enorme: el `.strm` existe porque hay fuente, y
-        si murió se reintenta en el momento de reproducir.
+        si murió se reintenta en el momento de reproducir. Con ``force`` se
+        salta la caché (salvo un margen corto) cuando el release fijado ha
+        fallado al abrirlo.
         """
         config = self.config
         if config is None:
             return False
         now = time.monotonic()
+        ttl = FORCED_SEARCH_TTL if force else SOURCE_SEARCH_TTL
         with _SOURCE_SEARCH_LOCK:
             last = _SOURCE_SEARCH_AT.get(key)
-            if last is not None and now - last < SOURCE_SEARCH_TTL:
+            if last is not None and now - last < ttl:
                 return bool(_SOURCE_SEARCH_RESULT.get(key))
             _SOURCE_SEARCH_AT[key] = now
             _SOURCE_SEARCH_RESULT[key] = False
@@ -447,9 +407,23 @@ class CatalogHandler(BaseHTTPRequestHandler):
                 user_agent=self.headers.get("User-Agent"),
             )
             try:
-                handle = self.play_service.ensure(
-                    key, release_id=release_id, force=True
-                )
+                try:
+                    handle = self.play_service.ensure(
+                        key, release_id=release_id, force=True
+                    )
+                except (NoSource, ReleaseUnavailable):
+                    # El release que fija el .strm puede estar muerto (el
+                    # índice devuelve 404) aunque el tracker lo anuncie vivo.
+                    # Buscamos alternativas una vez y reintentamos la mejor.
+                    if release_id is None or not self._search_sources(
+                        key, force=True
+                    ):
+                        raise
+                    handle = self.play_service.ensure(
+                        key, release_id=None, force=True
+                    )
+                    # Reflejar la fuente que realmente se ha elegido.
+                    release_id = handle.get("release_id")
             except AdmissionDenied as exc:
                 if exc.decision.get("reason") == "tracker_disabled":
                     tracker = None

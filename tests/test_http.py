@@ -894,3 +894,52 @@ def test_play_adopts_queued_arr_torrent_and_forces_it(tmp_path):
         server.shutdown()
         server.server_close()
         thread.join(timeout=5)
+
+
+class PinnedBrokenPlayService(FakePlayService):
+    """Falla con el release fijado y sirve la mejor viva sin pin."""
+
+    def ensure(self, media_id, *, release_id=None, torrent_bytes=None, force=False):
+        from catalogo.backend import ReleaseUnavailable
+
+        if release_id is not None:
+            self.ensured.append((media_id, release_id))
+            raise ReleaseUnavailable(
+                "el índice devolvió HTTP 404",
+                release_id=release_id,
+                tracker="eMuwarez (API)",
+            )
+        return super().ensure(media_id, release_id=None, force=force)
+
+
+def test_prepare_retries_without_pin_when_release_is_broken(tmp_path, monkeypatch):
+    from catalogo import http as http_module
+
+    db, _content = build_db(tmp_path)
+    service = PinnedBrokenPlayService()
+    searched = []
+
+    def fake_search(self, key, *, force=False):
+        searched.append((key, force))
+        return True
+
+    monkeypatch.setattr(http_module.CatalogHandler, "_search_sources", fake_search)
+    server = make_server("127.0.0.1", 0, db, play_service=service)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    host, port = server.server_address
+    try:
+        conn = http.client.HTTPConnection(host, port, timeout=5)
+        # release 2 existe y está "alive" en el índice, pero abrirlo falla.
+        conn.request("POST", "/prepare?key=movie%3Atmdb%3A2&release=2")
+        response = conn.getresponse()
+        body = response.read()
+        conn.close()
+        assert response.status == 202, body
+        assert b'"prepared": true' in body
+        assert searched == [("movie:tmdb:2", True)]
+        assert service.ensured == [("movie:tmdb:2", 2), ("movie:tmdb:2", None)]
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=5)
