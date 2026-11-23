@@ -9,12 +9,20 @@ function episodeStatus(ep) {
   if (ep.download === 'descargando') return status(`Descargando ${pct(ep.progress)}%`, 'info');
   if (ep.download === 'pausado') return status('Descarga pausada', 'warn');
   if (ep.download === 'error') return status('Error de descarga', 'bad');
-  if (ep.downloaded) return status('Falta en Jellyfin', 'info');
-  if (ep.incomplete) return status('Sin fuente', 'warn');
-  if (ep.library_added && ep.monitored && ep.available === false) return status('Sin estrenar', 'muted');
-  if (ep.monitored) return status('En seguimiento', 'info');
+  if (ep.downloaded) return status('Fichero listo · falta en Jellyfin', 'info');
+  const hasSource = Number(ep.alive || 0) > 0 || Number(ep.releases || 0) > 0;
+  if (ep.library_added) {
+    if (ep.available === false) return status('Sin estrenar', 'muted');
+    if (hasSource) return status('Fuente lista · sin descargar', 'info');
+    return status('Sin fichero', 'warn');
+  }
+  if (ep.monitored) {
+    return hasSource
+      ? status('Fuente lista · sin descargar', 'info')
+      : status('Buscando fuente', 'info');
+  }
   if (!ep.in_catalog) return status('Sin catalogar', 'muted');
-  return status('Sin fuente', 'muted');
+  return hasSource ? status('Fuente lista', 'info') : status('Sin fuente', 'muted');
 }
 
 function still(path, title) {
@@ -103,7 +111,7 @@ export async function renderSeries({ params, query, signal }) {
           ${still(ep.still_path, name)}
           <div class="cell-title">
             <strong>${esc(name)}</strong>
-            <small>${tag}, ${esc(fmtShortDate(ep.air_date))}${ep.library_added ? ` · En Radarr/Sonarr${ep.downloaded ? '' : ' (sin fichero)'}` : ''}</small>
+            <small>${tag}, ${esc(fmtShortDate(ep.air_date))}${ep.library_added ? ' · En Sonarr' : ''}</small>
           </div>
         </a>
       </td>
