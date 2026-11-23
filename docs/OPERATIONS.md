@@ -161,7 +161,13 @@ tod qbit-limits
   pone 0 días/ratio, actualiza sus releases y cierra las siembras abiertas.
   También se puede cambiar el mínimo:
   `tod set-policy Tracker --min-seed-hours 24 --target-ratio 0.5`.
-- Públicos: sin compromiso de seed.
+- **Retención hasta la biblioteca**: por defecto TOD no permite borrar una
+  descarga completada hasta que `library_files` confirma que ya está en
+  Radarr/Sonarr. Si el puente falla, espera como máximo
+  `seed.keep_max_hours` (0 = sin límite) antes de permitir el borrado, para
+  no perder la única copia. Se ajusta en Configuración → Siembra.
+- Públicos: sin compromiso de seed, pero la retención hasta la biblioteca
+  sigue aplicando.
 - `evict`, `reseed`, `abandon`, `clean-broken` y `move-completed` ya no se
   usan: el borrado pertenece a qBittorrent.
 

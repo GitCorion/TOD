@@ -425,7 +425,9 @@ export async function renderSettings({ signal, query } = {}) {
           TOD mantiene el torrent en force-start hasta cumplir el mínimo. Después
           lo suelta y qBittorrent aplica sus propias reglas de ratio y tiempo.
           Por defecto qBittorrent decide el borrado; puedes permitir que TOD
-          también borre desde Descargas.
+          también borre desde Descargas. Si aún no está en la biblioteca de
+          Radarr/Sonarr, TOD espera hasta el máximo indicado (0 = sin límite)
+          para no perder la única copia.
         </p>
         <div class="form-grid">
           <label class="field"><span>Días mínimos por defecto</span>
@@ -441,6 +443,13 @@ export async function renderSettings({ signal, query } = {}) {
           <label class="inline check" style="align-self:end;padding-bottom:4px">
             <input type="checkbox" data-seed-field="allow_delete" ${seedDefaults.allow_delete ? 'checked' : ''}>
             Permitir borrar desde TOD
+          </label>
+          <label class="inline check" style="align-self:end;padding-bottom:4px">
+            <input type="checkbox" data-seed-field="keep_until_library" ${seedDefaults.keep_until_library !== false ? 'checked' : ''}>
+            Mantener hasta que esté en Radarr/Sonarr
+          </label>
+          <label class="field"><span>Máximo de espera (horas)</span>
+            <input class="input" type="number" min="0" max="8760" step="1" data-seed-field="keep_max_hours" value="${esc(seedDefaults.keep_max_hours ?? 72)}">
           </label>
           <label class="field"><span>&nbsp;</span>
             <button class="btn btn-primary" data-action="seed-save">${icon('check', 'sm')} Guardar siembra</button>

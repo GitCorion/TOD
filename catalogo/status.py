@@ -14,6 +14,7 @@ from typing import Any, Protocol
 from .db import connect
 from .policy import get_policy
 from .resolver import Resolution, Resolver
+from .retention import library_ready
 from .stream import file_offset
 
 
@@ -585,6 +586,9 @@ def asset_status(
             "tracker_verdict": commitment["tracker_verdict"],
             "tracker_message": commitment["tracker_message"],
             "tracker_checked_at": commitment["tracker_checked_at"],
+            "library_ready": (
+                library_ready(asset_id, db_path=db_path) if seed_active else False
+            ),
         }
     eta_seconds = _eta(live)
     if file_progress is not None and file_size and speed > 0:

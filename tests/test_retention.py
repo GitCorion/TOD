@@ -140,3 +140,67 @@ def test_evictable_only_lists_fulfilled(tmp_path):
     ids = {row["intent_id"] for row in rows}
     assert first in ids
     assert second not in ids
+
+
+def _add_library_file(db, kind="movie", tmdb=1, season=0, episode=0):
+    conn = sqlite3.connect(db)
+    conn.execute(
+        "INSERT INTO library_files(kind,tmdb,season,episode,path,source) "
+        "VALUES(?,?,?,?,?,?)",
+        (kind, tmdb, season, episode, "/mnt/fichier/Test.mkv", "radarr"),
+    )
+    conn.commit()
+    conn.close()
+
+
+def test_evictable_waits_until_the_library_has_it(tmp_path):
+    from catalogo.seed_settings import save as save_seed
+
+    db, asset, release = setup(tmp_path)
+    save_seed(
+        str(db), min_hours=72, ratio=1.0, force=True,
+        keep_until_library=True, keep_max_hours=200,
+    )
+    add_intent(db, asset, release, 73)
+    assert evictable(db, now=NOW) == []
+
+    _add_library_file(db)
+    rows = evictable(db, now=NOW)
+    assert len(rows) == 1
+    assert rows[0]["library_ready"] is True
+
+
+def test_evictable_gives_up_after_max_wait(tmp_path):
+    from catalogo.seed_settings import save as save_seed
+
+    db, asset, release = setup(tmp_path)
+    save_seed(
+        str(db), min_hours=72, ratio=1.0, force=True,
+        keep_until_library=True, keep_max_hours=24,
+    )
+    add_intent(db, asset, release, 73)
+    rows = evictable(db, now=NOW)
+    assert len(rows) == 1
+    assert rows[0]["library_ready"] is False
+
+
+def test_closed_commitment_waits_for_library_before_evict(tmp_path):
+    from catalogo.seed_settings import save as save_seed
+
+    db, asset, release = setup(tmp_path)
+    save_seed(
+        str(db), min_hours=72, ratio=1.0, force=True,
+        keep_until_library=True, keep_max_hours=200,
+    )
+    intent_id = add_intent(db, asset, release, 10)
+    conn = sqlite3.connect(db)
+    conn.execute("UPDATE seed_commitments SET state='done' WHERE id=?", (intent_id,))
+    conn.commit()
+    conn.close()
+
+    assert evictable(db, now=NOW) == []
+    _add_library_file(db)
+    rows = evictable(db, now=NOW)
+    assert len(rows) == 1
+    assert rows[0]["reason"] == "en_biblioteca"
+    assert rows[0]["library_ready"] is True

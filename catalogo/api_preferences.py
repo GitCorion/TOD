@@ -69,6 +69,8 @@ def handle(
                 ratio=body.get("ratio"),
                 force=body.get("force"),
                 allow_delete=body.get("allow_delete"),
+                keep_until_library=body.get("keep_until_library"),
+                keep_max_hours=body.get("keep_max_hours"),
             )
         except (TypeError, ValueError) as exc:
             raise WebError(400, str(exc)[:200])

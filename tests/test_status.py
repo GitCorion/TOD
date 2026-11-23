@@ -331,3 +331,24 @@ def test_closed_seed_commitment_has_no_pending_deadline(tmp_path):
     assert status["seed"]["required_until"] is None
     assert status["seed"]["remaining_seconds"] is None
     assert status["seed_required_until"] is None
+
+
+def test_seed_status_reports_library_ready(tmp_path):
+    from datetime import datetime, timedelta, timezone
+
+    now = datetime(2026, 11, 18, 12, 0, tzinfo=timezone.utc)
+    db, _asset_id, _release_id = seed(tmp_path, complete=True, local=True)
+    conn = sqlite3.connect(db)
+    conn.execute(
+        "UPDATE seed_commitments SET seed_started_at=?, "
+        "seed_required_until=NULL, info_hash='hash1'",
+        ((now - timedelta(hours=2)).isoformat(),),
+    )
+    conn.execute(
+        "INSERT INTO library_files(kind,tmdb,season,episode,path,source) "
+        "VALUES('movie',1,0,0,'/mnt/fichier/Test.mkv','radarr')"
+    )
+    conn.commit()
+    conn.close()
+    status = asset_status(db, "movie:tmdb:1", qbit=None, now=now)
+    assert status["seed"]["library_ready"] is True
