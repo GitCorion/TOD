@@ -105,6 +105,22 @@ miles o millones de títulos; Jellyfin solo ve los que tienen una fuente viva
 o un fichero local. Al reproducir, TOD revalida la fuente, busca otra si hace
 falta y prepara el torrent sin esperar a la cola de Radarr/Sonarr.
 
+## Instalación desde una release
+
+Cada release publica una imagen de Docker, un wheel de Python y un
+`docker-compose.release.yml` listo para usar.
+
+- **Docker (recomendado)**: descarga `docker-compose.release.yml` y
+  `env.docker.example` de la
+  [última release](https://github.com/GitCorion/TOD/releases/latest), renombra
+  el segundo a `.env`, ajusta la IP del servidor y las claves, y ejecuta
+  `docker compose -f docker-compose.release.yml up -d`.
+- **Python 3.11+**: instala el `.whl` de la release y ejecuta
+  `tod service --host 0.0.0.0 --port 8773`.
+- **Desde el código**: clona el tag y usa la guía de Docker o systemd.
+
+La imagen se publica en `ghcr.io/gitcorion/tod`.
+
 ## Instalación con Docker Compose
 
 Es la opción recomendada para una instalación completa: TOD, qBittorrent,
