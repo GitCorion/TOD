@@ -329,3 +329,25 @@ def test_swarm_failures_deprioritize_release(tmp_path):
     sources = resolver.sources("movie:tmdb:1")
     assert sources[0]["release_id"] == clean_id
     assert resolver.resolve("movie:tmdb:1").release_id == clean_id
+
+
+def test_blocked_tracker_is_not_offered(tmp_path):
+    from catalogo.policy import TrackerPolicy, upsert_policy
+
+    db, asset_id, release_id, *_rest = seed(tmp_path)
+    conn = sqlite3.connect(db)
+    conn.execute("DELETE FROM torrent_files")
+    conn.execute("UPDATE media_items SET active_file_id=NULL")
+    conn.commit()
+    conn.close()
+    upsert_policy(
+        str(db),
+        TrackerPolicy("TrackerEspanol2", privacy="public", enabled=False),
+    )
+    resolver = Resolver(db)
+    assert resolver.sources("movie:tmdb:1") == []
+    result = resolver.resolve_release("movie:tmdb:1", release_id)
+    assert result.source == "unavailable"
+    assert result.reason == "tracker_blocked"
+    assert result.tracker == "TrackerEspanol2"
+    assert resolver.resolve("movie:tmdb:1").source == "unavailable"

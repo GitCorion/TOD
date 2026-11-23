@@ -788,3 +788,42 @@ def test_prepare_capacity_has_message(tmp_path):
         server.shutdown()
         server.server_close()
         thread.join(timeout=5)
+
+
+class BlockedPlayService(FakePlayService):
+    def ensure(self, media_id, *, release_id=None, torrent_bytes=None):
+        from catalogo.play_service import AdmissionDenied
+
+        raise AdmissionDenied({"reason": "tracker_disabled"})
+
+
+def test_prepare_reports_tracker_blocked(tmp_path):
+    db, _content = build_db(tmp_path)
+    conn = sqlite3.connect(db)
+    release_id, tracker = conn.execute(
+        "SELECT id, tracker FROM releases WHERE asset_id="
+        "(SELECT id FROM media_items WHERE key='movie:tmdb:2')"
+    ).fetchone()
+    conn.close()
+    service = BlockedPlayService()
+    server = make_server("127.0.0.1", 0, db, play_service=service)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    host, port = server.server_address
+    try:
+        conn = http.client.HTTPConnection(host, port, timeout=5)
+        conn.request(
+            "POST",
+            f"/prepare?key=movie%3Atmdb%3A2&release={release_id}",
+        )
+        response = conn.getresponse()
+        body = json.loads(response.read())
+        conn.close()
+        assert response.status == 503
+        assert body["error"] == "tracker_blocked"
+        assert body["tracker"] == tracker
+        assert "bloqueado" in body["message"]
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=5)

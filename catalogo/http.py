@@ -387,12 +387,56 @@ class CatalogHandler(BaseHTTPRequestHandler):
                     key, release_id=release_id
                 )
             except AdmissionDenied as exc:
+                if exc.decision.get("reason") == "tracker_disabled":
+                    tracker = None
+                    if release_id is not None:
+                        with closing(connect(self.db_path)) as conn:
+                            row = conn.execute(
+                                "SELECT tracker FROM releases WHERE id = ?",
+                                (int(release_id),),
+                            ).fetchone()
+                        tracker = row["tracker"] if row is not None else None
+                    return _prepared(
+                        503,
+                        {
+                            "error": "tracker_blocked",
+                            "message": (
+                                f"El tracker {tracker} está bloqueado en TOD."
+                                if tracker else
+                                "El tracker está bloqueado en TOD."
+                            ),
+                            "key": key,
+                            "release_id": release_id,
+                            "tracker": tracker,
+                        },
+                        extra_headers={"Retry-After": "30"},
+                    )
                 return _prepared(
                     503,
                     {"error": "admission_denied", "message": error_message("admission_denied", exc.decision.get("reason")), **exc.decision},
                     extra_headers={"Retry-After": "30"},
                 )
             except NoSource as exc:
+                if exc.attempts and all(
+                    str(attempt.get("reason") or "") == "tracker_disabled"
+                    for attempt in exc.attempts
+                ):
+                    tracker = exc.attempts[0].get("tracker")
+                    return _prepared(
+                        503,
+                        {
+                            "error": "tracker_blocked",
+                            "message": (
+                                f"El tracker {tracker} está bloqueado en TOD."
+                                if tracker else
+                                "El tracker está bloqueado en TOD."
+                            ),
+                            "key": key,
+                            "tracker": tracker,
+                            "attempts": exc.attempts[:6],
+                        },
+                        extra_headers={"Retry-After": "30"},
+                    )
                 return _prepared(
                     503,
                     {
@@ -832,6 +876,23 @@ class CatalogHandler(BaseHTTPRequestHandler):
                     {**engine_error, "attempts": errors[:6]},
                     head=head,
                     extra_headers={"Retry-After": "20"},
+                )
+            if errors and all(
+                str(error.get("reason") or "") == "tracker_disabled"
+                for error in errors
+            ):
+                return self._json(
+                    503,
+                    {
+                        "error": "tracker_blocked",
+                        "message": (
+                            "Todas las fuentes son de trackers bloqueados."
+                        ),
+                        "key": resolution.key,
+                        "attempts": errors[:6],
+                    },
+                    head=head,
+                    extra_headers={"Retry-After": "30"},
                 )
             if errors and all(
                 str(error.get("error") or "").lower() == "capacityerror"

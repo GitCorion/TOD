@@ -80,16 +80,9 @@ def set_tracker_blocked(
         )
         report["policy"] = "disabled" if blocked else "enabled"
 
+        # La política se cambia antes que los releases: el trigger de
+        # bloqueo mira `enabled`, y al desbloquear hay que apagarlo primero.
         if blocked:
-            conn.execute(
-                """
-                UPDATE releases
-                SET health = 'blocked', health_checked_at = ?,
-                    updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
-                WHERE tracker = ? AND health <> 'blocked'
-                """,
-                (current.isoformat(), tracker),
-            )
             conn.execute(
                 """
                 UPDATE tracker_policies
@@ -99,22 +92,31 @@ def set_tracker_blocked(
                 """,
                 (tracker,),
             )
-        else:
             conn.execute(
                 """
                 UPDATE releases
-                SET health = 'unknown', health_checked_at = NULL,
+                SET health = 'blocked', health_checked_at = ?,
                     updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
-                WHERE tracker = ? AND health = 'blocked'
+                WHERE tracker = ? AND health <> 'blocked'
                 """,
-                (tracker,),
+                (current.isoformat(), tracker),
             )
+        else:
             conn.execute(
                 """
                 UPDATE tracker_policies
                 SET enabled = 1,
                     updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
                 WHERE tracker = ?
+                """,
+                (tracker,),
+            )
+            conn.execute(
+                """
+                UPDATE releases
+                SET health = 'unknown', health_checked_at = NULL,
+                    updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+                WHERE tracker = ? AND health = 'blocked'
                 """,
                 (tracker,),
             )

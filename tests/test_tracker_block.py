@@ -199,3 +199,36 @@ def test_list_trackers_marks_blocked_releases_without_policy(tmp_path):
     assert rows[0]["tracker"] == "TrackerJackett (API)"
     assert rows[0]["blocked"] == 2
     assert rows[0]["enabled"] == 0
+
+
+def test_toggling_policy_enabled_blocks_and_unblocks_releases(tmp_path):
+    db = seed(tmp_path)
+    conn = sqlite3.connect(db)
+    conn.execute(
+        "UPDATE tracker_policies SET enabled=0 WHERE tracker='TrackerJackett (API)'"
+    )
+    conn.commit()
+    assert conn.execute(
+        "SELECT COUNT(*) FROM releases WHERE health='blocked'"
+    ).fetchone()[0] == 2
+    conn.execute(
+        "UPDATE tracker_policies SET enabled=1 WHERE tracker='TrackerJackett (API)'"
+    )
+    conn.commit()
+    assert conn.execute(
+        "SELECT COUNT(*) FROM releases WHERE health='unknown'"
+    ).fetchone()[0] == 2
+    # Un release nuevo de un tracker bloqueado nace bloqueado.
+    conn.execute(
+        "UPDATE tracker_policies SET enabled=0 WHERE tracker='TrackerJackett (API)'"
+    )
+    conn.execute(
+        "INSERT INTO releases(asset_id,tracker,title,size_bytes,health,seeders) "
+        "VALUES(1,'TrackerJackett (API)','c.mkv',1000,'alive',5)"
+    )
+    conn.commit()
+    row = conn.execute(
+        "SELECT health FROM releases WHERE title='c.mkv'"
+    ).fetchone()
+    assert row[0] == "blocked"
+    conn.close()

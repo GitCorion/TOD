@@ -376,3 +376,19 @@ def test_export_writes_strm_for_library_only(tmp_path):
     report = export_strm(db, out, base_url="http://127.0.0.1:8773")
     assert report["written"] == 1
     assert list(out.rglob("*.strm"))
+
+
+def test_blocked_tracker_releases_are_not_published(tmp_path):
+    from catalogo.policy import TrackerPolicy, upsert_policy
+
+    db, *_ = seed(tmp_path)
+    upsert_policy(
+        str(db), TrackerPolicy("TrackerEspanol2", privacy="public", enabled=False)
+    )
+    upsert_policy(
+        str(db), TrackerPolicy("TrackerEspanol", privacy="public", enabled=False)
+    )
+    out = tmp_path / "library"
+    report = export_strm(str(db), out, base_url="http://tod:8773")
+    assert report["written"] == 0
+    assert not list(out.rglob("*.strm")) if out.exists() else True

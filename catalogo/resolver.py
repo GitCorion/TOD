@@ -169,6 +169,10 @@ class Resolver:
                 JOIN media_items m ON m.id = releases.asset_id
                 WHERE releases.asset_id = ?{only}
                   AND NOT EXISTS (
+                      SELECT 1 FROM tracker_policies p
+                      WHERE p.tracker = releases.tracker AND p.enabled = 0
+                  )
+                  AND NOT EXISTS (
                       SELECT 1 FROM stream_failures sf
                       WHERE sf.release_id = releases.id
                         AND sf.until > strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
@@ -197,6 +201,10 @@ class Resolver:
                 LEFT JOIN swarm_stats ss ON ss.release_id = releases.id
                 JOIN media_items m ON m.id = releases.asset_id
                 WHERE releases.asset_id = ? AND releases.health = 'alive'{only}
+                  AND NOT EXISTS (
+                      SELECT 1 FROM tracker_policies p
+                      WHERE p.tracker = releases.tracker AND p.enabled = 0
+                  )
                   AND NOT EXISTS (
                       SELECT 1 FROM stream_failures sf
                       WHERE sf.release_id = releases.id
@@ -355,6 +363,10 @@ class Resolver:
                 WHERE releases.asset_id = ?
                   AND releases.health IN ('alive', 'unknown', 'stale')
                   AND NOT EXISTS (
+                      SELECT 1 FROM tracker_policies p
+                      WHERE p.tracker = releases.tracker AND p.enabled = 0
+                  )
+                  AND NOT EXISTS (
                       SELECT 1 FROM stream_failures sf
                       WHERE sf.release_id = releases.id
                         AND sf.until > strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
@@ -422,6 +434,11 @@ class Resolver:
             return Resolution(asset["key"], asset["id"], "unavailable",
                               "release_not_found")
         with closing(self._conn()) as conn:
+            blocked = conn.execute(
+                "SELECT 1 FROM tracker_policies "
+                "WHERE tracker = ? AND enabled = 0",
+                (release["tracker"],),
+            ).fetchone() is not None
             failed = conn.execute(
                 """
                 SELECT 1 FROM stream_failures
@@ -456,6 +473,16 @@ class Resolver:
                 )
                 if result is not None:
                     return result
+        if blocked:
+            return Resolution(
+                key=asset["key"],
+                asset_id=asset["id"],
+                source="unavailable",
+                reason="tracker_blocked",
+                release_id=release["id"],
+                tracker=release["tracker"],
+                health=release["health"],
+            )
         return Resolution(
             key=asset["key"],
             asset_id=asset["id"],
