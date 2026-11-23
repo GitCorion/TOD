@@ -16,6 +16,12 @@ var/
 __pycache__/
 *.py[cod]
 .pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+.coverage.*
+htmlcov/
+coverage.xml
 .venv/
 venv/
 build/
@@ -25,7 +31,24 @@ dist/
 # Sistema y editor
 .DS_Store
 *.swp
-IMG_*.JPG
+*.code-workspace
+.idea/
+.vscode/
+/IMG_*
+
+# Temporales y parches
+*.sqlite3
+*.db-journal
+*.bak
+*.orig
+*.rej
+*.patch
+*.diff
+*.tmp
+*.pid
+
+# Notas locales
+/*.local.md
 
 # Skills locales de trabajo (no se publican)
 /.opencode/skills/
