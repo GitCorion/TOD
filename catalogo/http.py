@@ -398,8 +398,8 @@ class CatalogHandler(BaseHTTPRequestHandler):
                 resolution = self.resolver.resolve(key)
                 if (
                     resolution.source == "unavailable"
-                    and self._search_sources(key)
-                ):
+                    or resolution.health in ("dead", "stale")
+                ) and self._search_sources(key):
                     resolution = Resolver(self.db_path).resolve(key)
                 if resolution.source in ("library", "local_seed"):
                     status = asset_status(
