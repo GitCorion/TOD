@@ -22,6 +22,8 @@ catalogo/
 ├── api_tmdb.py       búsqueda, temporadas y episodios
 ├── api_releases.py   fijar, verificar y preparar versiones
 ├── api_monitor.py    seguimiento, indexers y siembra
+├── api_preferences.py idioma y reglas de siembra
+├── api_settings.py   configuración, tareas, avisos y sistema
 ├── errors.py         WebError común a la API
 ├── attention.py      avisos agregados de configuración, rutas e integraciones
 ├── integrations.py   pruebas de conexión
