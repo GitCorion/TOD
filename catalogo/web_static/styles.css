@@ -769,6 +769,65 @@ pre.result { background: var(--paper-soft); border: 1px solid var(--rule); paddi
 .setup-copy { display: flex; flex-direction: column; gap: 1px; min-width: 0; flex: 1; }
 .setup-copy strong { font-weight: 500; font-size: 13px; }
 .setup-step > .btn, .setup-step > .status { flex: 0 0 auto; }
+/* ------------------------------------------------------------ primeros pasos */
+.setup-shell { max-width: 920px; margin: 0 auto; }
+.setup-rail {
+  display: flex; gap: 2px; margin-bottom: 14px;
+  border-bottom: 1px solid var(--rule); overflow-x: auto;
+  scrollbar-width: none;
+}
+.setup-rail::-webkit-scrollbar { display: none; }
+.setup-rail-step {
+  display: inline-flex; align-items: center; gap: 8px;
+  padding: 10px 12px; border: 0; border-bottom: 2px solid transparent;
+  background: transparent; color: var(--graphite); font-size: 12.5px;
+  cursor: pointer; white-space: nowrap;
+}
+.setup-rail-step:hover { color: var(--ink); }
+.setup-rail-step.active { color: var(--ink); border-bottom-color: var(--accent); font-weight: 500; }
+.setup-rail-step.done { color: var(--ink); }
+.setup-dot {
+  width: 22px; height: 22px; border-radius: 50%;
+  border: 1px solid var(--rule-dark); display: grid; place-items: center;
+  font-size: 11px; color: var(--faint); flex: 0 0 auto;
+}
+.setup-rail-step.active .setup-dot { border-color: var(--accent); color: var(--accent); }
+.setup-rail-step.done .setup-dot { border-color: var(--green); color: var(--green); background: var(--green-soft); }
+.setup-docker {
+  margin: 0 0 12px; padding: 6px 9px;
+  background: var(--paper-deep); border: 1px solid var(--rule);
+  border-radius: var(--radius); font-family: var(--mono);
+}
+.setup-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.setup-grid-paths { grid-template-columns: 1fr; }
+.setup-grid:not(.setup-grid-paths) > .setup-field:nth-child(3) { grid-column: 1 / -1; }
+.setup-field { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.setup-field > span { color: var(--graphite); font-size: 12px; font-weight: 500; }
+.setup-field > small { color: var(--faint); font-size: 11.5px; }
+.setup-choice-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 10px; }
+.setup-choice {
+  display: flex; align-items: flex-start; gap: 8px; cursor: pointer;
+  padding: 10px 12px; border: 1px solid var(--rule); border-radius: var(--radius);
+  background: var(--paper); color: var(--graphite);
+}
+.setup-choice.active { border-color: var(--accent); background: var(--accent-soft); color: var(--ink); }
+.setup-choice span { display: flex; flex-direction: column; gap: 1px; }
+.setup-choice strong { font-size: 13px; font-weight: 500; color: var(--ink); }
+.setup-choice small { color: var(--faint); font-size: 11.5px; }
+.setup-result { margin-top: 12px; padding: 8px 10px; border-radius: var(--radius); font-size: 12px; }
+.setup-result:empty { display: none; }
+.setup-result.info { color: var(--blue); background: var(--blue-soft); }
+.setup-result.ok { color: var(--green); background: var(--green-soft); }
+.setup-result.warn { color: var(--amber); background: var(--amber-soft); }
+.setup-result.bad { color: var(--red); background: var(--red-soft); }
+.setup-actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-top: 14px; }
+.setup-foot { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 8px; margin-top: 16px; padding-top: 12px; border-top: 1px solid var(--rule); }
+.setup-done { text-align: center; padding: 34px 20px; }
+.setup-done-mark { width: 52px; height: 52px; margin: 0 auto 12px; border-radius: 50%; display: grid; place-items: center; color: var(--green); background: var(--green-soft); border: 1px solid var(--green); }
+.setup-done-mark .icon { width: 24px; height: 24px; }
+.setup-done h2 { margin-bottom: 6px; }
+.setup-done p { max-width: 540px; margin: 0 auto; }
+
 .settings-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(420px, 1fr)); gap: 10px; }
 .settings-item {
   display: grid; grid-template-columns: minmax(120px, .9fr) minmax(150px, 1.2fr);
@@ -876,6 +935,8 @@ pre.result { background: var(--paper-soft); border: 1px solid var(--rule); paddi
   .scrim.open { opacity: 1; pointer-events: auto; }
   .only-mobile { display: inline-flex !important; }
   .settings-nav { flex-wrap: nowrap; scrollbar-width: none; }
+  .setup-grid, .setup-choice-grid { grid-template-columns: 1fr; }
+  .setup-rail-step { padding: 9px 9px; }
   .settings-nav::-webkit-scrollbar { display: none; }
   .filter-details { display: none; }
   .filter-details.open { display: block; }

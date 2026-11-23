@@ -2,7 +2,7 @@ import { api } from '../api.js';
 import { attentionSummary, paintAttention } from '../attention.js';
 import { esc, fmtBytes, fmtDate, fmtInt } from '../format.js';
 import { state } from '../store.js';
-import { $, badge, icon, setHeader, status } from '../ui.js';
+import { $, badge, empty, icon, setHeader, status } from '../ui.js';
 
 const INTEGRATIONS = [
   { name: 'prowlarr', label: 'Prowlarr', prefix: 'prowlarr' },
@@ -316,6 +316,7 @@ export async function renderSettings({ signal, query } = {}) {
       <div class="panel-head">
         <h2>Primeros pasos</h2>
         <span class="right tiny faint">${setupDone} de ${setup.length} listos</span>
+        <a class="btn btn-sm btn-primary" href="#/setup">Abrir asistente</a>
       </div>
       <div class="panel-body">
         <div class="setup-list">

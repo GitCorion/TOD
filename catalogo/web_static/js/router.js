@@ -15,6 +15,7 @@ import { renderSeeds } from './views/seeds.js';
 import { renderSettings } from './views/settings.js';
 import { renderSystem } from './views/system.js';
 import { renderTechnical } from './views/technical.js';
+import { renderSetup } from './views/setup.js';
 
 const ROUTES = {
   dashboard: { title: 'Inicio', render: renderDashboard },
@@ -25,6 +26,7 @@ const ROUTES = {
   series: { title: 'Serie', render: renderSeries },
   title: { title: 'Ficha', render: renderTitle },
   add: { title: 'Añadir', render: renderAdd },
+  setup: { title: 'Primeros pasos', render: renderSetup },
   intake: { title: 'Añadir', render: renderAdd },
   downloads: { title: 'Descargas', render: renderDownloads },
   jobs: { title: 'Tareas', render: renderJobs },

@@ -226,6 +226,7 @@ export function showResult(title, data, isError = false) {
 /* ---------------------------------------------------------------- navegación */
 
 const PRIMARY_ROUTE = {
+  setup: null,
   dashboard: 'dashboard',
   add: 'add',
   intake: 'add',
@@ -306,9 +307,11 @@ export function renderSectionTabs(view) {
 }
 
 export function setActiveNav(route) {
-  const primary = PRIMARY_ROUTE[route] || 'dashboard';
+  const primary = Object.prototype.hasOwnProperty.call(PRIMARY_ROUTE, route)
+    ? PRIMARY_ROUTE[route]
+    : 'dashboard';
   $$('#nav a, #mobileNav a').forEach((link) => {
-    const active = link.dataset.route === primary;
+    const active = primary !== null && link.dataset.route === primary;
     link.classList.toggle('active', active);
     if (active) link.setAttribute('aria-current', 'page');
     else link.removeAttribute('aria-current');

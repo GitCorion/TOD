@@ -13,7 +13,7 @@ from contextlib import closing
 from pathlib import Path
 from typing import Any
 
-from . import jobs, queries
+from . import app_settings, jobs, queries
 from .config import Config
 from .db import connect
 from .scheduler import list_tasks
@@ -159,6 +159,60 @@ def monitor_health(db_path: str | Path, config: Config) -> dict[str, Any]:
         "last_monitor": brief(latest("monitor")),
         "indexers": indexers[:12],
         "prowlarr_error": prowlarr_error,
+    }
+
+
+def setup_status(config: Config) -> dict[str, Any]:
+    """Primeros pasos: qué falta para que TOD pueda funcionar."""
+    def path_ok(value) -> bool:
+        if not value:
+            return False
+        data = app_settings.path_status(value)
+        return bool(data.get("exists") and data.get("is_dir") and data.get("writable"))
+
+    paths = {
+        "catalog_library": config.catalog_library,
+        "downloads_root": config.downloads_root,
+        "seed_root": config.seed_root,
+    }
+    directory_state = {
+        key: {"value": str(value), "ok": path_ok(value)}
+        for key, value in paths.items()
+    }
+    qbittorrent = bool(config.qbittorrent_url and config.qbittorrent_pass)
+    sources = bool(config.prowlarr_api_key or config.jackett_api_key)
+    directories = all(item["ok"] for item in directory_state.values())
+    jellyfin = bool(config.jellyfin_url and config.jellyfin_api_key)
+    return {
+        "needed": not (qbittorrent and sources and directories),
+        "steps": {
+            "qbittorrent": {
+                "done": qbittorrent,
+                "url": str(config.qbittorrent_url or ""),
+                "user": config.qbittorrent_user or "",
+                "has_secret": bool(config.qbittorrent_pass),
+            },
+            "sources": {
+                "done": sources,
+                "prowlarr": {
+                    "url": str(config.prowlarr_url or ""),
+                    "has_secret": bool(config.prowlarr_api_key),
+                },
+                "jackett": {
+                    "url": str(config.jackett_url or ""),
+                    "has_secret": bool(config.jackett_api_key),
+                },
+            },
+            "directories": {
+                "done": directories,
+                "paths": directory_state,
+            },
+            "jellyfin": {
+                "done": jellyfin,
+                "url": str(config.jellyfin_url or ""),
+                "has_secret": bool(config.jellyfin_api_key),
+            },
+        },
     }
 
 

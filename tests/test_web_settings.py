@@ -327,6 +327,10 @@ def test_settings_frontend_assets():
     assert "settings-test" in view
     assert "schedulerRun" not in app
     assert "scheduler-run" in app
+    setup_view = (root / "js/views/setup.js").read_text(encoding="utf-8")
+    assert "renderSetup" in router
+    assert "Primeros pasos" in setup_view
+    assert "data-setup-save" in setup_view
 
 
 def test_unified_server_serves_playback_routes(tmp_path):
@@ -349,6 +353,36 @@ def test_unified_server_serves_playback_routes(tmp_path):
         )
         assert status == 200
         assert payload["is_catalog"] is False
+    finally:
+        server.shutdown()
+        server.server_close()
+        server.app.runner.stop()
+
+
+def test_setup_endpoint_tracks_required_steps(tmp_path):
+    server, base = _server(tmp_path)
+    try:
+        status, payload = _request(base, "/api/setup")
+        assert status == 200
+        assert payload["needed"] is True
+        assert payload["steps"]["qbittorrent"]["done"] is False
+        assert payload["steps"]["sources"]["done"] is False
+        assert payload["steps"]["directories"]["done"] is True
+
+        status, _ = _request(
+            base,
+            "/api/settings",
+            method="POST",
+            body={"values": {"qbittorrent_pass": "x", "prowlarr_api_key": "k"}},
+            headers={"X-Catalogo": "web"},
+        )
+        assert status == 200
+
+        status, payload = _request(base, "/api/setup")
+        assert status == 200
+        assert payload["needed"] is False
+        assert payload["steps"]["qbittorrent"]["done"] is True
+        assert payload["steps"]["sources"]["done"] is True
     finally:
         server.shutdown()
         server.server_close()

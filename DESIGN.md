@@ -97,6 +97,9 @@ descarga, origen. No se pintan como estados principales.
 - **Vacío**: título, una frase y, si existe, una acción.
 - **Modal**: foco atrapado, `Esc` cierra, foco devuelto al origen.
 - **Aviso**: severidad, motivo, desde cuándo y enlace al ajuste.
+- **Primeros pasos**: asistente de cuatro pasos. Valida antes de guardar,
+  muestra el error concreto y permite saltar o terminar más tarde. No bloquea
+  el uso de TOD.
 
 ## Accesibilidad
 

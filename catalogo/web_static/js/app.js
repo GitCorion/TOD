@@ -57,6 +57,12 @@ async function boot() {
     hideLogin();
     setLive(true);
     syncThemeButton();
+    const setup = await api('/api/setup').catch(() => null);
+    let skipped = false;
+    try { skipped = sessionStorage.getItem('tod.setup.skip') === '1'; } catch (_) { /* sin storage */ }
+    if (setup?.needed && !skipped && !['setup', 'settings'].includes(parseRoute().view)) {
+      history.replaceState(null, '', '#/setup');
+    }
     await route();
     refreshActivity();
     refreshAttention();
@@ -258,6 +264,7 @@ const DESTINATIONS = [
   { label: 'Estado', href: '#/system', hint: 'Sistema' },
   { label: 'Configuración', href: '#/settings', hint: 'Sistema' },
   { label: 'Añadir contenido', href: '#/add', hint: 'Acción' },
+  { label: 'Primeros pasos', href: '#/setup', hint: 'Sistema' },
   { label: 'Detalle técnico', href: '#/technical', hint: 'Sistema' },
 ];
 

@@ -137,6 +137,10 @@ no es necesario usar los dos: TOD consulta las fuentes que configures.
 
 Primera puesta en marcha:
 
+La primera vez, TOD abre el asistente de **Primeros pasos**: valida
+qBittorrent, fuentes y directorios antes de guardar. Si lo cierras, se retoma
+desde **Configuración → Primeros pasos**.
+
 1. Abre TOD en `8773`.
 2. Configura qBittorrent con `http://qbittorrent:8080` y sus credenciales.
 3. Configura Prowlarr, Jackett o ambos. La API key de Jellyfin es opcional:
@@ -161,7 +165,11 @@ sudo bash deploy/install-unified.sh
 Requiere Python 3.11+. El instalador crea `/etc/tod.env` si no existe, instala
 `tod.service`, desactiva servicios antiguos y arranca TOD en `0.0.0.0:8773`.
 
-Después, abre `http://IP_DEL_SERVIDOR:8773` y configura:
+Después, abre `http://IP_DEL_SERVIDOR:8773`. La primera vez se abre el
+asistente de **Primeros pasos**, que valida cada conexión antes de guardar;
+si lo cierras, vuelve desde **Configuración → Primeros pasos**.
+
+Configuración manual:
 
 1. **qBittorrent**: URL, usuario y contraseña.
 2. **Prowlarr**: URL y API key (opcional si usas Jackett).
