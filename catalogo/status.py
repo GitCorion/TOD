@@ -48,6 +48,33 @@ def _ms_between(start: Any, end: Any) -> int | None:
 
 
 SWITCH_WINDOW_SECONDS = 120
+INTENT_SESSION_GAP = timedelta(minutes=30)
+
+
+def _current_intent(conn: Any, media_id: str, current: datetime) -> Any:
+    """Primera intención de la sesión de reproducción actual.
+
+    Jellyfin crea una intención por cada Range/seek. Para medir el arranque
+    hay que usar la primera de la ráfaga, no la última, o el panel muestra
+    el tiempo del último seek en vez del tiempo real de inicio.
+    """
+    rows = conn.execute(
+        "SELECT * FROM play_intents WHERE media_id = ? AND created_at >= ? "
+        "ORDER BY id DESC LIMIT 50",
+        (media_id, (current - timedelta(hours=6)).isoformat()),
+    ).fetchall()
+    if not rows:
+        return None
+    session = rows[0]
+    for older in rows[1:]:
+        newest = _parse_ts(session["created_at"])
+        previous = _parse_ts(older["created_at"])
+        if newest is None or previous is None:
+            break
+        if (newest - previous) > INTENT_SESSION_GAP:
+            break
+        session = older
+    return session
 
 
 def _playback_state(
@@ -358,11 +385,7 @@ def asset_status(
             (asset_id, release_id, release_id),
         ).fetchone()
 
-        intent = conn.execute(
-            "SELECT * FROM play_intents WHERE media_id = ? "
-            "ORDER BY id DESC LIMIT 1",
-            (asset["key"],),
-        ).fetchone()
+        intent = _current_intent(conn, asset["key"], current)
 
     resolver = Resolver(db_path)
     resolution: Resolution | None = None

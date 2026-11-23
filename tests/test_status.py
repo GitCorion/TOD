@@ -352,3 +352,58 @@ def test_seed_status_reports_library_ready(tmp_path):
     conn.close()
     status = asset_status(db, "movie:tmdb:1", qbit=None, now=now)
     assert status["seed"]["library_ready"] is True
+
+
+def _add_intent(conn, key, created, ready_ms=1000, first_ms=2000):
+    from datetime import timedelta
+
+    created_at = created
+    ready_at = created + timedelta(milliseconds=ready_ms)
+    first_at = created + timedelta(milliseconds=first_ms)
+    expires = created + timedelta(minutes=5)
+    conn.execute(
+        "INSERT INTO play_intents(media_id,source,created_at,expires_at,"
+        "consumed_at,ready_at,first_byte_at) VALUES(?,?,?,?,?,?,?)",
+        (key, "range", created_at.isoformat(), expires.isoformat(),
+         created_at.isoformat(), ready_at.isoformat(), first_at.isoformat()),
+    )
+
+
+def test_startup_metrics_use_the_first_intent_of_the_session(tmp_path):
+    from datetime import datetime, timedelta, timezone
+
+    now = datetime(2026, 11, 18, 12, 0, tzinfo=timezone.utc)
+    db, _asset_id, _release_id = seed(tmp_path, complete=True, local=True)
+    conn = sqlite3.connect(db)
+    _add_intent(
+        conn, "movie:tmdb:1", now - timedelta(seconds=120),
+        ready_ms=500, first_ms=700,
+    )
+    _add_intent(conn, "movie:tmdb:1", now - timedelta(seconds=60))
+    _add_intent(conn, "movie:tmdb:1", now - timedelta(seconds=5))
+    conn.commit()
+    conn.close()
+    status = asset_status(db, "movie:tmdb:1", qbit=None, now=now)
+    assert status["prepare_ms"] == 500
+    assert status["first_byte_ms"] == 700
+
+
+def test_startup_metrics_reset_after_a_long_gap(tmp_path):
+    from datetime import datetime, timedelta, timezone
+
+    now = datetime(2026, 11, 18, 12, 0, tzinfo=timezone.utc)
+    db, _asset_id, _release_id = seed(tmp_path, complete=True, local=True)
+    conn = sqlite3.connect(db)
+    _add_intent(
+        conn, "movie:tmdb:1", now - timedelta(hours=3),
+        ready_ms=500, first_ms=700,
+    )
+    _add_intent(
+        conn, "movie:tmdb:1", now - timedelta(seconds=5),
+        ready_ms=1500, first_ms=1800,
+    )
+    conn.commit()
+    conn.close()
+    status = asset_status(db, "movie:tmdb:1", qbit=None, now=now)
+    assert status["prepare_ms"] == 1500
+    assert status["first_byte_ms"] == 1800
