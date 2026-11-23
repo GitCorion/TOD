@@ -89,6 +89,8 @@ def run_backfill(
         delay=delay,
         kind="movie",
         dry_run=dry_run,
+        workers=4,
+        id_fallback=True,
     )
     export = None
     if not dry_run and not skip_export and out_dir is not None:

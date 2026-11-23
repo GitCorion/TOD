@@ -365,6 +365,8 @@ def cmd_bulk_sync(args, config: Config) -> int:
         key=args.key,
         kind=args.kind,
         dry_run=args.dry_run,
+        workers=max(1, args.workers),
+        id_fallback=True,
     )
     if jackett_error:
         report["jackett_error"] = jackett_error
@@ -1217,6 +1219,10 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--no-jackett", action="store_true")
     p.add_argument("--key")
     p.add_argument("--dry-run", action="store_true")
+    p.add_argument(
+        "--workers", type=int, default=4,
+        help="búsquedas en paralelo (1 = secuencial)",
+    )
 
     p = sub.add_parser(
         "service",

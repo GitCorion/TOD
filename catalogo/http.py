@@ -198,6 +198,8 @@ class CatalogHandler(BaseHTTPRequestHandler):
                 key=key,
                 kind=kind,
                 recheck=True,
+                parallel_queries=True,
+                id_fallback=True,
             )
             found = bool(report.get("accepted"))
             print(

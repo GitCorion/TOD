@@ -721,6 +721,8 @@ def manual_search(
         recheck=True,
         query_override=custom or None,
         accept_unmatched=forced,
+        parallel_queries=True,
+        id_fallback=True,
     )
     with closing(connect(config.db_path)) as conn:
         releases = queries._release_rows(conn, asset_id)
@@ -1246,6 +1248,8 @@ def _sync_keys(
                 key=key,
                 kind=kind,
                 recheck=recheck,
+                parallel_queries=True,
+                id_fallback=True,
             )
         except Exception as exc:
             summary["errors"].append(f"{key}: {str(exc)[:250]}")
@@ -1343,6 +1347,8 @@ def job_sync_sources(ctx: JobContext) -> dict[str, Any]:
         trackers=GENERAL_TRACKERS,
         min_seeders=min_seeders,
         kind=kind,
+        workers=min(8, max(1, _int(params.get("workers"), 4))),
+        id_fallback=True,
     )
     ctx.report("fuentes sincronizadas", progress=0.95)
     return report

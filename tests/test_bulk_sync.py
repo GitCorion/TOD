@@ -17,12 +17,19 @@ class FakeProwlarr:
         self.searches = []
 
     def indexers(self):
+        caps = {
+            "movieSearchParams": ["q", "tmdbId"],
+            "tvSearchParams": ["q", "tvdbId"],
+        }
         return [
-            {"id": 1, "name": "TrackerEspanol (API)", "language": "es-ES"},
-            {"id": 5, "name": "TrackerEspanol2 (API)", "language": "es-ES"},
+            {"id": 1, "name": "TrackerEspanol (API)", "language": "es-ES",
+             "capabilities": caps},
+            {"id": 5, "name": "TrackerEspanol2 (API)", "language": "es-ES",
+             "capabilities": caps},
             {"id": 7, "name": "TrackerDeportes (API)", "language": "es-MX",
-             "enable": False},
-            {"id": 20, "name": "TrackerInternacional (API)", "language": "en-US"},
+             "enable": False, "capabilities": caps},
+            {"id": 20, "name": "TrackerInternacional (API)", "language": "en-US",
+             "capabilities": caps},
         ]
 
     def search(self, query, *, media_type="movie", limit=50, indexer_ids=None):
@@ -343,3 +350,96 @@ def test_jackett_privacy_is_kept(tmp_path):
     row = conn.execute("SELECT privacy, source FROM releases").fetchone()
     conn.close()
     assert row == ("public", "jackett")
+
+
+def test_jackett_is_only_a_fallback(tmp_path):
+    db = seed_db(tmp_path)
+    jackett = FakeJackett(
+        [
+            {
+                "title": "Heart.of.the.Beast.2026.1080p.mkv Spanish",
+                "size": 1000,
+                "seeders": 5,
+                "peers": 0,
+                "infohash": "",
+                "link": "http://127.0.0.1:9117/dl/tracker/?path=abc",
+                "guid": "jackett-fallback",
+                "indexer": "TrackerJackett (API)",
+                "privacy": "public",
+            }
+        ]
+    )
+    report = sync_sources(
+        db, FakeProwlarr([result()]), jackett=jackett, limit=5, delay=0
+    )
+    assert report["inserted"] == 1
+    # Prowlarr ya sirvió: no se paga el "all" de Jackett.
+    assert jackett.searches == []
+
+
+def test_blocked_trackers_are_not_queried(tmp_path):
+    from catalogo.policy import TrackerPolicy, upsert_policy
+
+    db = seed_db(tmp_path)
+    upsert_policy(
+        str(db), TrackerPolicy("TrackerEspanol (API)", enabled=False)
+    )
+    client = FakeProwlarr([result()])
+    report = sync_sources(db, client, limit=5, delay=0)
+    assert "TrackerEspanol (API)" in report["blocked_indexers"]
+    assert client.searches
+    assert all(1 not in ids for _, ids in client.searches)
+
+
+def test_searches_spanish_and_original_titles(tmp_path):
+    db = seed_db(tmp_path)
+    client = FakeProwlarr([])
+    sync_sources(db, client, limit=5, delay=0)
+    queries = [query for query, _ in client.searches]
+    assert any("corazón" in query for query in queries)
+    assert any("Heart of the Beast" in query for query in queries)
+
+
+class IdProwlarr(FakeProwlarr):
+    def __init__(self):
+        super().__init__([])
+        self.id_calls = []
+
+    def torznab_search(
+        self, indexer_id, *, media_type="movie", query="", tmdb_id=None,
+        tvdb_id=None, imdb_id=None, limit=50,
+    ):
+        self.id_calls.append((indexer_id, tmdb_id))
+        return [
+            {
+                "title": "Dune Parte dos (2024) [HDO].mkv SPANiSH",
+                "size": 1000,
+                "seeders": 9,
+                "peers": 1,
+                "infoHash": "abc123",
+                "downloadUrl": "http://127.0.0.1:9696/1/download?apikey=x",
+                "infoUrl": "https://hd-olimpo.club/torrents/1",
+                "guid": "portada-por-id",
+                "tmdbId": 1263337,
+                "category": "2000",
+            }
+        ]
+
+
+def test_id_fallback_finds_a_release_with_another_title(tmp_path):
+    db = seed_db(tmp_path)
+    client = IdProwlarr()
+    report = sync_sources(
+        db, client, limit=5, delay=0, id_fallback=True
+    )
+    assert report["id_fallback"] is True
+    assert report["inserted"] == 1
+    assert client.id_calls
+    assert all(tmdb == 1263337 for _, tmdb in client.id_calls)
+    conn = sqlite3.connect(db)
+    row = conn.execute(
+        "SELECT tracker, title FROM releases"
+    ).fetchone()
+    conn.close()
+    assert row[0] in {item["name"] for item in client.indexers()}
+    assert "Dune" in row[1]

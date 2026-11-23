@@ -9,7 +9,9 @@ from __future__ import annotations
 
 import json
 import re
+import threading
 import time
+from concurrent.futures import ThreadPoolExecutor
 from contextlib import closing
 from datetime import datetime, timezone
 from typing import Iterable
@@ -24,6 +26,9 @@ from .trackers import (
     audio_for,
     spanish_trackers_from_indexers,
 )
+
+# Prowlarr limita ráfagas de búsquedas por ID: como mucho dos a la vez.
+_ID_SEARCH = threading.BoundedSemaphore(2)
 
 
 def _aliases(asset) -> list[str]:
@@ -377,11 +382,30 @@ def sync_sources(
     recheck: bool = False,
     query_override: str | None = None,
     accept_unmatched: bool = False,
+    workers: int = 1,
+    parallel_queries: bool = False,
+    id_fallback: bool = False,
 ) -> dict:
     indexer_payload = client.indexers()
     found, missing = resolve_indexers(
         client, trackers, indexers=indexer_payload
     )
+    with closing(connect(db_path)) as conn:
+        blocked_names = {
+            str(row["tracker"])
+            for row in conn.execute(
+                "SELECT tracker FROM tracker_policies WHERE enabled = 0"
+            )
+        }
+    indexer_by_name = {
+        str(item.get("name")): item for item in indexer_payload
+        if item.get("name")
+    }
+    blocked_found = [name for name, _ in found if name in blocked_names]
+    found = [
+        (name, indexer_id) for name, indexer_id in found
+        if name not in blocked_names
+    ]
     if not found and jackett is None:
         raise ValueError("ningún indexer disponible en Prowlarr")
     indexer_ids = [indexer_id for _, indexer_id in found]
@@ -425,105 +449,237 @@ def sync_sources(
         "indexers": found,
         "jackett_indexers": [tracker for _, tracker in jackett_sources],
         "missing_indexers": missing,
+        "blocked_indexers": blocked_found,
         "delay": delay,
+        "workers": max(1, int(workers)),
+        "parallel_queries": bool(parallel_queries),
+        "id_fallback": bool(id_fallback),
         "dry_run": dry_run,
     }
     # Las búsquedas son la parte lenta. Se hacen fuera de la transacción y
     # se guardan por lotes: así la base nunca queda bloqueada mientras
     # Prowlarr/Jackett responden.
+    def _queries_for(asset: dict) -> list[str]:
+        if query_override:
+            return [str(query_override).strip()]
+        queries: list[str] = []
+        if kind == "series":
+            first = local_query(asset) or build_query(asset)
+            if first:
+                queries.append(first)
+        else:
+            primary = local_query(asset) or build_query(asset)
+            if primary:
+                queries.append(primary)
+        other = build_query(asset)
+        if other and other not in queries:
+            queries.append(other)
+        return queries
+
+    def _accepted_for(
+        asset: dict, results: list[dict], *, trust: bool = False
+    ) -> list[dict]:
+        matched = [
+            item for item in results
+            if int(item.get("seeders") or 0) >= min_seeders
+        ]
+        if not trust and not accept_unmatched:
+            matched = [
+                item for item in matched
+                if matches_asset(asset, item, kind=kind)
+            ]
+        if accept_unmatched:
+            return matched
+        if kind == "series":
+            exact = [
+                item for item in matched
+                if parse_episode(item.get("title"))
+                == (
+                    int(asset["season"] or 0),
+                    int(asset["episode"] or 0),
+                )
+            ]
+            return exact or matched
+        return matched
+
+    def _search_asset(asset: dict) -> dict:
+        errors: list[str] = []
+        queries = _queries_for(asset)
+        accepted: list[dict] = []
+        asset_results = 0
+        jackett_count = 0
+        asked = 0
+
+        def prowlarr_search(query: str) -> list[dict]:
+            try:
+                return client.search(
+                    query,
+                    media_type=media_type,
+                    indexer_ids=indexer_ids,
+                    limit=50,
+                )
+            except Exception as exc:
+                errors.append(f"{asset['key']}: {exc}")
+                return []
+
+        def jackett_search(query: str) -> list[dict]:
+            found: list[dict] = []
+            for slug, tracker in jackett_sources:
+                try:
+                    found_results = jackett.search(
+                        slug, query, media_type=media_type, limit=50
+                    )
+                except Exception as exc:
+                    errors.append(f"{asset['key']} [{slug}]: {exc}")
+                    continue
+                found.extend(
+                    _jackett_item(item, item.get("indexer") or tracker)
+                    for item in found_results
+                )
+            return found
+
+        if parallel_queries and len(queries) > 1:
+            # Las dos variantes a la vez: la primera que sirva gana y la
+            # espera se queda en la más lenta, no en la suma.
+            with ThreadPoolExecutor(max_workers=len(queries)) as pool:
+                futures = [
+                    pool.submit(prowlarr_search, query) for query in queries
+                ]
+                for query, future in zip(queries, futures):
+                    asked += 1
+                    results = future.result()
+                    asset_results += len(results)
+                    accepted = _accepted_for(asset, results)
+                    if accepted:
+                        break
+        else:
+            for query in queries:
+                asked += 1
+                results = prowlarr_search(query)
+                asset_results += len(results)
+                accepted = _accepted_for(asset, results)
+                if accepted:
+                    break
+
+        if not accepted and id_fallback:
+            # Como Radarr/Sonarr: si el texto no basta, prueba por ID.
+            id_args: dict = {}
+            if asset["tmdb"] if "tmdb" in asset.keys() else None:
+                id_args["tmdb_id"] = int(asset["tmdb"])
+            if (
+                kind == "series"
+                and "tvdb_id" in asset.keys()
+                and asset["tvdb_id"]
+            ):
+                id_args["tvdb_id"] = int(asset["tvdb_id"])
+            if (
+                "imdb" in asset.keys()
+                and asset["imdb"]
+            ):
+                id_args["imdb_id"] = str(asset["imdb"])
+
+            def supports_id(name: str) -> bool:
+                item = indexer_by_name.get(name)
+                if item is None:
+                    return False
+                caps = item.get("capabilities") or {}
+                key = (
+                    "tvSearchParams" if media_type == "series"
+                    else "movieSearchParams"
+                )
+                supported = {
+                    str(value).lower() for value in caps.get(key) or []
+                }
+                if "tmdb_id" in id_args and "tmdbid" in supported:
+                    return True
+                if "tvdb_id" in id_args and "tvdbid" in supported:
+                    return True
+                if "imdb_id" in id_args and "imdbid" in supported:
+                    return True
+                return False
+
+            def by_id(indexer: tuple[str, int]) -> list[dict]:
+                name, indexer_id = indexer
+                rows: list[dict] = []
+                for attempt in (1, 2):
+                    try:
+                        with _ID_SEARCH:
+                            rows = client.torznab_search(
+                                indexer_id,
+                                media_type=media_type,
+                                limit=50,
+                                **id_args,
+                            )
+                        break
+                    except Exception as exc:
+                        # Prowlarr limita ráfagas: un reintento corto.
+                        if "429" in str(exc) and attempt == 1:
+                            time.sleep(1.0)
+                            continue
+                        errors.append(f"{asset['key']} [{name} id]: {exc}")
+                        return []
+                for row in rows:
+                    row["indexer"] = name
+                    row["source"] = "prowlarr"
+                return rows
+
+            id_indexers = [
+                pair for pair in found if supports_id(pair[0])
+            ]
+            if id_args and id_indexers:
+                with ThreadPoolExecutor(
+                    max_workers=min(2, len(id_indexers))
+                ) as pool:
+                    chunks = list(pool.map(by_id, id_indexers))
+                id_rows = [row for chunk in chunks for row in chunk]
+                asset_results += len(id_rows)
+                # El índice ya filtró por ID: no se exige el título.
+                accepted = _accepted_for(asset, id_rows, trust=True)
+
+        if not accepted:
+            # Jackett solo como respaldo: su indexer "all" es lo más lento.
+            for query in queries:
+                results = jackett_search(query)
+                jackett_count += len(results)
+                asset_results += len(results)
+                accepted = _accepted_for(asset, results)
+                if accepted:
+                    break
+
+        if delay:
+            time.sleep(delay)
+        return {
+            "queries": asked,
+            "results": asset_results,
+            "jackett_results": jackett_count,
+            "accepted": accepted,
+            "errors": errors,
+            "item": {
+                "key": asset["key"],
+                "query": queries[0] if queries else "",
+                "results": asset_results,
+                "accepted": len(accepted),
+            },
+        }
+
     batch_size = 25
     for batch_start in range(0, len(assets), batch_size):
         batch = assets[batch_start:batch_start + batch_size]
+        if workers > 1 and len(batch) > 1:
+            with ThreadPoolExecutor(max_workers=workers) as pool:
+                outcomes = list(pool.map(_search_asset, batch))
+        else:
+            outcomes = [_search_asset(asset) for asset in batch]
         pending: list[tuple[dict, list[dict]]] = []
-        for offset, asset in enumerate(batch):
-            index = batch_start + offset
+        for asset, outcome in zip(batch, outcomes):
             report["assets_checked"] += 1
-            queries = []
-            if query_override:
-                queries = [str(query_override).strip()]
-            elif kind == "series":
-                first = local_query(asset) or build_query(asset)
-                if first:
-                    queries.append(first)
-                other = build_query(asset)
-                if other and other not in queries:
-                    queries.append(other)
-            else:
-                primary = local_query(asset) or build_query(asset)
-                if primary:
-                    queries.append(primary)
-                extra = build_query(asset)
-                if extra and extra not in queries:
-                    queries.append(extra)
-            accepted: list[dict] = []
-            asset_results = 0
-            for query in queries:
-                report["queries"] += 1
-                results: list[dict] = []
-                try:
-                    results.extend(
-                        client.search(
-                            query,
-                            media_type=media_type,
-                            indexer_ids=indexer_ids,
-                            limit=50,
-                        )
-                    )
-                except Exception as exc:
-                    report["errors"].append(f"{asset['key']}: {exc}")
-                for slug, tracker in jackett_sources:
-                    try:
-                        found_results = jackett.search(
-                            slug, query, media_type=media_type, limit=50
-                        )
-                    except Exception as exc:
-                        report["errors"].append(
-                            f"{asset['key']} [{slug}]: {exc}"
-                        )
-                        continue
-                    report["jackett_results"] += len(found_results)
-                    results.extend(
-                        _jackett_item(
-                            item,
-                            item.get("indexer") or tracker,
-                        )
-                        for item in found_results
-                    )
-                asset_results += len(results)
-                report["results"] += len(results)
-                matched = [
-                    item for item in results
-                    if int(item.get("seeders") or 0) >= min_seeders
-                    and (accept_unmatched or matches_asset(asset, item, kind=kind))
-                ]
-                if accept_unmatched:
-                    accepted = matched
-                elif kind == "series":
-                    exact = [
-                        item for item in matched
-                        if parse_episode(item.get("title"))
-                        == (
-                            int(asset["season"] or 0),
-                            int(asset["episode"] or 0),
-                        )
-                    ]
-                    accepted = exact or matched
-                else:
-                    accepted = matched
-                if accepted:
-                    break
-            report["items"].append(
-                {
-                    "key": asset["key"],
-                    "query": queries[0] if queries else "",
-                    "results": asset_results,
-                    "accepted": len(accepted),
-                }
-            )
-            report["accepted"] += len(accepted)
-            pending.append((asset, accepted))
-            if delay and index < len(assets) - 1:
-                time.sleep(delay)
+            report["queries"] += int(outcome["queries"])
+            report["results"] += int(outcome["results"])
+            report["jackett_results"] += int(outcome["jackett_results"])
+            report["accepted"] += len(outcome["accepted"])
+            report["errors"].extend(outcome["errors"])
+            report["items"].append(outcome["item"])
+            pending.append((asset, outcome["accepted"]))
 
         if dry_run or not pending:
             continue
