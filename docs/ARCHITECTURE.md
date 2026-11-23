@@ -148,3 +148,21 @@ anunciaría con un cliente que los trackers privados no tienen en su
 whitelist, así que no se contempla: el announce y la siembra pertenecen a
 qBittorrent. TOD mide el buffer, cambia de fuente, fuerza o reanuda la
 siembra y vigila el veredicto del tracker, pero no sustituye al cliente.
+
+## Radarr, Sonarr y el respaldo
+
+Radarr/Sonarr son la biblioteca a largo plazo; TOD es la capa de
+reproducción y el respaldo del catálogo. La propiedad depende del estado:
+
+| Estado en el *arr | TOD |
+|---|---|
+| Tiene el fichero | Indexa `library_files`, sirve desde la biblioteca del *arr y poda su `.strm`. |
+| Tiene una descarga en cola | Publica el `.strm`, adopta ese torrent y lo fuerza al reproducir. No crea otro ni un compromiso de siembra. |
+| No tiene fichero ni cola | `arr_fallback`: lo monitoriza y busca fuentes por lotes; si el *arr lo pone en cola o recupera el fichero, deja de perseguirlo. |
+| No está en el *arr | Lo posee TOD: búsqueda, descarga, `.strm` y siembra. |
+
+El puente nunca borra una descarga del cliente (`remove_from_client=False`):
+solo retira el registro de la cola del *arr, que cierra su importación por
+rescan. El orden de búsqueda es **ID externo primero** (TMDB/TVDB/IMDb,
+con temporada/episodio en series), después título traducido/original y por
+último Jackett. Así no se confunden remakes ni versiones de otro año.
