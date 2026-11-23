@@ -52,6 +52,41 @@ ni detección de sesión, pero el play sigue funcionando porque un `GET` con
 `Range` autoriza el prepare. Durante la reproducción, cada petición a `/play`
 renueva el lease.
 
+### Arranque rápido de `.strm` (plugin Medusa)
+
+Jellyfin sondea el `.strm` en cada reproducción. Con un torrent frío, el
+ffprobe se atasca y el cliente espera al fichero completo. El plugin
+`Jellyfin.Plugin.Catalogo` (Medusa) envuelve `IMediaSourceManager` y:
+
+- pide `/media-info` a TOD (cabecera del fichero parcial: codecs, audio,
+  duración y tamaño; si aún no hay fichero, metadata del release) y guarda
+  los `MediaStream` del ítem;
+- llama al manager interno con `allowMediaProbe=false`, así Jellyfin no
+  lanza ffprobe y sirve el `.strm` en cuanto TOD tiene buffer;
+- lanza `/prepare` para que TOD empiece la descarga.
+
+`/media-info?key=...&release=...` responde:
+
+```json
+{
+  "source": "ffprobe",
+  "container": "matroska,webm",
+  "duration_seconds": 3224.5,
+  "size_bytes": 4664225386,
+  "video": {"index": 0, "codec": "h264", "width": 1918, "height": 872},
+  "audio": [{"index": 1, "codec": "eac3", "channels": 6, "language": "spa"}],
+  "subtitles": [{"index": 3, "codec": "subrip", "language": "spa"}]
+}
+```
+
+El plugin es de servidor: el cliente sigue hablando solo con Jellyfin. TOD
+no se expone; el `.strm` apunta a `127.0.0.1` y Jellyfin lo proxya. Para
+amigos fuera de la red se comparten cuentas de Jellyfin (con TLS o reverse
+proxy si hace falta), no el puerto `8773`.
+
+Al actualizar el plugin a mano, para Jellyfin antes de sustituir el DLL:
+copiar sobre un proceso en marcha puede provocar `BadImageFormatException`.
+
 ## Radarr y Sonarr
 
 | Campo | Ejemplo |
