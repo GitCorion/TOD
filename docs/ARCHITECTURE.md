@@ -140,3 +140,11 @@ principales:
   precalienta al arrancar.
 - Las integraciones se prueban antes de guardar y nunca se accede a las bases
   de datos de Radarr/Sonarr.
+
+## Motor torrent
+
+TOD no implementa BitTorrent: **orquesta qBittorrent**. Un motor propio
+anunciaría con un cliente que los trackers privados no tienen en su
+whitelist, así que no se contempla: el announce y la siembra pertenecen a
+qBittorrent. TOD mide el buffer, cambia de fuente, fuerza o reanuda la
+siembra y vigila el veredicto del tracker, pero no sustituye al cliente.
