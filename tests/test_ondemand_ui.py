@@ -492,3 +492,22 @@ def test_recent_published_only_returns_titles_with_strm(tmp_path):
     path.write_text("http://127.0.0.1:8773/play?key=movie:tmdb:1", encoding="utf-8")
     data = ondemand.recent_published(db, config)
     assert [item["key"] for item in data["items"]] == ["movie:tmdb:1"]
+
+
+def test_catalog_cache_invalidates_on_user_action(tmp_path):
+    db = _seed(tmp_path)
+    config = _config(tmp_path, db)
+    ondemand.invalidate_catalog()
+    first = ondemand.catalog(db, config, per_page=10)
+    conn = sqlite3.connect(db)
+    conn.execute(
+        "INSERT INTO media_items(key, media_id, kind, tmdb, title, year, popularity) "
+        "VALUES('movie:tmdb:99', 'movie:tmdb:99', 'movie', 99, 'Nueva', 2026, 1)"
+    )
+    conn.commit()
+    conn.close()
+    cached = ondemand.catalog(db, config, per_page=10)
+    assert cached["total"] == first["total"]
+    ondemand.invalidate_catalog()
+    fresh = ondemand.catalog(db, config, per_page=10)
+    assert fresh["total"] == first["total"] + 1

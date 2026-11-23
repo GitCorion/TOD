@@ -19,6 +19,8 @@ from .db import connect
 PAGE_SIZE = 25
 _OVERVIEW_TTL = 10.0
 _OVERVIEW_CACHE: dict[str, tuple[float, dict[str, Any]]] = {}
+_CATALOG_TTL = 30.0
+_CATALOG_CACHE: dict[tuple[str, str, bool, bool], tuple[float, list[dict[str, Any]]]] = {}
 
 
 def _now() -> str:
@@ -308,54 +310,16 @@ def recent_published(
     return {"items": items}
 
 
-def catalog(
-    db_path,
-    config,
-    *,
-    qbit=None,
-    arr=None,
-    q: str = "",
-    kind: str = "",
-    publication: str = "",
-    download: str = "",
-    library: str = "",
-    origin: str = "",
-    incomplete: bool = False,
-    page: int = 1,
-    per_page: int = PAGE_SIZE,
-    group: str = "episode",
-    facets: bool = True,
-    sort: str = "popularity",
-) -> dict[str, Any]:
-    """Catálogo paginado.
-
-    `group=series` colapsa los episodios en una entrada por serie. Es el modo
-    que usa la interfaz: una serie no debe ocupar 13 filas seguidas.
-    """
-    page = max(1, int(page))
-    per_page = max(1, min(int(per_page), 100))
-    group = "series" if group == "series" else "episode"
+def _catalog_base(db_path, config) -> list[dict[str, Any]]:
+    """Estado calculado de todo el catálogo, sin filtros de texto ni tipo."""
     inventory = strm_inventory.inventory(config.catalog_library)
     keys = inventory["keys"]
     with_releases = _asset_ids_with_releases(db_path)
     downloaded_assets = _asset_ids_with_downloads(db_path)
-    torrents = _ondemand_torrents(db_path, qbit)
-    arr_cache: dict[int, dict[str, Any]] = {}
-
-    def series_library(tmdb: int, season: int | None = None,
-                       episode: int | None = None) -> dict[str, Any]:
-        if arr is None:
-            return {"in_library": False, "has_file": False}
-        cache_key = int(tmdb)
-        if season and episode:
-            return arr.in_library(
-                "series", cache_key, season=season, episode=episode
-            )
-        cached = arr_cache.get(cache_key)
-        if cached is None:
-            cached = arr.in_library("series", cache_key)
-            arr_cache[cache_key] = cached
-        return cached
+    with_library = _asset_ids_with_library(db_path)
+    # La lista usa el último estado sincronizado de qBittorrent: no bloquea
+    # la lectura del catálogo con una llamada de red.
+    torrents = _ondemand_torrents(db_path)
 
     with closing(connect(db_path)) as conn:
         rows = conn.execute(
@@ -375,41 +339,23 @@ def catalog(
         ).fetchall()
 
     base: list[dict[str, Any]] = []
-    q = (q or "").strip().lower()
     for row in rows:
         item = dict(row)
-        if q and q not in (item["title"] or "").lower() and q not in (item["key"] or "").lower():
-            continue
-        if kind in ("movie", "series") and item["kind"] != kind:
-            continue
         published = strm_inventory.is_key_published(item, keys)
         # `library_added` significa estar en Radarr/Sonarr. Publicado es
         # tener .strm. Son dos estados distintos y no se mezclan.
         library_added = bool(item.get("library_added"))
         torrent = torrents.get(int(item["id"]))
         dl_state, progress = _download_state(torrent)
-        lib = (
-            arr.in_library(item["kind"], int(item["tmdb"]))
-            if arr is not None and item["kind"] == "movie" and item.get("tmdb")
-            else {"in_library": False, "has_file": False}
-        )
-        lib_series = None
-        if item["kind"] == "series" and item.get("tmdb"):
-            if item.get("season") and item.get("episode"):
-                lib_series = series_library(
-                    int(item["tmdb"]),
-                    int(item["season"]),
-                    int(item["episode"]),
-                )
-            else:
-                lib_series = series_library(int(item["tmdb"]))
-        if lib.get("has_file") or (lib_series and lib_series.get("has_file")):
+        # La biblioteca de Radarr/Sonarr se lee del espejo local
+        # (`library_files`): la lista no debe hacer 655 peticiones HTTP.
+        has_file = int(item["id"]) in with_library
+        if has_file:
             library_added = True
         downloaded = (
             dl_state == "sembrando"
             or int(item["id"]) in downloaded_assets
-            or (item["kind"] == "movie" and bool(lib.get("has_file")))
-            or bool(lib_series and lib_series.get("has_file"))
+            or has_file
         )
         if published:
             pub_state = "publicado"
@@ -437,8 +383,8 @@ def catalog(
                 "downloaded": downloaded,
                 "incomplete": incomplete_item,
                 "progress": progress,
-                "in_library": bool(lib.get("in_library")),
-                "has_file": bool(lib.get("has_file")),
+                "in_library": library_added,
+                "has_file": has_file,
                 "recent_at": (
                     item.get("library_added_at")
                     or item.get("created_at")
@@ -447,26 +393,73 @@ def catalog(
                 ),
             }
         )
-        if lib_series is not None:
-            item["in_library"] = bool(lib_series.get("in_library"))
-            item["has_file"] = bool(lib_series.get("has_file"))
         base.append(item)
+    return base
+
+
+def invalidate_catalog() -> None:
+    """Una acción del usuario cambia el catálogo; no esperar al TTL."""
+    _CATALOG_CACHE.clear()
+
+
+def _catalog_base_cached(db_path, config) -> list[dict[str, Any]]:
+    key = (str(db_path), str(config.catalog_library))
+    now = time.monotonic()
+    cached = _CATALOG_CACHE.get(key)
+    if cached is not None and now - cached[0] < _CATALOG_TTL:
+        return [dict(item) for item in cached[1]]
+    base = _catalog_base(db_path, config)
+    _CATALOG_CACHE[key] = (now, base)
+    return [dict(item) for item in base]
+
+
+def catalog(
+    db_path,
+    config,
+    *,
+    qbit=None,
+    arr=None,
+    q: str = "",
+    kind: str = "",
+    publication: str = "",
+    download: str = "",
+    library: str = "",
+    origin: str = "",
+    incomplete: bool = False,
+    page: int = 1,
+    per_page: int = PAGE_SIZE,
+    group: str = "episode",
+    facets: bool = True,
+    sort: str = "popularity",
+) -> dict[str, Any]:
+    """Catálogo paginado.
+
+    `group=series` colapsa los episodios en una entrada por serie. Es el modo
+    que usa la interfaz: una serie no debe ocupar 13 filas seguidas.
+    """
+    page = max(1, int(page))
+    per_page = max(1, min(int(per_page), 100))
+    group = "series" if group == "series" else "episode"
+    # La lista se calcula desde la base local y se cachea 30 s; `qbit` y
+    # `arr` se mantienen en la firma por compatibilidad con las rutas.
+    base = _catalog_base_cached(db_path, config)
+    text = (q or "").strip().lower()
+    if text:
+        base = [
+            item
+            for item in base
+            if text in (item.get("title") or "").lower()
+            or text in (item.get("key") or "").lower()
+        ]
+    if kind in ("movie", "series"):
+        base = [item for item in base if item["kind"] == kind]
 
     if group == "series":
-        grouped = _group_series(base, series_library)
+        grouped = _group_series(base)
         grouped.sort(key=lambda item: (
             -(float(item.get("popularity") or 0)),
             (item.get("title") or "").lower(),
         ))
-        # Para una serie, el estado de la ficha manda sobre el de un episodio.
-        for item in grouped:
-            if item["kind"] == "series" and item.get("tmdb"):
-                item["in_library"] = bool(
-                    series_library(int(item["tmdb"])).get("in_library")
-                )
-                item["has_file"] = bool(
-                    series_library(int(item["tmdb"])).get("has_file")
-                )
         entries = grouped
         episodes_total = sum(
             int(item.get("episodes") or 0)
@@ -559,21 +552,6 @@ def catalog(
     total = len(filtered)
     start = (page - 1) * per_page
     page_items = filtered[start:start + per_page]
-    if arr is not None:
-        for entry in page_items:
-            if (
-                entry["kind"] == "series"
-                and not entry.get("downloaded")
-                and entry.get("tmdb")
-            ):
-                lib = series_library(
-                    int(entry["tmdb"]),
-                    entry.get("season"),
-                    entry.get("episode"),
-                )
-                entry["in_library"] = bool(lib.get("in_library"))
-                entry["has_file"] = bool(lib.get("has_file"))
-                entry["downloaded"] = bool(lib.get("has_file"))
     return {
         "items": page_items,
         "page": page,
@@ -597,7 +575,7 @@ def _release_available(value: str | None) -> tuple[bool, str | None]:
     return text <= date.today().isoformat(), text
 
 
-def _group_series(items, series_library) -> list[dict[str, Any]]:
+def _group_series(items) -> list[dict[str, Any]]:
     """Colapsa episodios en una entrada por serie, con contadores."""
     groups: dict[int, list[dict[str, Any]]] = {}
     output: list[dict[str, Any]] = []
@@ -807,7 +785,10 @@ def series_detail(
     keys = inventory["keys"]
     with_releases = _asset_ids_with_releases(db_path)
     downloaded_assets = _asset_ids_with_downloads(db_path)
-    torrents = _ondemand_torrents(db_path, qbit)
+    with_library = _asset_ids_with_library(db_path)
+    # La lista usa el último estado sincronizado de qBittorrent: no bloquea
+    # la lectura del catálogo con una llamada de red.
+    torrents = _ondemand_torrents(db_path)
     with closing(connect(db_path)) as conn:
         rows = [
             dict(row)
@@ -850,22 +831,15 @@ def series_detail(
     def state_for(row: dict[str, Any]) -> dict[str, Any]:
         published = strm_inventory.is_key_published(row, keys)
         library_added = bool(row.get("library_added"))
-        lib_episode = {"has_file": False}
-        if arr is not None:
-            lib_episode = arr.in_library(
-                "series",
-                tmdb,
-                season=int(row.get("season") or 0),
-                episode=int(row.get("episode") or 0),
-            )
-        if lib_episode.get("has_file"):
+        has_file = int(row["id"]) in with_library
+        if has_file:
             library_added = True
         torrent = torrents.get(int(row["id"]))
         download, progress = _download_state(torrent)
         downloaded = (
             download == "sembrando"
             or int(row["id"]) in downloaded_assets
-            or bool(lib_episode.get("has_file"))
+            or has_file
         )
         publication = (
             "publicado"
@@ -1448,7 +1422,9 @@ def item_state(db_path, config, item: dict[str, Any], *, qbit=None, arr=None) ->
         item.get("release_date") or item.get("air_date")
     )
     with_releases = _asset_ids_with_releases(db_path)
-    torrents = _ondemand_torrents(db_path, qbit)
+    # La lista usa el último estado sincronizado de qBittorrent: no bloquea
+    # la lectura del catálogo con una llamada de red.
+    torrents = _ondemand_torrents(db_path)
     torrent = torrents.get(int(item["id"]))
     dl_state, progress = _download_state(torrent)
     downloaded_assets = _asset_ids_with_downloads(db_path)

@@ -1,7 +1,7 @@
 """Inventario real de ficheros `.strm` publicados.
 
 El panel on-demand cuenta lo que existe en disco, no lo que la base cree que
-existe. Se cachea unos segundos para no recorrer el árbol en cada petición.
+existe. Se cachea unos minutos y se invalida al escribir `.strm`.
 """
 
 from __future__ import annotations
@@ -14,7 +14,7 @@ from typing import Any
 
 from .strm import strm_path
 
-DEFAULT_TTL = 30.0
+DEFAULT_TTL = 300.0
 _lock = threading.Lock()
 _cache: dict[str, dict[str, Any]] = {}
 

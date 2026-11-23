@@ -16,6 +16,7 @@ import os
 import re
 import socket
 import subprocess
+import threading
 import time
 import urllib.error
 import urllib.parse
@@ -158,6 +159,16 @@ class App:
         self.runner.start()
         self.scheduler = Scheduler(self.db_path, self.runner)
         self.scheduler.start()
+        threading.Thread(
+            target=self._warm_inventory, daemon=True, name="tod-warm"
+        ).start()
+
+    def _warm_inventory(self) -> None:
+        """Primer recorrido de los `.strm` fuera del camino de una petición."""
+        try:
+            strm_inventory.inventory(self.config.catalog_library)
+        except Exception:
+            LOG.debug("no se pudo precalentar el inventario", exc_info=True)
 
     def _job_sync(self, ctx, keys: list[str] | None = None) -> tuple[list[str], dict]:
         if keys is None:
@@ -467,7 +478,10 @@ class Handler(PlaybackHandler):
                 body = self._body()
             else:
                 body = {}
-            return self._api(parts, params, body, head=head, mutate=mutate)
+            self._api(parts, params, body, head=head, mutate=mutate)
+            if mutate:
+                ondemand.invalidate_catalog()
+            return
         except WebError as exc:
             self._json(
                 exc.status,
