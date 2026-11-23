@@ -141,6 +141,10 @@ La primera vez, TOD abre el asistente de **Primeros pasos**: valida
 qBittorrent, fuentes y directorios antes de guardar. Si lo cierras, se retoma
 desde **Configuración → Primeros pasos**.
 
+<p align="center">
+  <img src="docs/assets/setup-dark.png" alt="Asistente de primeros pasos: qBittorrent, fuentes, directorios y Jellyfin, con validación antes de guardar." width="100%">
+</p>
+
 1. Abre TOD en `8773`.
 2. Configura qBittorrent con `http://qbittorrent:8080` y sus credenciales.
 3. Configura Prowlarr, Jackett o ambos. La API key de Jellyfin es opcional:

@@ -39,7 +39,8 @@ Edita `.env` antes de arrancar:
 2. **Prowlarr** (`:9696`) o **Jackett** (`:9117`): añade indexers y copia su API
    key. Configura uno de los dos, o ambos.
 3. **Jellyfin** (`:8096`): completa el asistente y crea una API key.
-4. **TOD** (`:8773`): en Configuración, conecta los servicios y prueba cada uno.
+4. **TOD** (`:8773`): al abrir, el asistente de **Primeros pasos** valida
+   qBittorrent, fuentes y directorios. También se abre desde Configuración.
 5. **Jellyfin**: añade `/media/catalogo/movies` como biblioteca de películas
    y `/media/catalogo/series` como biblioteca de series.
 
