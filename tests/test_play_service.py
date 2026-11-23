@@ -52,6 +52,9 @@ class FakeQbit:
     def toggle_first_last(self, info_hash):
         pass
 
+    def toggle_sequential(self, info_hash):
+        pass
+
     def pause(self, info_hash):
         self.paused = getattr(self, "paused", [])
         self.paused.append(info_hash)
