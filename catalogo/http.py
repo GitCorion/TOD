@@ -828,6 +828,12 @@ class CatalogHandler(BaseHTTPRequestHandler):
                             continue
                     else:
                         self.play_service.preflight(handle)
+                    print(
+                        f"stream key={resolution.key} release={candidate_id} "
+                        f"range={start}-{end} source=torrent "
+                        f"auto_prepare={auto_prepare}",
+                        flush=True,
+                    )
                     self.play_service.stream_prepared(
                         self, handle, start, end, intent_id=intent["id"]
                     )

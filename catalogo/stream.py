@@ -189,6 +189,11 @@ def stream_torrent_file(
     if not wait_pieces(
         qbit, info_hash, offset + start, initial, piece_size, timeout=timeout
     ):
+        print(
+            f"stream_wait hash={info_hash[:12]} start={start} "
+            f"length={initial} offset={offset} timeout={timeout}s",
+            flush=True,
+        )
         raise StreamTimeout("piezas iniciales no disponibles")
 
     mime = media_type(str(path))

@@ -523,6 +523,24 @@ def asset_status(
     else:
         stream_ready = source in ("library", "local_seed")
     state = _state(resolution, live, progress)
+    pack_progress = None
+    if live is not None:
+        pack_progress = round(float(live.get("progress") or 0), 4)
+    waiting_reason = None
+    if not bool(stream_ready):
+        if source in ("unavailable",):
+            waiting_reason = "unavailable"
+        elif source in ("torrent", "arr"):
+            if buffer_bytes is None:
+                waiting_reason = "pieces"
+            elif buffer_bytes < buffer_required:
+                waiting_reason = "buffer"
+            elif not tail_ready:
+                waiting_reason = "tail"
+            else:
+                waiting_reason = "downloading"
+        else:
+            waiting_reason = source
     playback_state = _playback_state(
         stream_ready=bool(stream_ready),
         source=source,
@@ -684,6 +702,8 @@ def asset_status(
         ),
         "info_hash": info_hash,
         "progress": round(progress, 4),
+        "pack_progress": pack_progress,
+        "waiting_reason": waiting_reason,
         "downloaded_bytes": downloaded,
         "buffer_bytes": buffer_bytes,
         "buffer_required": buffer_required,
