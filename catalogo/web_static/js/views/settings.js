@@ -254,6 +254,7 @@ export async function renderSettings({ signal, query } = {}) {
     const hours = current.min_seed_hours ?? seedDefaults.min_hours;
     const days = Math.round((Number(hours) / 24) * 100) / 100;
     const ratio = current.target_ratio ?? seedDefaults.ratio;
+    const privacy = stats.privacy || known.privacy || current.privacy || 'private';
     const enabled = stats.enabled !== undefined
       ? stats.enabled !== 0
       : current.enabled !== false;
@@ -271,6 +272,12 @@ export async function renderSettings({ signal, query } = {}) {
       <td data-label="Tracker"><strong>${esc(tracker)}</strong>
         <div class="tiny faint">${esc(detail)}</div>
       </td>
+      <td data-label="Privacidad"><select class="input input-sm"
+        data-seed-tracker="${esc(tracker)}" data-seed-field="privacy"
+        aria-label="Privacidad de ${esc(tracker)}">
+        <option value="private" ${privacy === 'public' ? '' : 'selected'}>Privado</option>
+        <option value="public" ${privacy === 'public' ? 'selected' : ''}>Público</option>
+      </select></td>
       <td data-label="Días"><input class="input input-sm" type="number" min="0" max="365" step="0.5"
         data-seed-tracker="${esc(tracker)}" data-seed-field="min_days" value="${esc(days)}"></td>
       <td data-label="Ratio"><input class="input input-sm" type="number" min="0" max="100" step="0.1"
@@ -444,8 +451,8 @@ export async function renderSettings({ signal, query } = {}) {
         </p>
         <div class="table-wrap">
           <table class="table--stack">
-            <thead><tr><th>Tracker</th><th>Días</th><th>Ratio</th><th>Descargar</th><th title="Última comprobación de salud">Última</th><th></th></tr></thead>
-            <tbody>${trackerRows || '<tr><td colspan="6" class="tiny faint">Aún no hay trackers indexados.</td></tr>'}</tbody>
+            <thead><tr><th>Tracker</th><th>Privacidad</th><th>Días</th><th>Ratio</th><th>Descargar</th><th title="Última comprobación de salud">Última</th><th></th></tr></thead>
+            <tbody>${trackerRows || '<tr><td colspan="7" class="tiny faint">Aún no hay trackers indexados.</td></tr>'}</tbody>
           </table>
         </div>
         <p class="muted tiny" style="margin:8px 0 0">

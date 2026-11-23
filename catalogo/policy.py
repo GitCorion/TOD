@@ -244,3 +244,70 @@ def list_policies(db_path: str) -> list[dict]:
             "SELECT * FROM tracker_policies ORDER BY tracker"
         ).fetchall()
     return [dict(row) for row in rows]
+
+
+def reconcile_privacy(
+    conn: Any,
+    tracker: str,
+    privacy: str | None,
+    *,
+    now: datetime | None = None,
+) -> str | None:
+    """Alinea releases y política con la privacidad real del tracker.
+
+    Prowlarr/Jackett saben si un indexer es público, semi-privado o privado;
+    el ingest lo guardaba todo como privado. Corregirlo importa: un tracker
+    público no debe exigir horas de siembra ni ratio.
+    """
+    if not tracker:
+        return None
+    normalized = "public" if str(privacy or "").lower() == "public" else "private"
+    current = now or _utcnow()
+    conn.execute(
+        "UPDATE releases SET privacy = ? WHERE tracker = ? AND privacy IS NOT ?",
+        (normalized, tracker, normalized),
+    )
+    row = conn.execute(
+        "SELECT privacy, min_seed_hours, target_ratio FROM tracker_policies "
+        "WHERE tracker = ?",
+        (tracker,),
+    ).fetchone()
+    if row is None:
+        return normalized
+    if normalized == "public":
+        conn.execute(
+            """
+            UPDATE tracker_policies
+            SET privacy = 'public', min_seed_hours = 0, target_ratio = 0
+            WHERE tracker = ?
+            """,
+            (tracker,),
+        )
+        # Una descarga ya completada no tiene obligación que cumplir.
+        conn.execute(
+            """
+            UPDATE seed_commitments
+            SET state = 'done',
+                reason = 'tracker_public',
+                completed_at = ?,
+                seed_required_until = NULL,
+                target_ratio = NULL
+            WHERE tracker = ? AND state = 'seeding'
+            """,
+            (current.isoformat(), tracker),
+        )
+        # Ningún compromiso de un tracker público conserva plazo ni ratio.
+        conn.execute(
+            """
+            UPDATE seed_commitments
+            SET seed_required_until = NULL, target_ratio = NULL
+            WHERE tracker = ? AND state <> 'cancelled'
+            """,
+            (tracker,),
+        )
+    else:
+        conn.execute(
+            "UPDATE tracker_policies SET privacy = 'private' WHERE tracker = ?",
+            (tracker,),
+        )
+    return normalized

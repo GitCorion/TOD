@@ -89,6 +89,11 @@ def handle(
             ),
             {},
         )
+        privacy = str(
+            body.get("privacy") or existing.get("privacy") or "private"
+        )
+        if privacy not in ("private", "public"):
+            raise WebError(400, "privacidad inválida")
         try:
             item = policy.TrackerPolicy(
                 tracker=tracker,
@@ -101,7 +106,7 @@ def handle(
                 max_active=existing.get("max_active"),
                 allow_partial=bool(existing.get("allow_partial")),
                 keep_for_bonus=bool(existing.get("keep_for_bonus", True)),
-                privacy=str(existing.get("privacy") or "private"),
+                privacy=privacy,
                 enabled=bool(body.get("enabled", True)),
                 abandon_under_percent=int(
                     existing.get("abandon_under_percent") or 0
@@ -112,6 +117,9 @@ def handle(
                 notes="Editada desde Configuración → Siembra.",
             )
             policy.upsert_policy(db, item)
+            with closing(connect(db)) as conn:
+                policy.reconcile_privacy(conn, tracker, item.privacy)
+                conn.commit()
         except (TypeError, ValueError) as exc:
             raise WebError(400, str(exc)[:200])
         app.audit(

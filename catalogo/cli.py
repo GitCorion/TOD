@@ -17,7 +17,7 @@ from .bridge import bridge_downloads
 from .bulk_sync import sync_sources
 from .broken import clean_broken
 from .config import Config
-from .db import init_db
+from .db import connect, init_db
 from .evict import evict_completed
 from .health import apply_health, pending_releases, summary as health_summary
 from .health_worker import run as health_run
@@ -29,7 +29,12 @@ from .metadata import backfill as metadata_backfill
 from .admin import monitor_titles
 from .mover import move_completed
 from .normalize_series import normalize_series_titles
-from .policy import TrackerPolicy, list_policies, upsert_policy
+from .policy import (
+    TrackerPolicy,
+    list_policies,
+    reconcile_privacy,
+    upsert_policy,
+)
 from .prune import prune_library
 from .public_sync import sync_assets as public_sync
 from .prowlarr import ProwlarrClient, ProwlarrError
@@ -382,6 +387,11 @@ def cmd_set_policy(args, config: Config) -> int:
         notes=args.notes,
     )
     upsert_policy(str(config.db_path), policy)
+    # Corregir la privacidad también corrige releases, política y
+    # compromisos abiertos: un tracker público no exige siembra.
+    with connect(config.db_path) as conn:
+        reconcile_privacy(conn, policy.tracker, policy.privacy)
+        conn.commit()
     _print(
         {
             "tracker": policy.tracker,

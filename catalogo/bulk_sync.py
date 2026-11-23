@@ -17,6 +17,7 @@ from typing import Iterable
 from .db import connect
 from .importer import norm_title
 from .jackett import sanitize_link
+from .policy import reconcile_privacy
 from .public_sync import quality_of, year_of
 from .trackers import (
     GENERAL_TRACKERS,
@@ -224,6 +225,7 @@ def _upsert_release(
     episode: int | None = None,
     spanish_trackers: Iterable[str] | None = None,
     privacy: str = "private",
+    source: str = "prowlarr",
 ) -> str:
     title = (result.get("title") or "").strip()
     size = int(result.get("size") or 0)
@@ -249,7 +251,7 @@ def _upsert_release(
                 # chocar con el índice único de info_hash.
                 same_hash = previous
 
-    guid = f"prowlarr:{tracker}:{result.get('guid') or title}"
+    guid = f"{source}:{tracker}:{result.get('guid') or title}"
     if is_pack and season and episode:
         guid = f"{guid}:S{int(season):02d}E{int(episode):02d}"
     same_guid = conn.execute(
@@ -277,7 +279,6 @@ def _upsert_release(
         int(result.get("seeders") or 0),
         int(result.get("peers") or 0),
         now,
-        privacy,
     )
     existing = conn.execute(
         """
@@ -317,11 +318,11 @@ def _upsert_release(
                 quality=?, audio=?, audio_confidence=?, size_bytes=?, is_pack=?,
                 info_hash=?, download_url=?, info_url=?, seeders=?, peers=?,
                 health='alive', health_checked_at=?,
-                source='prowlarr', privacy=?,
+                source=?, privacy=?,
                 updated_at=strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
             WHERE id=?
             """,
-            values + (int(existing["id"]),),
+            values + (source, privacy, int(existing["id"])),
         )
         return "updated"
 
@@ -333,9 +334,9 @@ def _upsert_release(
             download_url, info_url, seeders, peers, health, health_checked_at,
             source, privacy
         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'alive',
-                  ?, 'prowlarr', ?)
+                  ?, ?, ?)
         """,
-        (asset_id,) + values[:1] + (guid,) + values[1:],
+        (asset_id,) + values[:1] + (guid,) + values[1:] + (source, privacy),
     )
     return "inserted"
 
@@ -352,6 +353,8 @@ def _jackett_item(item: dict, tracker: str) -> dict:
         "infoUrl": item.get("infoUrl") or item.get("comments") or "",
         "guid": item.get("guid") or item.get("title") or "",
         "indexer": tracker,
+        "privacy": str(item.get("privacy") or "").lower(),
+        "source": "jackett",
         "tmdbId": int(item.get("tmdbId") or 0),
         "category": item.get("category") or "",
     }
@@ -524,6 +527,7 @@ def sync_sources(
 
         if dry_run or not pending:
             continue
+        tracker_privacy: dict[str, str] = {}
         with closing(connect(db_path)) as conn:
             conn.execute("BEGIN IMMEDIATE")
             try:
@@ -532,10 +536,25 @@ def sync_sources(
                         is_pack = kind == "series" and parse_episode(
                             item.get("title")
                         ) is None
+                        tracker_name = item.get("indexer") or ""
+                        privacy = privacy_by_name.get(tracker_name)
+                        if privacy is None:
+                            # Jackett trae el <type> del indexer en cada
+                            # resultado; Prowlarr no. El fallback era
+                            # "private" y convertía públicos en privados.
+                            privacy = (
+                                "public"
+                                if str(item.get("privacy") or "").lower()
+                                == "public"
+                                else "private"
+                            )
+                        source = str(item.get("source") or "prowlarr")
+                        if tracker_name:
+                            tracker_privacy[tracker_name] = privacy
                         outcome = _upsert_release(
                             conn,
                             int(asset["id"]),
-                            item.get("indexer") or "",
+                            tracker_name,
                             item,
                             checked_at,
                             is_pack=is_pack,
@@ -548,11 +567,12 @@ def sync_sources(
                                 if kind == "series" else None
                             ),
                             spanish_trackers=spanish_trackers,
-                            privacy=privacy_by_name.get(
-                                item.get("indexer") or "", "private"
-                            ),
+                            privacy=privacy,
+                            source=source,
                         )
                         report[outcome] += 1
+                for tracker_name, privacy in tracker_privacy.items():
+                    reconcile_privacy(conn, tracker_name, privacy)
                 conn.commit()
             except Exception:
                 conn.rollback()

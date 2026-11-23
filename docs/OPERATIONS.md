@@ -155,7 +155,11 @@ tod qbit-limits
 - Al descubrir un tracker privado sin política, TOD crea una inicial con los
   valores de **Configuración → Siembra** (por defecto 72 h y ratio 1,0;
   cada instalación puede cambiarlos).
-  También se puede cambiar por CLI:
+- La privacidad sale del indexer (Prowlarr `privacy`, Jackett `<type>`), no se
+  asume privada. Se puede corregir por tracker en la tabla de Siembra o por
+  CLI: `tod set-policy DonTorrent --privacy public`. Al marcar público, TOD
+  pone 0 días/ratio, actualiza sus releases y cierra las siembras abiertas.
+  También se puede cambiar el mínimo:
   `tod set-policy Tracker --min-seed-hours 24 --target-ratio 0.5`.
 - Públicos: sin compromiso de seed.
 - `evict`, `reseed`, `abandon`, `clean-broken` y `move-completed` ya no se

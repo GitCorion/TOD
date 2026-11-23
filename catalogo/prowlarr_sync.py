@@ -1,7 +1,8 @@
-"""Ingesta de candidatos desde Prowlarr para trackers privados.
+"""Ingesta de candidatos desde Prowlarr.
 
-Solo crea filas `releases` (source=prowlarr, privacy=private). No descarga
-.torrent ni datos, y no toca qBittorrent.
+Solo crea filas `releases` (source=prowlarr). La privacidad se toma del
+indexer, no se asume privada: Prowlarr conoce el `privacy` de cada uno.
+No descarga .torrent ni datos, y no toca qBittorrent.
 """
 
 from __future__ import annotations
@@ -13,6 +14,7 @@ from typing import Any, Iterable
 
 from .db import connect
 from .importer import norm_title
+from .policy import reconcile_privacy
 from .public_sync import audio_of, matches, quality_of, year_of
 
 PRIVATE_CATEGORIES = ("2000", "5000")
@@ -61,7 +63,10 @@ def _select_assets(
         ).fetchall()
 
 
-def _upsert(conn, asset: Any, tracker: str, result: dict, now: str) -> str:
+def _upsert(
+    conn, asset: Any, tracker: str, result: dict, now: str,
+    *, privacy: str = "private",
+) -> str:
     title = result.get("title") or ""
     size = int(result.get("size") or 0)
     guid = result.get("guid") or result.get("infoUrl") or title
@@ -95,11 +100,11 @@ def _upsert(conn, asset: Any, tracker: str, result: dict, now: str) -> str:
             UPDATE releases SET tracker=?, title=?, normalized_title=?, year=?,
                 quality=?, audio=?, size_bytes=?, info_hash=?, download_url=?,
                 seeders=?, peers=?, health=?, health_checked_at=?,
-                source='prowlarr', privacy='private',
+                source='prowlarr', privacy=?,
                 updated_at=strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
             WHERE id=?
             """,
-            values + (int(existing["id"]),),
+            values + (privacy, int(existing["id"]),),
         )
         return "updated"
     conn.execute(
@@ -108,7 +113,7 @@ def _upsert(conn, asset: Any, tracker: str, result: dict, now: str) -> str:
                              year, quality, audio, size_bytes, is_pack,
                              info_hash, download_url, seeders, peers, health,
                              health_checked_at, source, privacy)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, 'prowlarr', 'private')
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, 'prowlarr', ?)
         ON CONFLICT(guid) DO UPDATE SET
             tracker=excluded.tracker, title=excluded.title,
             normalized_title=excluded.normalized_title, year=excluded.year,
@@ -119,7 +124,7 @@ def _upsert(conn, asset: Any, tracker: str, result: dict, now: str) -> str:
             health_checked_at=excluded.health_checked_at,
             updated_at=strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
         """,
-        (int(asset["id"]),) + values[:1] + (guid,) + values[1:],
+        (int(asset["id"]),) + values[:1] + (guid,) + values[1:] + (privacy,),
     )
     return "inserted"
 
@@ -137,8 +142,22 @@ def sync_private(
     min_year: int = 0,
     include_existing: bool = False,
     dry_run: bool = False,
+    privacy: str | None = None,
 ) -> dict[str, Any]:
     now = datetime.now(timezone.utc).isoformat()
+    if privacy is None:
+        privacy = "private"
+        try:
+            for info in client.indexers():
+                if int(info.get("id") or 0) == int(indexer_id):
+                    privacy = (
+                        "public"
+                        if str(info.get("privacy") or "").lower() == "public"
+                        else "private"
+                    )
+                    break
+        except Exception:
+            pass
     report: dict[str, Any] = {
         "tracker": tracker,
         "indexer_id": indexer_id,
@@ -182,13 +201,16 @@ def sync_private(
                     if dry_run:
                         report["inserted"] += 1
                         continue
-                    outcome = _upsert(conn, asset, tracker, item, now)
+                    outcome = _upsert(
+                        conn, asset, tracker, item, now, privacy=privacy
+                    )
                     report[outcome] += 1
                 if delay and index < len(assets) - 1:
                     time.sleep(delay)
             if dry_run:
                 conn.rollback()
             else:
+                reconcile_privacy(conn, tracker, privacy)
                 conn.commit()
         except Exception:
             conn.rollback()

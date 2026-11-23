@@ -464,3 +464,57 @@ def test_setup_suggests_docker_values(tmp_path, monkeypatch):
         server.shutdown()
         server.server_close()
         server.app.runner.stop()
+
+
+def test_seed_policy_can_mark_tracker_public(tmp_path):
+    server, base = _server(tmp_path)
+    try:
+        server.app.scheduler.stop()
+        server.app.runner.stop()
+        db = server.app.db_path
+        with sqlite3.connect(db) as conn:
+            asset_id = conn.execute("SELECT id FROM media_items").fetchone()[0]
+            conn.execute(
+                "INSERT INTO releases(asset_id,tracker,title,size_bytes,health,"
+                "privacy) VALUES(?,?,?,?,?,?)",
+                (asset_id, "DonTorrent", "Test.mkv", 1000, "alive", "private"),
+            )
+            conn.execute(
+                "INSERT INTO seed_commitments(asset_id,tracker,size_bytes,"
+                "state,info_hash) VALUES(?,?,?,?,?)",
+                (asset_id, "DonTorrent", 1000, "seeding", "hash1"),
+            )
+            conn.commit()
+
+        status, payload = _request(
+            base,
+            "/api/seed/policies",
+            method="POST",
+            body={
+                "tracker": "DonTorrent",
+                "min_seed_hours": 24,
+                "target_ratio": 1.0,
+                "privacy": "public",
+            },
+            headers={"X-Catalogo": "web"},
+        )
+        assert status == 200
+
+        with sqlite3.connect(db) as conn:
+            policy = conn.execute(
+                "SELECT privacy, min_seed_hours, target_ratio "
+                "FROM tracker_policies WHERE tracker='DonTorrent'"
+            ).fetchone()
+            release = conn.execute(
+                "SELECT privacy FROM releases WHERE tracker='DonTorrent'"
+            ).fetchone()
+            commitment = conn.execute(
+                "SELECT state FROM seed_commitments WHERE tracker='DonTorrent'"
+            ).fetchone()
+        assert policy == ("public", 0, 0)
+        assert release == ("public",)
+        assert commitment == ("done",)
+    finally:
+        server.shutdown()
+        server.server_close()
+        server.app.runner.stop()

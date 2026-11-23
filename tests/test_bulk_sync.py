@@ -305,3 +305,41 @@ def test_same_info_hash_updates_instead_of_colliding(tmp_path):
     assert row["title"] == "Pelicula.2026.1080p.REPACK.mkv"
     assert row["seeders"] == 12
     conn.close()
+
+
+class PublicIndexerProwlarr(FakeProwlarr):
+    def indexers(self):
+        return [{"id": 1, "name": "TrackerEspanol (API)", "privacy": "public"}]
+
+
+def test_prowlarr_privacy_is_kept(tmp_path):
+    db = seed_db(tmp_path)
+    sync_sources(db, PublicIndexerProwlarr([result()]), limit=5, delay=0)
+    conn = sqlite3.connect(db)
+    row = conn.execute("SELECT privacy, source FROM releases").fetchone()
+    conn.close()
+    assert row == ("public", "prowlarr")
+
+
+def test_jackett_privacy_is_kept(tmp_path):
+    db = seed_db(tmp_path)
+    jackett = FakeJackett(
+        [
+            {
+                "title": "Heart.of.the.Beast.2026.1080p.mkv Spanish",
+                "size": 1000,
+                "seeders": 5,
+                "peers": 0,
+                "infohash": "",
+                "link": "http://127.0.0.1:9117/dl/dontorrent/?path=abc",
+                "guid": "jackett-public",
+                "indexer": "DonTorrent",
+                "privacy": "public",
+            }
+        ]
+    )
+    sync_sources(db, FakeProwlarr([]), jackett=jackett, limit=5, delay=0)
+    conn = sqlite3.connect(db)
+    row = conn.execute("SELECT privacy, source FROM releases").fetchone()
+    conn.close()
+    assert row == ("public", "jackett")

@@ -95,3 +95,50 @@ def test_upsert_and_read_policy(tmp_path):
     assert len(listed) == 1
     assert listed[0]["allow_partial"] == 0
 
+
+
+def test_reconcile_privacy_turns_public_and_releases_seed(tmp_path):
+    from catalogo.policy import reconcile_privacy
+
+    db = tmp_path / "catalogo.db"
+    init_db(db, MIGRATIONS)
+    conn = connect(db)
+    conn.execute(
+        "INSERT INTO media_items(key,kind,tmdb,title,year) VALUES(?,?,?,?,?)",
+        ("movie:tmdb:1", "movie", 1, "Test", 2025),
+    )
+    conn.execute(
+        "INSERT INTO releases(asset_id,tracker,title,size_bytes,health,privacy) "
+        "VALUES(1,?,?,?,?,?)",
+        ("DonTorrent", "Test", 1000, "alive", "private"),
+    )
+    conn.execute(
+        "INSERT INTO seed_commitments(asset_id,tracker,size_bytes,state,info_hash) "
+        "VALUES(1,?,?,?,?)",
+        ("DonTorrent", 1000, "seeding", "hash1"),
+    )
+    conn.commit()
+    upsert_policy(
+        db,
+        TrackerPolicy(
+            "DonTorrent", min_seed_hours=24, target_ratio=1.0,
+            privacy="private",
+        ),
+    )
+
+    assert reconcile_privacy(conn, "DonTorrent", "public", now=NOW) == "public"
+    conn.commit()
+
+    policy = get_policy(conn, "DonTorrent")
+    assert policy is not None
+    assert policy.privacy == "public"
+    assert policy.min_seed_hours == 0
+    assert policy.target_ratio == 0
+    release = conn.execute("SELECT privacy FROM releases").fetchone()
+    assert release[0] == "public"
+    commitment = conn.execute(
+        "SELECT state, reason FROM seed_commitments"
+    ).fetchone()
+    assert commitment[0] == "done"
+    assert commitment[1] == "tracker_public"
+    conn.close()
