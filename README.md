@@ -17,7 +17,7 @@ Esos servicios siguen siendo independientes: el `docker-compose.yml` incluido
 los levanta juntos para que la instalación sea de un solo comando.
 
 <p align="center">
-  <img src="docs/assets/dashboard-dark.png" alt="Panel de TOD: avisos, catálogo en Jellyfin, últimas incorporaciones y estado de las descargas." width="100%">
+  <img src="docs/assets/catalog-dark.png" alt="Biblioteca de TOD: filtros por estado, origen y descargas, con los títulos y sus fuentes." width="100%">
 </p>
 
 <p align="center"><sub>TOD está en beta activa. La interfaz y la API pueden cambiar entre versiones menores.</sub></p>
