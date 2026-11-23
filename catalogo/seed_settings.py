@@ -26,7 +26,7 @@ DEFAULT_FORCE = True
 DEFAULT_ALLOW_DELETE = False
 DEFAULT_KEEP_LIBRARY = True
 DEFAULT_KEEP_MAX_HOURS = 72
-DEFAULT_ARR_FALLBACK = True
+DEFAULT_ARR_FALLBACK = False
 
 
 def _float(value: Any, default: float) -> float:

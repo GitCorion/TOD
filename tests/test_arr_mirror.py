@@ -244,8 +244,13 @@ class FallbackRadarr:
 
 
 def test_arr_fallback_monitors_only_missing_and_not_queued(tmp_path):
+    from catalogo.seed_settings import save as save_seed
+
     db = tmp_path / "catalogo.db"
     init_db(db, MIGRATIONS)
+    save_seed(
+        str(db), min_hours=72, ratio=1.0, force=True, arr_fallback=True,
+    )
     report = mirror_library(db, FallbackRadarr(), None)
     assert report["radarr"]["fallback"] == 1
 
@@ -297,8 +302,13 @@ class FallbackSonarr(FakeSonarr):
 
 
 def test_sonarr_fallback_monitors_missing_episodes(tmp_path):
+    from catalogo.seed_settings import save as save_seed
+
     db = tmp_path / "catalogo.db"
     init_db(db, MIGRATIONS)
+    save_seed(
+        str(db), min_hours=72, ratio=1.0, force=True, arr_fallback=True,
+    )
     report = mirror_library(db, None, FallbackSonarr())
     assert report["sonarr"]["fallback"] == 1
 
@@ -324,8 +334,13 @@ class FallbackRadarrWithFile(FallbackRadarr):
 
 
 def test_fallback_stops_when_arr_gets_the_file(tmp_path):
+    from catalogo.seed_settings import save as save_seed
+
     db = tmp_path / "catalogo.db"
     init_db(db, MIGRATIONS)
+    save_seed(
+        str(db), min_hours=72, ratio=1.0, force=True, arr_fallback=True,
+    )
     mirror_library(db, FallbackRadarr(), None)
     conn = sqlite3.connect(db)
     assert conn.execute(

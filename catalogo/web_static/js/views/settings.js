@@ -453,7 +453,7 @@ export async function renderSettings({ signal, query } = {}) {
           </label>
           <label class="inline check" style="align-self:end;padding-bottom:4px">
             <input type="checkbox" data-seed-field="arr_fallback" ${seedDefaults.arr_fallback !== false ? 'checked' : ''}>
-            Buscar también en Radarr/Sonarr sin fichero ni cola
+            Buscar también en Radarr/Sonarr sin fichero ni cola (máx. 200 recientes)
           </label>
           <label class="field"><span>&nbsp;</span>
             <button class="btn btn-primary" data-action="seed-save">${icon('check', 'sm')} Guardar siembra</button>
