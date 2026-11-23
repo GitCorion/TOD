@@ -25,6 +25,8 @@ catalogo/
 ├── api_preferences.py idioma y reglas de siembra
 ├── api_settings.py   configuración, tareas, avisos y sistema
 ├── api_dashboard.py  portada, actividad, calendario y búsqueda
+├── api_downloads.py  descargas de qBittorrent
+├── api_jobs.py       tareas: lista, detalle y cancelación
 ├── api_library.py    sagas y series
 ├── errors.py         WebError común a la API
 ├── attention.py      avisos agregados de configuración, rutas e integraciones

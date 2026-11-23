@@ -40,7 +40,9 @@ from . import (
 )
 from . import (
     api_dashboard,
+    api_downloads,
     api_intake,
+    api_jobs,
     api_library,
     api_monitor,
     api_ondemand,
@@ -76,10 +78,6 @@ STATIC_DIR = Path(__file__).resolve().parent / "web_static"
 COOKIE = "catalogo_web"
 COOKIE_MAX_AGE = 7 * 24 * 3600
 MAX_BODY = 1_000_000
-HASH_RE = re.compile(r"^[0-9a-fA-F]{40}$")
-
-INTERNAL_JOB_KINDS = ("attention-check",)
-
 def _now() -> int:
     return int(time.time())
 
@@ -758,30 +756,14 @@ class Handler(PlaybackHandler):
                 return self._json(status_code, payload, head=head)
             raise WebError(404, "no encontrado")
 
-        if parts == ["downloads"] and not mutate:
-            qbit, error = app.qbit()
-            return self._json(
-                200,
-                queries.list_downloads(
-                    db, qbit, category=params.get("category") or None
-                ),
-                head=head,
+        if parts and parts[0] == "downloads":
+            result = api_downloads.handle(
+                app, parts, params, body, mutate=mutate
             )
-
-        if len(parts) == 3 and parts[0] == "downloads" and parts[2] == "action":
-            if not mutate:
-                raise WebError(405, "usa POST")
-            info_hash = parts[1]
-            if not HASH_RE.match(info_hash):
-                raise WebError(400, "hash inválido")
-            result = admin.qbit_action(
-                app.config,
-                info_hash,
-                str(body.get("action") or ""),
-                delete_files=bool(body.get("delete_files")),
-            )
-            app.audit("web.qbit_action", payload=result)
-            return self._json(200, result, head=head)
+            if result is not None:
+                status_code, payload = result
+                return self._json(status_code, payload, head=head)
+            raise WebError(404, "no encontrado")
 
         if parts and parts[0] in ("language", "seed"):
             result = api_preferences.handle(
@@ -811,59 +793,19 @@ class Handler(PlaybackHandler):
                 return self._json(status_code, payload, head=head)
             raise WebError(404, "no encontrado")
 
-        if parts == ["jobs"]:
-            if mutate:
-                kind = str(body.get("kind") or "").strip()
-                if kind not in admin.JOB_HANDLERS:
-                    raise WebError(400, "tipo de tarea no permitido", {"kind": kind})
-                raw_params = body.get("params") or {}
-                if not isinstance(raw_params, dict):
-                    raise WebError(400, "params debe ser un objeto")
-                keys = raw_params.get("keys")
-                if keys is not None:
-                    if not isinstance(keys, list) or len(keys) > 200:
-                        raise WebError(400, "keys inválidas")
-                    raw_params["keys"] = [str(key)[:200] for key in keys]
-                job_id = app.runner.submit(
-                    kind,
-                    raw_params,
-                    requested_by=self.client_address[0],
-                )
-                app.audit("web.job", payload={"kind": kind, "job_id": job_id, "params": raw_params})
-                return self._json(
-                    202,
-                    {"job_id": job_id, "job": jobs.get_job(db, job_id)},
-                    head=head,
-                )
-            state = params.get("state") or None
-            return self._json(
-                200,
-                {
-                    "items": jobs.list_jobs(
-                        db,
-                        limit=self._int(params.get("limit"), 50),
-                        state=state,
-                        exclude_kinds=INTERNAL_JOB_KINDS,
-                    )
-                },
-                head=head,
+        if parts and parts[0] == "jobs":
+            result = api_jobs.handle(
+                app,
+                parts,
+                params,
+                body,
+                client_ip=self.client_address[0],
+                mutate=mutate,
             )
-
-        if len(parts) == 2 and parts[0] == "jobs":
-            job_id = self._int(parts[1], 0)
-            job = jobs.get_job(db, job_id)
-            if job is None:
-                raise WebError(404, "tarea no encontrada")
-            return self._json(200, job, head=head)
-
-        if len(parts) == 3 and parts[0] == "jobs" and parts[2] == "cancel":
-            if not mutate:
-                raise WebError(405, "usa POST")
-            job = app.runner.cancel(self._int(parts[1], 0))
-            if job is None:
-                raise WebError(404, "tarea no encontrada")
-            app.audit("web.job_cancel", payload={"job_id": job["id"]})
-            return self._json(200, job, head=head)
+            if result is not None:
+                status_code, payload = result
+                return self._json(status_code, payload, head=head)
+            raise WebError(404, "no encontrado")
 
         if parts and parts[0] in (
             "settings", "scheduler", "attention", "setup", "system",
