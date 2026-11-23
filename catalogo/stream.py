@@ -10,7 +10,7 @@ from __future__ import annotations
 import os
 import time
 from pathlib import Path
-from typing import Any, Protocol
+from typing import Any, Callable, Protocol
 
 from .config import media_type
 
@@ -125,6 +125,7 @@ def stream_torrent_file(
     head: bool = False,
     timeout: float = DEFAULT_TIMEOUT,
     buffer_bytes: int = BUFFER,
+    on_first_byte: Callable[[], None] | None = None,
 ) -> None:
     files = qbit.files(info_hash)
     item = file_entry(files, file_index)
@@ -162,6 +163,7 @@ def stream_torrent_file(
     if head:
         return
 
+    first_byte_sent = False
     with path.open("rb") as fh:
         pos = start
         while pos <= end:
@@ -180,4 +182,11 @@ def stream_torrent_file(
                 handler.wfile.write(data)
             except (BrokenPipeError, ConnectionResetError):
                 break
+            if not first_byte_sent:
+                first_byte_sent = True
+                if on_first_byte is not None:
+                    try:
+                        on_first_byte()
+                    except Exception:
+                        pass
             pos += len(data)

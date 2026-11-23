@@ -19,7 +19,7 @@ function releaseRow(release) {
     <td data-label="Tamaño" class="num">${fmtBytes(release.size_bytes)}</td>
     <td data-label="Semillas" class="num">${fmtInt(release.seeders)} / ${fmtInt(release.peers)}</td>
     <td data-label="Salud">${status(health.label, health.tone)}</td>
-    <td data-label="Privacidad">${badge(release.privacy === 'public' ? 'público' : 'privado', 'mono')} ${release.debrid_cached ? badge('debrid', 'mono') : ''}</td>
+    <td data-label="Privacidad">${badge(release.privacy === 'public' ? 'público' : 'privado', 'mono')}</td>
     <td data-label="Progreso">${progress}</td>
     <td class="actions" data-label="">
       ${trackerHref ? `<a class="btn btn-sm btn-ghost" href="${trackerHref}" target="_blank" rel="noopener noreferrer" aria-label="Abrir ficha de ${esc(release.title || 'esta versión')} en el tracker">${icon('external', 'sm')} Ficha</a>` : ''}

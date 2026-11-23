@@ -416,34 +416,6 @@ def test_strm_url_starts_download_on_range(tmp_path):
         thread.join(timeout=5)
 
 
-def test_debrid_play_redirects(tmp_path):
-    db, _content = build_db(tmp_path)
-    conn = sqlite3.connect(db)
-    conn.execute(
-        "UPDATE releases SET debrid_cached=1, debrid_link='https://rd/direct.mkv' "
-        "WHERE asset_id=(SELECT id FROM media_items WHERE key='movie:tmdb:2')"
-    )
-    conn.commit()
-    conn.close()
-    server = make_server("127.0.0.1", 0, db)
-    thread = threading.Thread(target=server.serve_forever, daemon=True)
-    thread.start()
-    host, port = server.server_address
-    try:
-        conn = http.client.HTTPConnection(host, port, timeout=5)
-        conn.request("GET", "/play?key=movie%3Atmdb%3A2")
-        response = conn.getresponse()
-        body = response.read()
-        conn.close()
-        assert response.status == 302
-        assert response.getheader("Location") == "https://rd/direct.mkv"
-        assert body == b""
-    finally:
-        server.shutdown()
-        server.server_close()
-        thread.join(timeout=5)
-
-
 def test_sources_endpoint(tmp_path):
     db, _content = build_db(tmp_path)
     server = make_server("127.0.0.1", 0, db)

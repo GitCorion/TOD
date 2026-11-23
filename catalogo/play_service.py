@@ -547,7 +547,19 @@ class PlayService:
         *,
         head: bool = False,
         timeout: float = DEFAULT_TIMEOUT,
+        intent_id: int | None = None,
     ) -> None:
+        on_first_byte = None
+        if intent_id is not None:
+            from . import play_intents
+
+            def mark_first_byte() -> None:
+                try:
+                    play_intents.first_byte(self.db_path, intent_id)
+                except Exception:
+                    pass
+
+            on_first_byte = mark_first_byte
         stream_torrent_file(
             handler,
             self.qbit_read,
@@ -558,6 +570,7 @@ class PlayService:
             roots=self.stream_roots or None,
             head=head,
             timeout=timeout,
+            on_first_byte=on_first_byte,
         )
 
     def stream(
@@ -571,11 +584,13 @@ class PlayService:
         timeout: float = DEFAULT_TIMEOUT,
         release_id: int | None = None,
         torrent_bytes: bytes | None = None,
+        intent_id: int | None = None,
     ) -> dict[str, Any]:
         handle = self.ensure(
             media_id, release_id=release_id, torrent_bytes=torrent_bytes
         )
         self.stream_prepared(
-            handler, handle, start, end, head=head, timeout=timeout
+            handler, handle, start, end, head=head, timeout=timeout,
+            intent_id=intent_id,
         )
         return handle

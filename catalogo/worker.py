@@ -6,7 +6,6 @@ Un ciclo:
   3. abandon-idle (dry-run salvo --execute-abandon)
   4. move-completed (dry-run salvo --execute-moves)
   5. seeding: quitar forceStart a completos (dry-run salvo --execute-seeding)
-  6. debrid-check de públicos (si hay RD_API_KEY)
 """
 
 from __future__ import annotations
@@ -40,7 +39,6 @@ def run_once(
     moves: Handler | None = None,
     seeding: Handler | None = None,
     evict: Handler | None = None,
-    debrid: Handler | None = None,
 ) -> CycleResult:
     stages: dict[str, Any] = {}
     ok = True
@@ -55,7 +53,6 @@ def run_once(
         ("moves", moves),
         ("seeding", seeding),
         ("evict", evict),
-        ("debrid", debrid),
     ):
         if handler is None:
             continue
@@ -79,7 +76,6 @@ def run_forever(
     moves: Handler | None = None,
     seeding: Handler | None = None,
     evict: Handler | None = None,
-    debrid: Handler | None = None,
     interval: float = 300.0,
     once: bool = False,
     sleep: Callable[[float], None] = time.sleep,
@@ -90,7 +86,7 @@ def run_forever(
         result = run_once(
             cleanup=cleanup, sync=sync, library=library, clean=clean,
             repair=repair, reseed=reseed, abandon=abandon, moves=moves,
-            seeding=seeding, evict=evict, debrid=debrid,
+            seeding=seeding, evict=evict,
         )
         emit({"started": started, **result.public()})
         if once:

@@ -121,23 +121,6 @@ def test_active_file_wins_over_legacy_pointer(tmp_path):
     assert result.path == str(library)
 
 
-def test_debrid_release_is_preferred(tmp_path):
-    db, _asset_id, _release_id, *_ = seed(tmp_path)
-    conn = sqlite3.connect(db)
-    conn.execute(
-        "UPDATE releases SET debrid_cached=1, debrid_link='https://rd/direct.mkv'"
-    )
-    conn.execute("DELETE FROM torrent_files")
-    conn.execute("UPDATE media_items SET active_file_id=NULL")
-    conn.commit()
-    conn.close()
-    result = Resolver(db).resolve("movie:tmdb:1")
-    assert result.source == "debrid"
-    assert result.debrid_url == "https://rd/direct.mkv"
-    assert result.public()["has_debrid"] is True
-    assert "debrid_url" not in result.public()
-
-
 def test_sources_and_release_selection(tmp_path):
     db, _asset_id, release_id, seed_file, _library, _seed_id, _lib_id = seed(tmp_path)
     resolver = Resolver(db)

@@ -95,6 +95,20 @@ def consume(
     return cur.rowcount > 0
 
 
+def first_byte(
+    db_path: str, intent_id: int, *, now: datetime | None = None
+) -> None:
+    """Marca el primer byte enviado; no pisa una marca anterior."""
+    current = now or _now()
+    with closing(connect(db_path)) as conn:
+        conn.execute(
+            "UPDATE play_intents SET first_byte_at = COALESCE(first_byte_at, ?) "
+            "WHERE id = ?",
+            (current.isoformat(), int(intent_id)),
+        )
+        conn.commit()
+
+
 def cleanup(db_path: str, *, now: datetime | None = None) -> int:
     current = now or _now()
     with closing(connect(db_path)) as conn:

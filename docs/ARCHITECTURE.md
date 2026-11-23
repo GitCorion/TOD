@@ -43,7 +43,7 @@ catalogo/
 ## Flujo de una reproducción
 
 1. Jellyfin lee un `.strm` y llama a `/play?key=...&download=0`.
-2. TOD resuelve la clave: fichero local, biblioteca, debrid o torrent.
+2. TOD resuelve la clave: fichero local, biblioteca o torrent.
 3. Si no hay fuente viva, `/play` busca en Prowlarr/Jackett y guarda los
    candidatos.
 4. Si el torrent ya está preparado, sirve rangos con `206`.

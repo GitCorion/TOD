@@ -18,9 +18,8 @@ def test_run_once_order_and_error_isolation():
         abandon=make("abandon"),
         moves=make("moves", fail=True),
         seeding=make("seeding"),
-        debrid=make("debrid"),
     )
-    assert calls == ["cleanup", "sync", "abandon", "moves", "seeding", "debrid"]
+    assert calls == ["cleanup", "sync", "abandon", "moves", "seeding"]
     assert not result.ok
     assert result.stages["moves"]["error"] == "moves failed"
     assert result.stages["sync"] == {"name": "sync"}

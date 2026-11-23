@@ -69,8 +69,6 @@ def _state(
         return "UNAVAILABLE"
     if resolution.source in ("library", "local_seed"):
         return "AVAILABLE"
-    if resolution.source == "debrid":
-        return "DEBRID"
     if resolution.source == "torrent":
         return "COLD"
     return "UNAVAILABLE"
@@ -324,7 +322,7 @@ def asset_status(
     elif torrent is not None:
         progress = float(torrent["progress"] or 0)
     elif resolution is not None and resolution.source in (
-        "library", "local_seed", "debrid"
+        "library", "local_seed"
     ):
         progress = 1.0
 
@@ -427,7 +425,7 @@ def asset_status(
             buffered or (progress >= 1 and live is not None)
         )
     else:
-        stream_ready = source in ("library", "local_seed", "debrid")
+        stream_ready = source in ("library", "local_seed")
     state = _state(resolution, live, progress)
     eta_seconds = _eta(live)
     if file_progress is not None and file_size and speed > 0:
@@ -519,7 +517,6 @@ def asset_status(
         "swarm_seeds": swarm_seeds,
         "swarm_peers": swarm_peers,
         "has_local": source in ("library", "local_seed"),
-        "has_debrid": source == "debrid",
         "file_id": resolution.file_id if resolution is not None else None,
         "file_index": file_index,
         "seed_state": commitment["state"] if commitment is not None else None,

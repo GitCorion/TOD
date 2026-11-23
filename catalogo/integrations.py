@@ -348,28 +348,6 @@ def test_tmdb(
         return _error("tmdb", started, exc)
 
 
-def test_realdebrid(
-    config: Config, *, timeout: float = DEFAULT_TIMEOUT
-) -> dict[str, Any]:
-    started = time.monotonic()
-    try:
-        if not config.rd_api_key:
-            raise IntegrationError("sin API key de Real-Debrid")
-        payload = _get_json(
-            "https://api.real-debrid.com/rest/1.0/user",
-            headers={"Authorization": f"Bearer {config.rd_api_key}"},
-            timeout=timeout,
-        )
-        username = (payload or {}).get("username") or ""
-        return _result(
-            "realdebrid",
-            started,
-            detail=f"Real-Debrid {username}".strip(),
-        )
-    except Exception as exc:
-        return _error("realdebrid", started, exc)
-
-
 def test_directories(config: Config) -> dict[str, Any]:
     started = time.monotonic()
     paths = {
@@ -413,7 +391,6 @@ TESTS = {
     "radarr": test_radarr,
     "sonarr": test_sonarr,
     "tmdb": test_tmdb,
-    "realdebrid": test_realdebrid,
     "directories": test_directories,
 }
 
@@ -487,13 +464,10 @@ LIGHT_TESTS = {
     "radarr": _light_radarr,
     "sonarr": _light_sonarr,
     "tmdb": lambda config: test_tmdb(config, timeout=LIGHT_TIMEOUT),
-    "realdebrid": lambda config: test_realdebrid(config, timeout=LIGHT_TIMEOUT),
 }
 
 ALIASES = {
     "qbit": "qbittorrent",
-    "real-debrid": "realdebrid",
-    "rd": "realdebrid",
     "paths": "directories",
 }
 

@@ -81,8 +81,3 @@ con la API key de TMDB (v3).
 | Raíces `.strm` | rutas válidas para `/catalog/lookup` |
 
 Usa **Comprobar** para ver existencia, escritura y espacio libre.
-
-## Real-Debrid (avanzado)
-
-No es necesario para el uso normal y no aparece en la configuración. Solo se
-activa con `RD_API_KEY` en el entorno, para releases públicos cacheados.

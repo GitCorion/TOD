@@ -338,12 +338,12 @@ class CatalogHandler(BaseHTTPRequestHandler):
                 )
                 return self._json(status, payload, head=head, **kwargs)
 
-            # Camino rápido: si ya está en local/archivo/debrid no hay que
+            # Camino rápido: si ya está en local/archivo no hay que
             # admitir, descargar ni consultar qBittorrent. La app recibe 202
             # al instante y luego consulta /status.
             if release_id is None:
                 resolution = self.resolver.resolve(key)
-                if resolution.source in ("library", "local_seed", "debrid"):
+                if resolution.source in ("library", "local_seed"):
                     status = asset_status(
                         self.db_path, key,
                         release_id=resolution.release_id, qbit=None,
@@ -498,16 +498,6 @@ class CatalogHandler(BaseHTTPRequestHandler):
         if parsed.path == "/resolve":
             return self._json(200, resolution.public(), head=head)
 
-        if resolution.source == "debrid":
-            if not resolution.debrid_url:
-                return self._json(503, {"error": "debrid_sin_enlace", "message": error_message("debrid_sin_enlace")}, head=head)
-            self.send_response(302)
-            self.send_header("Location", resolution.debrid_url)
-            self.send_header("Content-Length", "0")
-            self.send_header("Cache-Control", "no-store")
-            self.end_headers()
-            return
-
         if resolution.source in ("library", "local_seed"):
             if not resolution.path:
                 return self._text(503, "sin ruta local", head=head)
@@ -601,19 +591,6 @@ class CatalogHandler(BaseHTTPRequestHandler):
                         {"release_id": candidate_id, "error": str(exc)[:200]}
                     )
                     continue
-                if candidate.source == "debrid":
-                    if not candidate.debrid_url:
-                        errors.append(
-                            {"release_id": candidate_id,
-                             "error": "debrid_sin_enlace"}
-                        )
-                        continue
-                    self.send_response(302)
-                    self.send_header("Location", candidate.debrid_url)
-                    self.send_header("Content-Length", "0")
-                    self.send_header("Cache-Control", "no-store")
-                    self.end_headers()
-                    return None
                 if candidate.source in ("library", "local_seed"):
                     if not candidate.path:
                         errors.append(
@@ -853,7 +830,7 @@ class CatalogHandler(BaseHTTPRequestHandler):
                 resolution = self.resolver.resolve_release(key, release_id)
             except Exception:
                 return 2
-            if resolution.source in ("library", "local_seed", "debrid"):
+            if resolution.source in ("library", "local_seed"):
                 return 0
             if resolution.source == "torrent":
                 return 1

@@ -188,9 +188,7 @@ def _versions(
         ):
             continue
         release_id = int(release["id"])
-        is_available = release_id in available_ids or (
-            release["debrid_cached"] and release["debrid_link"]
-        )
+        is_available = release_id in available_ids
         if versions_filter == "available":
             decision_allowed = bool(is_available)
         elif versions_filter == "alive":
@@ -402,13 +400,12 @@ def export_strm(
             preference=preference,
         )
         # Un .strm solo se publica si hay algo que reproducir de verdad:
-        # fichero local/archivado, debrid cacheado o un release VIVO con
-        # seeds. Los releases unknown/stale/dead no crean entradas muertas
-        # en Jellyfin; el catálogo conserva el título para reintentarlo.
+        # fichero local/archivado o un release VIVO con seeds. Los releases
+        # unknown/stale/dead no crean entradas muertas en Jellyfin; el
+        # catálogo conserva el título para reintentarlo.
         playable = [
             (release, label) for release, label in playable
             if int(release["id"]) in available_ids
-            or (release["debrid_cached"] and release["debrid_link"])
             or (
                 release["health"] == "alive"
                 and int(release["seeders"] or 0) >= min_seeders

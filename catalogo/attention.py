@@ -82,12 +82,6 @@ SERVICES: dict[str, dict[str, Any]] = {
         "severity": "warn",
         "focus": "tmdb_api_key",
     },
-    "realdebrid": {
-        "label": "Real-Debrid",
-        "attr": "rd_api_key",
-        "severity": "warn",
-        "focus": "rd_api_key",
-    },
 }
 
 # Rutas que se comprueban siempre. `fail` significa que sin ellas no se puede

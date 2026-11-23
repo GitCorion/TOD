@@ -40,7 +40,6 @@ class Resolution:
     health: str | None = None
     info_hash: str | None = None
     state: str | None = None
-    debrid_url: str | None = None
 
     def public(self) -> dict[str, Any]:
         return {
@@ -55,7 +54,6 @@ class Resolution:
             "tracker": self.tracker,
             "health": self.health,
             "has_local": bool(self.path),
-            "has_debrid": bool(self.debrid_url),
             "etag": self.etag,
         }
 
@@ -222,26 +220,6 @@ class Resolver:
                 "SELECT * FROM releases WHERE id = ?", (release_id,)
             ).fetchone()
 
-    def _debrid_from_release(
-        self, key: str, asset_id: int, release: Any, reason: str
-    ) -> Resolution | None:
-        if release is None or release["asset_id"] != asset_id:
-            return None
-        link = release["debrid_link"]
-        if not release["debrid_cached"] or not link:
-            return None
-        return Resolution(
-            key=key,
-            asset_id=asset_id,
-            source="debrid",
-            reason=reason,
-            size=release["size_bytes"],
-            release_id=release["id"],
-            tracker=release["tracker"],
-            health=release["health"],
-            debrid_url=link,
-        )
-
     def _torrent_from_release(
         self, key: str, asset_id: int, release_id: int, reason: str
     ) -> Resolution | None:
@@ -369,8 +347,7 @@ class Resolver:
                 SELECT releases.id, releases.tracker, releases.title,
                        releases.quality, releases.audio, releases.size_bytes,
                        releases.seeders, releases.health, releases.privacy,
-                       releases.source, releases.debrid_cached,
-                       releases.debrid_link, ss.started_ok AS swarm_started_ok,
+                       releases.source, ss.started_ok AS swarm_started_ok,
                        ss.failures AS swarm_failures,
                        ss.speed_bps AS swarm_speed_bps
                 FROM releases
@@ -421,9 +398,6 @@ class Resolver:
                         "too_large": bool(
                             self.max_size_bytes
                             and (row["size_bytes"] or 0) > self.max_size_bytes
-                        ),
-                        "has_debrid": bool(
-                            row["debrid_cached"] and row["debrid_link"]
                         ),
                         "swarm_started_ok": (
                             bool(row["swarm_started_ok"])
@@ -482,11 +456,6 @@ class Resolver:
                 )
                 if result is not None:
                     return result
-        debrid = self._debrid_from_release(
-            asset["key"], asset["id"], release, "requested_release"
-        )
-        if debrid is not None:
-            return debrid
         return Resolution(
             key=asset["key"],
             asset_id=asset["id"],
@@ -562,13 +531,6 @@ class Resolver:
                         target["note"] or "target_torrent",
                     )
                 if target["release_id"]:
-                    release_row = self._release(target["release_id"])
-                    debrid = self._debrid_from_release(
-                        normalized, asset_id, release_row,
-                        target["note"] or "target_debrid",
-                    )
-                    if debrid is not None:
-                        return debrid
                     result = self._torrent_from_release(
                         normalized, asset_id, target["release_id"],
                         target["note"] or "target_torrent",
@@ -631,11 +593,6 @@ class Resolver:
 
         release = self._best_release(asset_id)
         if release is not None and release["health"] in ("alive", "unknown", "stale"):
-            debrid = self._debrid_from_release(
-                normalized, asset_id, release, f"{reason_prefix}_debrid"
-            )
-            if debrid is not None:
-                return debrid
             return Resolution(
                 key=normalized,
                 asset_id=asset_id,

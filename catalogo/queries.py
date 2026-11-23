@@ -62,8 +62,6 @@ LIVE_SOURCE_SQL = """(
         (f.storage_location='LOCAL_DISK' AND f.state IN ('ready','seeding'))
         OR (f.storage_location='1FICHIER' AND f.state='archived')
     ))
-    OR EXISTS (SELECT 1 FROM releases r WHERE r.asset_id=m.id
-               AND r.debrid_cached=1)
     OR EXISTS (SELECT 1 FROM library_files lf WHERE lf.kind=m.kind
                AND lf.tmdb=m.tmdb AND (m.kind='movie' OR
                (lf.season=m.season AND lf.episode=m.episode)))
@@ -155,10 +153,6 @@ def overview(
             ),
             "public": _scalar(
                 conn, "SELECT COUNT(*) FROM releases WHERE privacy='public'"
-            ),
-            "debrid_cached": _scalar(
-                conn,
-                "SELECT COUNT(*) FROM releases WHERE debrid_cached=1",
             ),
         }
 
@@ -326,8 +320,6 @@ AVAILABILITY_SQL = {
     "cloud": """EXISTS (SELECT 1 FROM torrent_files f WHERE f.asset_id=m.id
                        AND f.storage_location='1FICHIER'
                        AND f.state='archived')""",
-    "debrid": """EXISTS (SELECT 1 FROM releases r WHERE r.asset_id=m.id
-                         AND r.debrid_cached=1)""",
     "library": """EXISTS (SELECT 1 FROM library_files lf WHERE lf.kind=m.kind
                           AND lf.tmdb=m.tmdb AND (m.kind='movie' OR
                           (lf.season=m.season AND lf.episode=m.episode)))""",
@@ -396,8 +388,6 @@ def list_titles(
                (SELECT r.audio FROM releases r WHERE r.asset_id=m.id
                    AND r.health='alive'
                    ORDER BY COALESCE(r.seeders,0) DESC LIMIT 1) AS audio,
-               (SELECT MAX(r.debrid_cached) FROM releases r
-                   WHERE r.asset_id=m.id) AS debrid_cached,
                EXISTS (SELECT 1 FROM torrent_files f WHERE f.asset_id=m.id
                    AND f.storage_location='LOCAL_DISK'
                    AND f.state IN ('ready','seeding')) AS has_local,
@@ -427,15 +417,12 @@ def list_titles(
             "has_cloud",
             "in_library",
             "has_target",
-            "debrid_cached",
         ):
             item[field] = bool(item.get(field))
         if item["has_local"]:
             item["availability"] = "local"
         elif item["in_library"]:
             item["availability"] = "library"
-        elif item["debrid_cached"]:
-            item["availability"] = "debrid"
         elif item["has_cloud"]:
             item["availability"] = "cloud"
         elif item["alive"]:
@@ -462,7 +449,6 @@ def _release_rows(conn, asset_id: int) -> list[dict[str, Any]]:
                r.audio_confidence, r.size_bytes, r.seeders, r.peers,
                r.health, r.health_checked_at, r.privacy, r.source,
                r.is_pack, r.info_hash, r.info_url,
-               r.debrid_cached, r.debrid_checked_at,
                r.created_at, r.updated_at,
                t.state AS torrent_state, t.qbit_state AS torrent_qbit_state,
                t.progress AS torrent_progress, t.ratio AS torrent_ratio,

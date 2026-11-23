@@ -18,8 +18,6 @@ from .bulk_sync import sync_sources
 from .broken import clean_broken
 from .config import Config
 from .db import init_db
-from .debrid import DebridError, RealDebridClient
-from .debrid_cache import cache_public
 from .evict import evict_completed
 from .health import apply_health, pending_releases, summary as health_summary
 from .health_worker import run as health_run
@@ -647,23 +645,6 @@ def cmd_prowlarr_sync(args, config: Config) -> int:
     return 0 if not report["errors"] else 1
 
 
-def cmd_debrid_check(args, config: Config) -> int:
-    try:
-        client = RealDebridClient.from_config(config)
-    except DebridError as exc:
-        _print({"error": str(exc)})
-        return 2
-    report = cache_public(
-        str(config.db_path),
-        client,
-        limit=args.limit,
-        delay=args.delay,
-        dry_run=args.dry_run,
-    )
-    _print(report)
-    return 0 if not report["errors"] else 1
-
-
 def cmd_public_sync(args, config: Config) -> int:
     try:
         client = JackettClient.from_config(config)
@@ -1088,15 +1069,6 @@ def cmd_worker(args, config: Config) -> int:
             dry_run=not args.execute_evict,
         )
 
-    def debrid() -> dict:
-        if args.no_debrid or not config.rd_api_key:
-            return {"skipped": "sin_rd"}
-        client = RealDebridClient.from_config(config)
-        return cache_public(
-            str(config.db_path), client,
-            limit=args.debrid_limit, delay=1.0, dry_run=False,
-        )
-
     run_forever(
         cleanup=cleanup,
         sync=sync if qbit_read is not None else None,
@@ -1116,7 +1088,6 @@ def cmd_worker(args, config: Config) -> int:
         moves=moves if qbit_write is not None else None,
         seeding=seeding if (qbit_write is not None and not args.no_seeding) else None,
         evict=evict if (qbit_write is not None and args.execute_evict) else None,
-        debrid=debrid if not args.no_debrid else None,
         interval=args.interval,
         once=args.once,
         emit=lambda obj: _print(obj),
@@ -1360,7 +1331,7 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--ondemand-kbps", type=int, default=DEFAULT_ONDEMAND_KBPS)
     p.add_argument("--dry-run", action="store_true")
 
-    p = sub.add_parser("worker", help="ciclo automático de sync/abandon/move/debrid")
+    p = sub.add_parser("worker", help="ciclo automático de sync/abandon/move/seeding")
     p.add_argument("--once", action="store_true")
     p.add_argument("--interval", type=float, default=300.0)
     p.add_argument("--execute-moves", action="store_true")
@@ -1379,13 +1350,11 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--reseed-limit", type=int, default=1)
     p.add_argument("--clean-limit", type=int, default=10)
     p.add_argument("--repair-limit", type=int, default=5)
-    p.add_argument("--debrid-limit", type=int, default=5)
     p.add_argument("--grace", type=int, default=300)
     p.add_argument("--no-sync", action="store_true")
     p.add_argument("--no-abandon", action="store_true")
     p.add_argument("--no-seeding", action="store_true")
     p.add_argument("--no-evict", action="store_true")
-    p.add_argument("--no-debrid", action="store_true")
 
     p = sub.add_parser("repair", help="recheck/reanuda torrents con error local")
     p.add_argument("--limit", type=int, default=5)
@@ -1474,11 +1443,6 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--include-existing", action="store_true")
     p.add_argument("--dry-run", action="store_true")
 
-    p = sub.add_parser("debrid-check", help="comprueba caché RD de públicos")
-    p.add_argument("--limit", type=int, default=5)
-    p.add_argument("--delay", type=float, default=1.0)
-    p.add_argument("--dry-run", action="store_true")
-
     p = sub.add_parser("public-sync", help="fallback público vía Jackett")
     p.add_argument("--key")
     p.add_argument("--limit", type=int, default=10)
@@ -1527,7 +1491,6 @@ def main(argv: list[str] | None = None) -> int:
         "qbit-limits": cmd_qbit_limits,
         "prowlarr-sync": cmd_prowlarr_sync,
         "runtime-sync": cmd_runtime_sync,
-        "debrid-check": cmd_debrid_check,
         "public-sync": cmd_public_sync,
         "worker": cmd_worker,
         "repair": cmd_repair,

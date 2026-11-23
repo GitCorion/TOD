@@ -81,7 +81,6 @@ export const JOB_LABELS = {
   'arr-mirror': 'Espejo Radarr/Sonarr',
   metadata: 'Actualizar metadatos',
   monitor: 'Buscar fuentes en seguimiento',
-  'debrid-check': 'Comprobar debrid',
   'qbit-limits': 'Límites qBittorrent',
   'cleanup-leases': 'Liberar reproducciones',
   'publish-now': 'Añadir',
@@ -134,7 +133,6 @@ export const CAPABILITY_LABELS = {
   prowlarr: 'Prowlarr',
   jackett: 'Jackett',
   tmdb: 'TMDB',
-  realdebrid: 'Real-Debrid (avanzado)',
   play_service: 'Reproductor',
   qbittorrent: 'qBittorrent',
   jellyfin: 'Jellyfin',
@@ -227,7 +225,6 @@ export function availabilityStatus(value) {
   const map = {
     local: { label: 'Local', tone: 'ok' },
     library: { label: 'Radarr/Sonarr', tone: 'ok' },
-    debrid: { label: 'Debrid', tone: 'info' },
     cloud: { label: 'archivo', tone: 'info' },
     alive: { label: 'Fuente viva', tone: 'info' },
     unverified: { label: 'Sin verificar', tone: 'warn' },
@@ -389,15 +386,6 @@ export const TASKS = [
       { name: 'sonarr_kbps', label: 'Sonarr KiB/s', type: 'number', value: 2500, min: 0 },
       { name: 'ondemand_kbps', label: 'On-demand KiB/s', type: 'number', value: 0, min: 0 },
       { name: 'dry_run', label: 'Solo previsualizar', type: 'checkbox', value: false },
-    ],
-  },
-  {
-    kind: 'debrid-check', title: 'Comprobar debrid', category: 'sistema',
-    desc: 'Prueba la caché de Real-Debrid para versiones públicas.',
-    fields: [
-      { name: 'limit', label: 'Versiones', type: 'number', value: 10, min: 1 },
-      { name: 'delay', label: 'Pausa (s)', type: 'number', value: 1, step: 0.1 },
-      { name: 'dry_run', label: 'Solo previsualizar', type: 'checkbox', value: true },
     ],
   },
 ];

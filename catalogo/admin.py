@@ -25,8 +25,6 @@ from .bridge import bridge_downloads
 from .broken import clean_broken
 from .bulk_sync import sync_sources
 from .config import Config
-from .debrid import DebridError, RealDebridClient
-from .debrid_cache import cache_public
 from .evict import evict_completed
 from .health_worker import run as health_run
 from .jackett import JackettClient, JackettError
@@ -1755,23 +1753,6 @@ def job_metadata(ctx: JobContext) -> dict[str, Any]:
     return report
 
 
-def job_debrid(ctx: JobContext) -> dict[str, Any]:
-    if not ctx.config.rd_api_key:
-        raise JobError("sin RD_API_KEY")
-    ctx.report("comprobando caché de Real-Debrid", progress=0.1)
-    try:
-        client = RealDebridClient.from_config(ctx.config)
-    except DebridError as exc:
-        raise JobError(str(exc)) from exc
-    return cache_public(
-        str(ctx.config.db_path),
-        client,
-        limit=_int(ctx.params.get("limit"), 10),
-        delay=max(0.0, _float(ctx.params.get("delay"), 1.0)),
-        dry_run=_bool(ctx.params.get("dry_run"), True),
-    )
-
-
 def job_limits(ctx: JobContext) -> dict[str, Any]:
     return apply_qbit_limits(
         ctx.config,
@@ -1932,7 +1913,6 @@ JOB_HANDLERS = {
     "arr-mirror": job_arr_mirror,
     "metadata": job_metadata,
     "monitor": job_monitor,
-    "debrid-check": job_debrid,
     "qbit-limits": job_limits,
     "cleanup-leases": job_cleanup_leases,
     "worker-cycle": job_worker_cycle,
