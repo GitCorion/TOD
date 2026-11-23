@@ -576,6 +576,10 @@ class PlayService:
                 play_intents.ready(self.db_path, intent_id)
             except Exception:
                 pass
+        roots = list(self.stream_roots)
+        save_path = handle.get("save_path")
+        if save_path:
+            roots.insert(0, str(save_path))
         stream_torrent_file(
             handler,
             self.qbit_read,
@@ -583,7 +587,7 @@ class PlayService:
             handle["file_index"],
             start,
             end,
-            roots=self.stream_roots or None,
+            roots=roots or None,
             head=head,
             timeout=timeout,
             on_first_byte=on_first_byte,

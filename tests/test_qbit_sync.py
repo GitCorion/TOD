@@ -428,3 +428,64 @@ def test_choose_active_prefers_healthy_spanish_over_larger_blocked(tmp_path):
     conn.close()
     assert active == good
     assert status == "SEEDING_LOCAL"
+
+
+class QueuedArrQbit(FakeQbit):
+    def __init__(self):
+        super().__init__()
+        self._torrents.append(
+            {
+                "hash": "arr1", "category": "radarr", "state": "queuedDL",
+                "progress": 0, "save_path": "/mnt/descargas/radarr",
+                "content_path": "/mnt/descargas/radarr/Arr.Movie.mkv",
+                "download_path": "/mnt/cache/tmp/radarr",
+                "completion_on": -1, "seeding_time": 0,
+                "added_on": EPOCH - 50, "uploaded": 0, "downloaded": 0,
+                "ratio": 0, "size": 2000, "tracker": "TrackerEspanol2",
+            }
+        )
+
+    def files(self, info_hash):
+        if info_hash == "arr1":
+            self.files_calls.append(info_hash)
+            return [
+                {"index": 0, "name": "Arr.Movie.mkv", "size": 2000,
+                 "progress": 0, "priority": 1}
+            ]
+        return super().files(info_hash)
+
+
+class QueuedArrRadarr(FakeRadarrAPI):
+    def movies(self):
+        return super().movies() + [
+            {"id": 2, "tmdbId": 300, "title": "Arr Movie", "year": 2025}
+        ]
+
+    def history_all(self, **kwargs):
+        return super().history_all(**kwargs) + [
+            {"downloadId": "ARR1", "movieId": 2}
+        ]
+
+
+def test_queued_arr_movie_is_mapped_even_at_zero(tmp_path):
+    db, _asset_id = seed_db(tmp_path)
+    client = QueuedArrQbit()
+    report = sync(
+        db, client, radarr=QueuedArrRadarr(), sonarr=FakeSonarrAPI(),
+        dry_run=False, check_exists=False, now=NOW,
+    )
+    assert "arr1" in client.files_calls
+    assert "movie:tmdb:300" in report.arr_keys
+    conn = sqlite3.connect(db)
+    conn.row_factory = sqlite3.Row
+    media = conn.execute(
+        "SELECT id FROM media_items WHERE key='movie:tmdb:300'"
+    ).fetchone()
+    assert media is not None
+    mapped = conn.execute(
+        "SELECT f.asset_id, f.state FROM torrent_files f "
+        "JOIN torrents t ON t.id=f.torrent_id WHERE t.info_hash='arr1'"
+    ).fetchone()
+    conn.close()
+    assert mapped["asset_id"] == media["id"]
+    assert mapped["state"] == "unknown"

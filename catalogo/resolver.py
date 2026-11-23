@@ -40,6 +40,7 @@ class Resolution:
     health: str | None = None
     info_hash: str | None = None
     state: str | None = None
+    save_path: str | None = None
 
     def public(self) -> dict[str, Any]:
         return {
@@ -101,6 +102,7 @@ class Resolver:
             return conn.execute(
                 """
                 SELECT f.*, t.state AS torrent_state, t.info_hash AS torrent_hash,
+                       t.save_path AS torrent_save_path,
                        r.tracker AS release_tracker, r.health AS release_health
                 FROM torrent_files f
                 LEFT JOIN torrents t ON t.id = f.torrent_id
@@ -330,11 +332,15 @@ class Resolver:
 
     def _torrent(
         self, key: str, asset_id: int, row: Any, reason: str
-    ) -> Resolution:        return Resolution(
+    ) -> Resolution:
+        # Un fichero mapeado sin release propia es una descarga del *arr:
+        # TOD la adopta para reproducir, no crea compromiso de siembra.
+        borrowed = row is not None and row["release_id"] is None
+        return Resolution(
             key=key,
             asset_id=asset_id,
-            source="torrent",
-            reason=reason,
+            source="arr" if borrowed else "torrent",
+            reason="arr_queued" if borrowed else reason,
             size=row["size_bytes"] if row is not None else None,
             release_id=row["release_id"] if row is not None else None,
             file_id=row["id"] if row is not None else None,
@@ -343,6 +349,7 @@ class Resolver:
             health=row["release_health"] if row is not None else None,
             info_hash=row["torrent_hash"] if row is not None else None,
             state=row["torrent_state"] if row is not None else None,
+            save_path=row["torrent_save_path"] if row is not None else None,
         )
 
     def sources(self, key: str) -> list[dict[str, Any]]:
@@ -466,7 +473,7 @@ class Resolver:
                 )
                 if result is not None:
                     return result
-            if row["local_path"]:
+            if row["local_path"] and row["state"] not in ("downloading", "unknown"):
                 result = self._local(
                     asset["key"], asset["id"], row, "local_seed",
                     row["local_path"], "requested_release",
@@ -529,7 +536,9 @@ class Resolver:
                     )
                     if result is not None:
                         return result
-                if active["local_path"]:
+                if active["local_path"] and active["state"] not in (
+                    "downloading", "unknown"
+                ):
                     result = self._local(
                         normalized, asset_id, active, "local_seed",
                         active["local_path"], "active_file",
@@ -582,7 +591,10 @@ class Resolver:
                      if target["file_id"] and f["id"] == target["file_id"]),
                     None,
                 )
-                if row is not None:
+                if row is not None and (
+                    kind == "library"
+                    or row["state"] not in ("downloading", "unknown")
+                ):
                     path = (
                         row["library_path"] if kind == "library"
                         else row["local_path"]

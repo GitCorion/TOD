@@ -42,6 +42,8 @@ class SyncReport:
     missing_files: int = 0
     errors: list[str] = field(default_factory=list)
     by_category: dict[str, int] = field(default_factory=dict)
+    # Títulos del *arr con descarga en curso, para publicar su .strm.
+    arr_keys: set[str] = field(default_factory=set)
     dry_run: bool = False
 
     def public(self) -> dict[str, Any]:
@@ -56,6 +58,7 @@ class SyncReport:
             "reseed_required": self.reseed_required,
             "missing_files": self.missing_files,
             "by_category": dict(sorted(self.by_category.items())),
+            "arr_keys": sorted(self.arr_keys)[:200],
             "errors": self.errors[:20],
             "dry_run": self.dry_run,
         }
@@ -679,9 +682,17 @@ def sync(
         previous = known.get(info_hash)
         category = torrent.get("category") or ""
         progress = float(torrent.get("progress") or 0)
+        # Un torrent del *arr en cola tiene hash en el historial de
+        # Radarr/Sonarr aunque no haya descargado nada: hay que leer sus
+        # ficheros para poder mapearlo y publicar el .strm.
+        history_hit = bool(
+            (category != "tv-sonarr" and radarr.get(info_hash))
+            or (category != "radarr" and sonarr.get(info_hash))
+        )
         needs_files = (
             category in ONDEMAND_CATEGORIES
             or progress >= 1
+            or history_hit
             or (previous is not None and int(previous["files"] or 0) > 0)
         )
         if (
@@ -765,7 +776,7 @@ def sync(
                     movie = radarr.get(info_hash) if category != "tv-sonarr" else None
                     episodes = sonarr.get(info_hash, []) if category != "radarr" else []
                     movie_id = None
-                    if movie and complete and movie.get("tmdb"):
+                    if movie and movie.get("tmdb"):
                         movie_id, created = _ensure_movie(
                             conn, movie["tmdb"], movie.get("title"), movie.get("year")
                         )
@@ -830,6 +841,17 @@ def sync(
                             archive_root=archive_root,
                         )
                         report.files_written += 1
+                        if (
+                            asset_id is not None
+                            and not complete
+                            and category in ("radarr", "tv-sonarr")
+                        ):
+                            key_row = conn.execute(
+                                "SELECT key FROM media_items WHERE id = ?",
+                                (int(asset_id),),
+                            ).fetchone()
+                            if key_row:
+                                report.arr_keys.add(str(key_row["key"]))
                 except Exception as exc:
                     report.errors.append(f"{info_hash[:12]}: {exc}")
 

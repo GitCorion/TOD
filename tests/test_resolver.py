@@ -351,3 +351,35 @@ def test_blocked_tracker_is_not_offered(tmp_path):
     assert result.reason == "tracker_blocked"
     assert result.tracker == "TrackerEspanol2"
     assert resolver.resolve("movie:tmdb:1").source == "unavailable"
+
+
+def test_queued_arr_torrent_resolves_as_arr(tmp_path):
+    db = tmp_path / "catalogo.db"
+    init_db(db, MIGRATIONS)
+    conn = sqlite3.connect(db)
+    conn.execute(
+        "INSERT INTO media_items(key,kind,tmdb,title,year) VALUES(?,?,?,?,?)",
+        ("movie:tmdb:12", "movie", 12, "En cola", 2026),
+    )
+    asset_id = conn.execute("SELECT id FROM media_items").fetchone()[0]
+    conn.execute(
+        "INSERT INTO torrents(info_hash,category,state,save_path) "
+        "VALUES(?,?,?,?)",
+        ("arrhash", "radarr", "waiting", "/mnt/descargas/radarr"),
+    )
+    torrent_id = conn.execute("SELECT id FROM torrents").fetchone()[0]
+    conn.execute(
+        "INSERT INTO torrent_files(asset_id,torrent_id,file_index,rel_path,"
+        "size_bytes,state,storage_location) VALUES(?,?,?,?,?,?,?)",
+        (asset_id, torrent_id, 0, "En cola.mkv", 2000, "unknown", "LOCAL_DISK"),
+    )
+    conn.commit()
+    conn.close()
+
+    result = Resolver(db).resolve("movie:tmdb:12")
+    assert result.source == "arr"
+    assert result.reason == "arr_queued"
+    assert result.info_hash == "arrhash"
+    assert result.file_index == 0
+    assert result.save_path == "/mnt/descargas/radarr"
+    assert result.size == 2000

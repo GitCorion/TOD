@@ -80,9 +80,12 @@ def _cancel_queue(client, *, movie_id: int | None = None,
                 )
             if not match:
                 continue
+            # Nunca se borra la descarga del cliente: el *arr puede tener
+            # otro release en curso y, si comparte hash, se llevaría por
+            # delante la de TOD. El rescan del *arr cierra su propia cola.
             client.delete_queue_item(
                 int(record["id"]),
-                remove_from_client=True,
+                remove_from_client=False,
                 blocklist=False,
             )
             removed += 1

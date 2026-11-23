@@ -556,6 +556,79 @@ class CatalogHandler(BaseHTTPRequestHandler):
             except FileNotFoundError:
                 return self._text(404, "fichero no disponible", head=head)
 
+        if resolution.source == "arr":
+            # Descarga en curso del *arr: se adopta para reproducir y se
+            # fuerza para saltar la cola del cliente. El *arr sigue siendo
+            # el dueño de la siembra y de la importación posterior.
+            if self.play_service is None:
+                return self._json(
+                    503,
+                    {"error": "backend_disabled", "key": resolution.key,
+                     "message": error_message("backend_disabled")},
+                    head=head,
+                )
+            if not resolution.info_hash or resolution.file_index is None:
+                return self._json(
+                    503,
+                    {"error": "arr_sin_fichero", "key": resolution.key,
+                     "message": "La descarga del arr aún no tiene fichero."},
+                    head=head,
+                    extra_headers={"Retry-After": "10"},
+                )
+            intent = play_intents.create(
+                self.db_path,
+                resolution.key,
+                source=self.play_intent_source,
+                client_ip=self.client_address[0],
+                user_agent=self.headers.get("User-Agent"),
+            )
+            write = self.play_service.qbit_write
+            force = getattr(write, "set_force_start", None)
+            if callable(force):
+                try:
+                    force(resolution.info_hash, True)
+                except Exception:
+                    pass
+            resume = getattr(write, "resume", None)
+            if callable(resume):
+                try:
+                    resume(resolution.info_hash)
+                except Exception:
+                    pass
+            start, end = self._parse_play_range(resolution)
+            if start is None:
+                return self._json(
+                    416, {"error": "range_invalid", "key": resolution.key},
+                    head=head,
+                )
+            handle = {
+                "media_id": resolution.key,
+                "info_hash": resolution.info_hash,
+                "file_index": resolution.file_index,
+                "save_path": resolution.save_path,
+                "release_id": None,
+            }
+            try:
+                self.play_service.stream_prepared(
+                    self, handle, start, end, intent_id=intent["id"]
+                )
+            except RangeNotSatisfiable:
+                return self._json(
+                    416, {"error": "range_invalid", "key": resolution.key},
+                    head=head,
+                )
+            except StreamTimeout as exc:
+                return self._json(
+                    503,
+                    {"error": "warming",
+                     "message": "La descarga del arr está arrancando.",
+                     "key": resolution.key,
+                     "detail": str(exc)[:200]},
+                    head=head,
+                    extra_headers={"Retry-After": "5"},
+                )
+            return None
+
         if resolution.source == "torrent":
             prepared = self._torrent_prepared(resolution)
             auto_prepare = False

@@ -827,3 +827,69 @@ def test_prepare_reports_tracker_blocked(tmp_path):
         server.shutdown()
         server.server_close()
         thread.join(timeout=5)
+
+
+class FakeArrWrite:
+    def __init__(self):
+        self.forced = []
+        self.resumed = []
+
+    def set_force_start(self, info_hash, value=True):
+        self.forced.append((info_hash, value))
+
+    def resume(self, info_hash):
+        self.resumed.append(info_hash)
+
+
+def test_play_adopts_queued_arr_torrent_and_forces_it(tmp_path):
+    db, _content = build_db(tmp_path)
+    conn = sqlite3.connect(db)
+    conn.execute(
+        "INSERT INTO media_items(key,media_id,kind,tmdb,title,year,status) "
+        "VALUES(?,?,?,?,?,?,?)",
+        ("movie:tmdb:777", "movie:tmdb:777", "movie", 777, "En cola", 2026,
+         "COLD"),
+    )
+    asset_id = conn.execute(
+        "SELECT id FROM media_items WHERE key='movie:tmdb:777'"
+    ).fetchone()[0]
+    conn.execute(
+        "INSERT INTO torrents(info_hash,category,state,save_path) "
+        "VALUES(?,?,?,?)",
+        ("arrhash", "radarr", "waiting", str(tmp_path)),
+    )
+    torrent_id = conn.execute(
+        "SELECT id FROM torrents WHERE info_hash='arrhash'"
+    ).fetchone()[0]
+    conn.execute(
+        "INSERT INTO torrent_files(asset_id,torrent_id,file_index,rel_path,"
+        "size_bytes,state,storage_location) VALUES(?,?,?,?,?,?,?)",
+        (asset_id, torrent_id, 0, "Arr.mkv", 1000, "unknown", "LOCAL_DISK"),
+    )
+    conn.commit()
+    conn.close()
+
+    service = FakePlayService()
+    writer = FakeArrWrite()
+    service.qbit_write = writer
+    server = make_server("127.0.0.1", 0, db, play_service=service)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    host, port = server.server_address
+    try:
+        conn = http.client.HTTPConnection(host, port, timeout=5)
+        conn.request(
+            "GET", "/play?key=movie%3Atmdb%3A777",
+            headers={"Range": "bytes=0-99"},
+        )
+        response = conn.getresponse()
+        response.read()
+        conn.close()
+        assert response.status == 206
+        assert writer.forced == [("arrhash", True)]
+        assert writer.resumed == ["arrhash"]
+        assert service.calls == [("movie:tmdb:777", 0, 99)]
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=5)

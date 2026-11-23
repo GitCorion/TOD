@@ -1499,6 +1499,44 @@ def job_export(ctx: JobContext) -> dict[str, Any]:
     return report
 
 
+def _publish_arr_strm(config: Config, keys: list[str]) -> dict[str, Any]:
+    """Publica el .strm de descargas del *arr que aún no lo tengan.
+
+    Se llama tras qbit-sync; así un torrent en cola del *arr aparece en
+    Jellyfin y al reproducirlo TOD lo adopta y lo fuerza.
+    """
+    from .strm import export_strm
+    from .strm_inventory import invalidate, inventory
+
+    if not keys:
+        return {"queued_keys": 0, "published": 0}
+    try:
+        published = set(inventory(config.catalog_library, ttl=0)["keys"])
+    except Exception:
+        published = set()
+    pending = [key for key in keys if key not in published][:200]
+    paths: list[str] = []
+    for key in pending:
+        try:
+            report = export_strm(
+                str(config.db_path),
+                config.catalog_library,
+                base_url=config.playback_base_url,
+                key=key,
+                limit=None,
+                min_seeders=1,
+                versions_filter="available",
+                skip_library=False,
+            )
+            paths.extend(report.get("written_paths") or [])
+        except Exception:
+            continue
+    if paths:
+        invalidate(config.catalog_library)
+        jellyfin_notify(config, paths[:500])
+    return {"queued_keys": len(keys), "published": len(paths)}
+
+
 def job_qbit_sync(ctx: JobContext) -> dict[str, Any]:
     ctx.report("sincronizando qBittorrent", progress=0.1)
     radarr, sonarr = _arr_clients(ctx.config)
@@ -1511,8 +1549,12 @@ def job_qbit_sync(ctx: JobContext) -> dict[str, Any]:
         dry_run=_bool(ctx.params.get("dry_run"), False),
         check_exists=_bool(ctx.params.get("check_exists"), True),
     )
+    summary = report.public()
+    keys = summary.pop("arr_keys", [])
+    if keys and not summary.get("dry_run"):
+        summary["strm"] = _publish_arr_strm(ctx.config, keys)
     ctx.report("qBittorrent sincronizado", progress=0.95)
-    return report.public()
+    return summary
 
 def job_repair(ctx: JobContext) -> dict[str, Any]:
     ctx.report("revisando torrents con error", progress=0.1)
@@ -1825,6 +1867,9 @@ def job_worker_cycle(ctx: JobContext) -> dict[str, Any]:
             archive_root=config.archive_roots(),
             check_exists=True,
         ).public()
+        keys = report.pop("arr_keys", [])
+        if keys:
+            report["strm"] = _publish_arr_strm(config, keys)
         ctx.report("qBittorrent sincronizado", progress=0.45)
         return report
 

@@ -301,6 +301,14 @@ def export_strm(
                       OR (lf.season = a.season AND lf.episode = a.episode)
                   )
             )
+            OR EXISTS (
+                SELECT 1 FROM torrent_files f
+                JOIN torrents t ON t.id = f.torrent_id
+                WHERE f.asset_id = a.id
+                  AND t.category IN ('radarr', 'tv-sonarr')
+                  AND t.state <> 'removed'
+                  AND f.state NOT IN ('evicted', 'missing')
+            )
         )"""
     ]
     params: list[object] = []
@@ -332,6 +340,22 @@ def export_strm(
                 WHERE asset_id IS NOT NULL
                   AND state IN ('ready', 'archived', 'seeding', 'complete')
                   AND (local_path IS NOT NULL OR library_path IS NOT NULL)
+                """
+            ).fetchall()
+        }
+        # Descargas del *arr en cola o a medias: publicamos .strm para que
+        # se puedan pedir desde Jellyfin; al reproducirlas TOD las adopta.
+        arr_assets = {
+            int(row["asset_id"])
+            for row in conn.execute(
+                """
+                SELECT DISTINCT f.asset_id
+                FROM torrent_files f
+                JOIN torrents t ON t.id = f.torrent_id
+                WHERE f.asset_id IS NOT NULL
+                  AND t.category IN ('radarr', 'tv-sonarr')
+                  AND t.state <> 'removed'
+                  AND f.state NOT IN ('evicted', 'missing')
                 """
             ).fetchall()
         }
@@ -415,6 +439,7 @@ def export_strm(
             if (
                 not library_available.get(int(asset["id"]), False)
                 and int(asset["id"]) not in local_assets
+                and int(asset["id"]) not in arr_assets
             ):
                 skipped += 1
                 reason = "no_playable" if releases else "no_releases"

@@ -392,3 +392,35 @@ def test_blocked_tracker_releases_are_not_published(tmp_path):
     report = export_strm(str(db), out, base_url="http://tod:8773")
     assert report["written"] == 0
     assert not list(out.rglob("*.strm")) if out.exists() else True
+
+
+def test_queued_arr_torrent_is_published_without_release(tmp_path):
+    db = tmp_path / "catalogo.db"
+    init_db(db, MIGRATIONS)
+    conn = sqlite3.connect(db)
+    conn.execute(
+        "INSERT INTO media_items(key,kind,tmdb,title,year) VALUES(?,?,?,?,?)",
+        ("movie:tmdb:11", "movie", 11, "En cola", 2026),
+    )
+    asset_id = conn.execute("SELECT id FROM media_items").fetchone()[0]
+    conn.execute(
+        "INSERT INTO torrents(info_hash,category,state,save_path) "
+        "VALUES(?,?,?,?)",
+        ("arrhash", "radarr", "waiting", "/mnt/descargas/radarr"),
+    )
+    torrent_id = conn.execute("SELECT id FROM torrents").fetchone()[0]
+    conn.execute(
+        "INSERT INTO torrent_files(asset_id,torrent_id,file_index,rel_path,"
+        "size_bytes,state,storage_location) VALUES(?,?,?,?,?,?,?)",
+        (asset_id, torrent_id, 0, "En cola.mkv", 2000, "unknown", "LOCAL_DISK"),
+    )
+    conn.commit()
+    conn.close()
+
+    out = tmp_path / "strm"
+    result = export_strm(
+        db, out, base_url="http://127.0.0.1:8773",
+        key="movie:tmdb:11",
+    )
+    assert result["written"] == 1
+    assert (out / "movies" / "En cola (2026)" / "En cola (2026).strm").is_file()
