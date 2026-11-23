@@ -39,7 +39,9 @@ from . import (
     queries,
 )
 from . import (
+    api_dashboard,
     api_intake,
+    api_library,
     api_monitor,
     api_ondemand,
     api_preferences,
@@ -663,333 +665,34 @@ class Handler(PlaybackHandler):
         ):
             return self._release_torrent(parts[1], head=head)
 
-        if parts == ["overview"] and not mutate:
-            qbit, error = app.qbit()
-            return self._json(
-                200,
-                queries.overview(
-                    db, config=app.config, qbit=qbit, qbit_error=error
-                ),
-                head=head,
+        if parts and len(parts) == 1 and parts[0] in (
+            "overview", "events", "calendar", "activity", "search"
+        ):
+            result = api_dashboard.handle(
+                app,
+                parts,
+                params,
+                body,
+                client_ip=self.client_address[0],
+                mutate=mutate,
             )
-
-        if parts == ["events"] and not mutate:
-            limit = self._int(params.get("limit"), 100)
-            return self._json(200, {"items": queries.list_events(db, limit=limit)}, head=head)
-
-        if parts == ["calendar"] and not mutate:
-            days = self._int(params.get("days"), 90)
-            return self._json(
-                200,
-                {
-                    "days": days,
-                    "items": queries.calendar(db, days=days),
-                },
-                head=head,
-            )
-
-        if parts == ["activity"] and not mutate:
-            recent = jobs.list_jobs(
-                db, limit=30, exclude_kinds=INTERNAL_JOB_KINDS
-            )
-            active = [
-                job for job in recent
-                if job.get("state") in ("queued", "running")
-            ]
-            latest = next(
-                (job for job in recent if job.get("state") not in ("queued", "running")),
-                None,
-            )
-            with closing(connect(db)) as conn:
-                keys = [
-                    row["key"]
-                    for row in conn.execute(
-                        "SELECT key FROM media_items WHERE monitored = 1"
-                    ).fetchall()
-                ]
-            # El menú cuenta lo mismo que la página de Seguimiento: títulos
-            # monitorizados que aún no están en Jellyfin.
-            published = strm_inventory.inventory(
-                app.config.catalog_library
-            )["keys"]
-            monitored = sum(1 for key in keys if key not in published)
-            return self._json(
-                200,
-                {
-                    "active": active,
-                    "running": next(
-                        (job for job in active if job.get("state") == "running"),
-                        None,
-                    ),
-                    "queued": sum(1 for job in active if job.get("state") == "queued"),
-                    "latest": latest,
-                    "monitored": monitored,
-                    "generated_at": int(time.time()),
-                },
-                head=head,
-            )
-
-        if parts == ["search"] and not mutate:
-            return self._json(
-                200,
-                ondemand.search_catalog(
-                    db,
-                    params.get("q") or "",
-                    limit=self._int(params.get("limit"), 8),
-                ),
-                head=head,
-            )
-
-        if parts and parts[0] == "collections":
-            if len(parts) == 2 and not mutate:
-                collection_id = self._int(parts[1], 0)
-                if collection_id <= 0:
-                    raise WebError(400, "colección inválida")
-                data = admin.tmdb_collection(app.config, collection_id)
-                data["parts"] = ondemand.collection_states(
-                    db, app.config, data["parts"]
-                )
-                return self._json(200, data, head=head)
-            if len(parts) == 3 and parts[2] == "add":
-                if not mutate:
-                    raise WebError(405, "usa POST")
-                collection_id = self._int(parts[1], 0)
-                if collection_id <= 0:
-                    raise WebError(400, "colección inválida")
-                action = str(body.get("action") or "catalog")
-                if action not in ("catalog", "library"):
-                    raise WebError(400, "acción no válida")
-                result = admin.import_collection(app.config, collection_id)
-                job_id = None
-                pending_keys = []
-                states = []
-                if action == "library":
-                    states = ondemand.collection_states(
-                        db, app.config, result["collection"]["parts"]
-                    )
-                    pending_keys = [
-                        part["key"]
-                        for part in states
-                        if part.get("in_catalog")
-                        and not part.get("published")
-                        and part.get("publication") != "sin_fuente"
-                    ]
-                    no_source_keys = [
-                        part["key"]
-                        for part in states
-                        if part.get("in_catalog")
-                        and not part.get("published")
-                        and part.get("publication") == "sin_fuente"
-                    ]
-                    for part in states:
-                        if not part.get("in_catalog"):
-                            continue
-                        admin.set_library(
-                            app.config,
-                            key=part["key"],
-                            member=True,
-                            monitored=True
-                            if part.get("publication") == "sin_fuente"
-                            else None,
-                            source="collection",
-                        )
-                    skipped_no_source = len(no_source_keys)
-                    monitored_count = len(no_source_keys)
-                    if pending_keys:
-                        job_id = app.runner.submit(
-                            "publish-now",
-                            {
-                                "keys": pending_keys,
-                                "kind": "movie",
-                                "delay": 0.5,
-                                "min_seeders": 1,
-                            },
-                            requested_by=self.client_address[0],
-                            allow_duplicate=True,
-                        )
-                else:
-                    skipped_no_source = 0
-                    monitored_count = 0
-                app.audit(
-                    "web.collection_add",
-                    payload={
-                        "collection": collection_id,
-                        "action": action,
-                        "imported": result["imported"],
-                        "keys": len(result["keys"]),
-                        "pending": len(pending_keys),
-                        "skipped_no_source": skipped_no_source,
-                        "monitored": monitored_count,
-                        "library": sum(1 for part in states if part.get("in_catalog")),
-                        "job_id": job_id,
-                    },
-                )
-                return self._json(
-                    202,
-                    {
-                        **result,
-                        "pending_keys": pending_keys,
-                        "skipped_no_source": skipped_no_source,
-                        "monitored": monitored_count,
-                        "library": sum(1 for part in states if part.get("in_catalog")),
-                        "job_id": job_id,
-                    },
-                    head=head,
-                )
+            if result is not None:
+                status_code, payload = result
+                return self._json(status_code, payload, head=head)
             raise WebError(404, "no encontrado")
 
-        if parts and parts[0] == "series":
-            if len(parts) == 3 and parts[2] == "library":
-                if not mutate:
-                    raise WebError(405, "usa POST")
-                tmdb = self._int(parts[1], 0)
-                if tmdb <= 0:
-                    raise WebError(400, "tmdb inválido")
-                raw_seasons = body.get("seasons") or []
-                if not isinstance(raw_seasons, list):
-                    raise WebError(400, "seasons inválido")
-                result = admin.set_library(
-                    app.config,
-                    series_tmdb=tmdb,
-                    seasons=[
-                        int(value)
-                        for value in raw_seasons
-                        if str(value).lstrip("-").isdigit()
-                    ]
-                    or None,
-                    member=bool(body.get("member", True)),
-                    monitored=body.get("monitored") if "monitored" in body else None,
-                    source="manual",
-                )
-                job_id = None
-                exported = 0
-                jellyfin_scan: dict[str, Any] = {"ok": False, "reason": "sin_rutas"}
-                if result.get("member"):
-                    # Publica ya lo que ya está en Radarr/Sonarr o tiene
-                    # release; el monitor solo persigue lo que falta.
-                    for key in result.get("keys", []):
-                        try:
-                            report = admin.export_strm(
-                                app.db_path,
-                                app.config.catalog_library,
-                                base_url=app.config.playback_base_url,
-                                key=key,
-                                limit=None,
-                                skip_library=False,
-                            )
-                            exported += int(report.get("written") or 0)
-                        except Exception:
-                            continue
-                    strm_inventory.invalidate(app.config.catalog_library)
-                    keys = result.get("keys", [])
-                    if keys:
-                        with closing(connect(db)) as conn:
-                            rows = conn.execute(
-                                "SELECT * FROM media_items WHERE key IN ("
-                                + ",".join("?" for _ in keys)
-                                + ")",
-                                keys,
-                            ).fetchall()
-                        paths = [
-                            strm_module.strm_path(
-                                app.config.catalog_library, dict(row)
-                            )
-                            for row in rows
-                        ]
-                        jellyfin_scan = jellyfin.notify_updated(
-                            app.config,
-                            [path for path in paths if path.exists()],
-                        )
-                if result.get("member") and body.get("monitored"):
-                    published = strm_inventory.inventory(
-                        app.config.catalog_library
-                    )["keys"]
-                    already = [
-                        key for key in result.get("keys", []) if key in published
-                    ]
-                    if already:
-                        with closing(connect(db)) as conn:
-                            conn.execute(
-                                "UPDATE media_items SET monitored = 0 "
-                                "WHERE key IN ("
-                                + ",".join("?" for _ in already)
-                                + ")",
-                                already,
-                            )
-                            conn.commit()
-                    pending = [
-                        key
-                        for key in result.get("keys", [])
-                        if key not in published
-                    ]
-                    if pending:
-                        try:
-                            job_id = app.runner.submit(
-                                "monitor",
-                                {
-                                    "keys": pending,
-                                    "limit": len(pending),
-                                    "delay": 1,
-                                },
-                                requested_by=self.client_address[0],
-                            )
-                        except JobConflict:
-                            job_id = None
-                app.audit(
-                    "web.series_library",
-                    payload={
-                        **result,
-                        "job_id": job_id,
-                        "exported": exported,
-                        "jellyfin_scan": jellyfin_scan,
-                    },
-                )
-                return self._json(
-                    200,
-                    {
-                        **result,
-                        "job_id": job_id,
-                        "exported": exported,
-                        "jellyfin_scan": jellyfin_scan,
-                    },
-                    head=head,
-                )
-            if len(parts) == 3 and parts[2] == "unpublish":
-                if not mutate:
-                    raise WebError(405, "usa POST")
-                tmdb = self._int(parts[1], 0)
-                if tmdb <= 0:
-                    raise WebError(400, "tmdb inválido")
-                result = admin.remove_series_from_library(app.config, tmdb)
-                app.audit("web.series_unpublish", payload=result)
-                return self._json(200, result, head=head)
-            if not mutate and len(parts) == 2:
-                tmdb = self._int(parts[1], 0)
-                if tmdb <= 0:
-                    raise WebError(400, "tmdb inválido")
-                qbit, _ = app.qbit()
-                tmdb_data = None
-                tmdb_error = None
-                try:
-                    tmdb_data = admin.tmdb_series_full(app.config, tmdb)
-                except Exception as exc:
-                    tmdb_error = str(exc)[:200]
-                detail = ondemand.series_detail(
-                    db,
-                    app.config,
-                    tmdb,
-                    qbit=qbit,
-                    arr=app.arr,
-                    tmdb_data=tmdb_data,
-                )
-                if detail is None:
-                    raise WebError(404, "serie no encontrada")
-                detail["tmdb_error"] = tmdb_error
-                if not detail["series"].get("poster_path"):
-                    detail["series"]["poster_path"] = admin.tmdb_poster(
-                        app.config, "series", tmdb
-                    )
-                return self._json(200, detail, head=head)
+        if parts and parts[0] in ("collections", "series"):
+            result = api_library.handle(
+                app,
+                parts,
+                params,
+                body,
+                client_ip=self.client_address[0],
+                mutate=mutate,
+            )
+            if result is not None:
+                status_code, payload = result
+                return self._json(status_code, payload, head=head)
             raise WebError(404, "no encontrado")
 
         if parts and parts[0] == "intake":
