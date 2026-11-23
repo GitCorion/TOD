@@ -571,6 +571,7 @@ select { appearance: none; padding-right: 24px; background-image: linear-gradien
 .media-row .info strong { font-family: var(--sans); font-size: 14px; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .media-row .info small { color: var(--graphite); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .media-row .side { display: flex; align-items: center; gap: 10px; flex: 0 0 auto; }
+.media-row > .status, .media-row > .icon { flex: 0 0 auto; }
 
 .selection-bar {
   position: fixed; left: 50%; bottom: 18px; transform: translateX(-50%);

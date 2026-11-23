@@ -27,7 +27,7 @@ export async function renderCalendar({ query, signal }) {
   }
 
   const sections = [...groups.entries()].map(([date, rows]) => `<div class="panel flush section">
-    <div class="panel-head"><h2>${esc(fmtShortDate(`${date}T00:00:00`))}</h2><span class="right tiny faint">${rows.length} ${rows.length === 1 ? 'título' : 'títulos'}</span></div>
+    <div class="panel-head"><h2>${esc(fmtShortDate(`${date}T00:00:00`))}</h2><span class="right tiny faint">${rows.length} ${rows.length === 1 ? 'estreno' : 'estrenos'}</span></div>
     <div class="media-rows">
       ${rows.map((item) => {
         const href = item.kind === 'series' && item.tmdb
@@ -36,7 +36,13 @@ export async function renderCalendar({ query, signal }) {
         return `<a class="media-row" href="${href}">
           <span class="poster">${poster(item.poster_path, item.title, { size: 'w92' })}</span>
           <div class="info"><strong>${esc(item.title || '—')}</strong><small>${esc(tag(item))}${item.monitored ? ', en seguimiento' : ''}</small></div>
-          ${item.library_added ? status('En Radarr/Sonarr', 'info') : status('Sin catalogar', 'muted')}
+          ${item.published
+            ? status('En Jellyfin', 'ok')
+            : item.library_added
+              ? status('En Radarr/Sonarr', 'info')
+              : item.monitored
+                ? status('En seguimiento', 'info')
+                : '<span class="tiny faint">Sin catalogar</span>'}
           ${icon('chevron', 'sm')}
         </a>`;
       }).join('')}
