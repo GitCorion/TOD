@@ -7,11 +7,12 @@ de qBittorrent, los datos vivos del torrent para progreso/velocidad/ETA.
 from __future__ import annotations
 
 from contextlib import closing
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Protocol
 
 from .db import connect
+from .policy import get_policy
 from .resolver import Resolution, Resolver
 from .stream import file_offset
 
@@ -343,7 +344,15 @@ def asset_status(
             SELECT * FROM seed_commitments
             WHERE asset_id = ?
               AND (? IS NULL OR release_id = ?)
-            ORDER BY id DESC LIMIT 1
+            ORDER BY CASE state
+                         WHEN 'seeding' THEN 0
+                         WHEN 'active' THEN 1
+                         WHEN 'approved' THEN 2
+                         WHEN 'done' THEN 3
+                         ELSE 4
+                     END,
+                     id DESC
+            LIMIT 1
             """,
             (asset_id, release_id, release_id),
         ).fetchone()
@@ -508,6 +517,74 @@ def asset_status(
         if intent is not None
         else None
     )
+
+    seed_policy = None
+    if commitment is not None:
+        with closing(connect(db_path)) as conn:
+            seed_policy = get_policy(conn, commitment["tracker"])
+    seed_active = commitment is not None and commitment["state"] in (
+        "approved", "active", "seeding"
+    )
+    seed_started = (
+        _parse_ts(commitment["seed_started_at"])
+        if commitment is not None else None
+    ) or (
+        _parse_ts(torrent["seed_started_at"]) if torrent is not None else None
+    ) or (
+        _parse_ts(torrent["completed_at"]) if torrent is not None else None
+    )
+    seed_deadline = (
+        _parse_ts(commitment["seed_required_until"])
+        if seed_active else None
+    )
+    if (
+        seed_deadline is None
+        and seed_started is not None
+        and seed_policy is not None
+    ):
+        seed_deadline = seed_started + timedelta(
+            hours=max(0, int(seed_policy.min_seed_hours))
+        )
+    seed_ratio = None
+    if commitment is not None and commitment["info_hash"]:
+        with closing(connect(db_path)) as conn:
+            seed_torrent = conn.execute(
+                "SELECT ratio FROM torrents WHERE info_hash = ? "
+                "ORDER BY id DESC LIMIT 1",
+                (commitment["info_hash"],),
+            ).fetchone()
+        if seed_torrent is not None:
+            seed_ratio = float(seed_torrent["ratio"] or 0)
+    if seed_ratio is None:
+        if live is not None:
+            seed_ratio = float(live.get("ratio") or 0)
+        elif torrent is not None:
+            seed_ratio = float(torrent["ratio"] or 0)
+    seed_target = None
+    if commitment is not None:
+        seed_target = float(
+            commitment["target_ratio"]
+            or (seed_policy.target_ratio if seed_policy else 0)
+            or 0
+        )
+    seed = None
+    if commitment is not None:
+        seed = {
+            "state": commitment["state"],
+            "started_at": seed_started.isoformat() if seed_started else None,
+            "required_until": (
+                seed_deadline.isoformat() if seed_deadline else None
+            ),
+            "remaining_seconds": (
+                max(0, int((seed_deadline - current).total_seconds()))
+                if seed_deadline is not None else None
+            ),
+            "ratio": round(seed_ratio or 0, 3),
+            "target_ratio": seed_target,
+            "tracker_verdict": commitment["tracker_verdict"],
+            "tracker_message": commitment["tracker_message"],
+            "tracker_checked_at": commitment["tracker_checked_at"],
+        }
     eta_seconds = _eta(live)
     if file_progress is not None and file_size and speed > 0:
         if file_progress >= 1:
@@ -608,9 +685,9 @@ def asset_status(
         "file_index": file_index,
         "seed_state": commitment["state"] if commitment is not None else None,
         "seed_required_until": (
-            commitment["seed_required_until"]
-            if commitment is not None else None
+            seed_deadline.isoformat() if seed_deadline is not None else None
         ),
+        "seed": seed,
         "updated_at": current.isoformat(),
     }
     return result

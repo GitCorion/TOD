@@ -77,3 +77,28 @@ def info_dict_bytes(raw: bytes) -> bytes | None:
     except (BencodeError, ValueError, IndexError):
         return None
     return None
+
+
+def announce_urls(raw: bytes) -> list[str]:
+    """URLs de announce del .torrent (principal y announce-list)."""
+    if not raw.startswith(b"d"):
+        return []
+    try:
+        payload, _ = _decode(raw, 0)
+    except (BencodeError, ValueError, IndexError):
+        return []
+    if not isinstance(payload, dict):
+        return []
+    urls: list[str] = []
+    announce = payload.get(b"announce")
+    if isinstance(announce, bytes):
+        urls.append(announce.decode("utf-8", "replace"))
+    tiers = payload.get(b"announce-list")
+    if isinstance(tiers, list):
+        for tier in tiers:
+            if not isinstance(tier, list):
+                continue
+            for item in tier:
+                if isinstance(item, bytes):
+                    urls.append(item.decode("utf-8", "replace"))
+    return [url for url in urls if url]

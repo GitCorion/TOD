@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import time
 from contextlib import closing
 from datetime import datetime, timezone
 from pathlib import Path
@@ -21,6 +22,43 @@ DEFAULT_MIN_AGE_SECONDS = 900
 
 class MoveClient(Protocol):
     def set_location(self, info_hash: str, location: str) -> None: ...
+
+
+def _verify_location(
+    client: MoveClient,
+    info_hash: str,
+    target: str,
+    *,
+    timeout: float = 20.0,
+    interval: float = 2.0,
+) -> str:
+    """Comprueba que qBittorrent sigue viendo los ficheros tras mover.
+
+    `set_location` es asíncrono: si el mount de destino falla, el torrent
+    puede quedar en `missingFiles` y dejar de sembrar sin que TOD lo note.
+    Devuelve `ok`, `broken` o `unknown` (sin forma de comprobarlo).
+    """
+    check = getattr(client, "torrent", None)
+    if not callable(check):
+        return "unknown"
+    deadline = time.monotonic() + max(0.0, timeout)
+    while True:
+        try:
+            info = check(info_hash)
+        except Exception:
+            return "unknown"
+        if not info:
+            return "unknown"
+        state = str(info.get("state") or "").lower()
+        if "missing" in state or "error" in state:
+            return "broken"
+        location = str(info.get("save_path") or "")
+        moving = "moving" in state or "checking" in state
+        if not moving and (not location or location.rstrip("/") == target.rstrip("/")):
+            return "ok"
+        if time.monotonic() >= deadline:
+            return "unknown"
+        time.sleep(max(0.05, interval))
 
 
 def _now() -> datetime:
@@ -97,6 +135,7 @@ def move_completed(
     limit: int = 10,
     dry_run: bool = True,
     now: datetime | None = None,
+    verify_timeout: float = 20.0,
 ) -> dict[str, Any]:
     current = now or _now()
     report: dict[str, Any] = {
@@ -160,6 +199,24 @@ def move_completed(
         except Exception as exc:
             report["errors"].append(f"{row['info_hash'][:12]}: {exc}")
             continue
+        verification = _verify_location(
+            client, row["info_hash"], target, timeout=verify_timeout
+        )
+        if verification == "broken":
+            # El destino no deja sembrar (mount caído, permisos, FUSE...).
+            # Mejor volver al origen que fingir que el torrent sigue sano.
+            try:
+                if row["save_path"]:
+                    client.set_location(row["info_hash"], row["save_path"])
+            except Exception as exc:
+                report["errors"].append(
+                    f"{row['info_hash'][:12]}: no se pudo revertir: {exc}"
+                )
+            report["errors"].append(
+                f"{row['info_hash'][:12]}: {target} deja el torrent sin "
+                "ficheros; se revierte el movimiento"
+            )
+            continue
         with closing(connect(db_path)) as conn:
             conn.execute(
                 "UPDATE media_items SET status = 'MOVING_TO_1FICHIER', "
@@ -178,6 +235,10 @@ def move_completed(
             )
             conn.commit()
         report["moved"].append(
-            {"media_id": media_id, "info_hash": row["info_hash"]}
+            {
+                "media_id": media_id,
+                "info_hash": row["info_hash"],
+                "verified": verification,
+            }
         )
     return report

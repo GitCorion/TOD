@@ -18,7 +18,7 @@ from __future__ import annotations
 import shutil
 from contextlib import closing
 from dataclasses import dataclass
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -139,18 +139,14 @@ def decide(request: AdmissionRequest) -> AdmissionDecision:
     ):
         return AdmissionDecision(False, "max_active", required, available)
 
-    current = request.now or _now()
-    seed_until = (
-        current + timedelta(hours=request.policy.min_seed_hours)
-        if request.policy.min_seed_hours > 0
-        else None
-    )
+    # El mínimo de siembra se fija al terminar la descarga, no al admitir.
+    # `seeding.normalize_completed` calcula el plazo real.
     return AdmissionDecision(
         True,
         "admitido",
         required,
         available,
-        seed_until,
+        None,
         request.policy.target_ratio or None,
     )
 

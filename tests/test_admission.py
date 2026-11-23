@@ -53,7 +53,9 @@ def test_decision_allows_and_sets_seed_deadline():
     decision = decide(request())
     assert decision.allowed
     assert decision.reason == "admitido"
-    assert decision.seed_required_until == NOW + timedelta(hours=72)
+    # El plazo se calcula al terminar la descarga, no al admitir.
+    assert decision.seed_required_until is None
+    assert decision.target_ratio == 1.0
 
 
 def test_decision_blocks_without_policy():
@@ -146,7 +148,7 @@ def test_admit_persists_commitment_and_blocks_duplicate(tmp_path):
     )
     assert result.decision.allowed
     assert result.intent_id is not None
-    assert result.decision.seed_required_until == NOW + timedelta(hours=72)
+    assert result.decision.seed_required_until is None
 
     intents = list_intents(db)
     assert len(intents) == 1
@@ -238,7 +240,7 @@ def test_admit_creates_default_policy_for_new_private_tracker(tmp_path):
         reserve_bytes=0, disk_free_override=10**12, now=NOW,
     )
     assert result.decision.allowed
-    assert result.decision.seed_required_until == NOW + timedelta(hours=72)
+    assert result.decision.seed_required_until is None
     conn = sqlite3.connect(db)
     row = conn.execute(
         "SELECT min_seed_hours, target_ratio, privacy FROM tracker_policies "
@@ -274,7 +276,7 @@ def test_admit_uses_web_seed_defaults(tmp_path):
         reserve_bytes=0, disk_free_override=10**12, now=NOW,
     )
     assert result.decision.allowed
-    assert result.decision.seed_required_until == NOW + timedelta(hours=24)
+    assert result.decision.seed_required_until is None
     conn = sqlite3.connect(db)
     assert conn.execute(
         "SELECT min_seed_hours, target_ratio FROM tracker_policies "

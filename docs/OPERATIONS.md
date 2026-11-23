@@ -136,7 +136,19 @@ tod qbit-limits
 
 - Privados: TOD mantiene el torrent en **force-start** hasta cumplir el
   mínimo de días y ratio. Al cumplirlo, lo suelta y **qBittorrent decide**
-  si lo para o lo borra.
+  si lo para o lo borra. Si estaba pausado, lo **reanuda** antes de forzar.
+- El mínimo cuenta desde que **termina la descarga**, no desde que empieza:
+  se usa `seed_started_at` de qBittorrent (`seeding_time`) y, si aún no hay
+  dato, `completed_at`. Sin inicio de siembra conocido no se libera nada.
+- TOD lee el mensaje del tracker en cada ciclo. Distingue
+  `unregistered` (el tracker ya no conoce el torrent),
+  `client_not_allowed` (cliente o versión fuera de la whitelist) y
+  `not_authorized` (passkey o cuenta). Se guarda en el compromiso y se
+  expone en `/status` (`seed.tracker_verdict`); si el cliente no está
+  permitido, hay que cambiar de versión de qBittorrent o pedir el alta.
+- Al mover a archivo, TOD verifica que qBittorrent sigue viendo los
+  ficheros. Si el destino deja el torrent en `missingFiles`, revierte el
+  movimiento en vez de dejar de sembrar en silencio.
 - El borrado desde TOD está desactivado por defecto. Se puede activar en
   **Configuración → Siembra**; entonces aparece el botón de borrar en
   Descargas, con opción de quitar solo el torrent o borrar también ficheros.

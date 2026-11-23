@@ -157,3 +157,35 @@ def test_move_skips_pack_when_any_episode_is_playing(tmp_path):
     report = move_completed(str(db), client, dry_run=False, now=NOW)
     assert "series:tmdb:9:1:2" in report["skipped_streaming"]
     assert client.calls == []
+
+
+class VerifiedMoveClient(FakeMoveClient):
+    def __init__(self, state="uploading"):
+        super().__init__()
+        self._state = state
+
+    def torrent(self, info_hash):
+        return {"state": self._state, "save_path": "/mnt/library/archive"}
+
+
+def test_move_reports_verified_when_client_confirms(tmp_path):
+    db, _media_id, hash_ = seed(tmp_path)
+    client = VerifiedMoveClient("uploading")
+    report = move_completed(str(db), client, dry_run=False, now=NOW)
+    assert report["errors"] == []
+    assert report["moved"][0]["verified"] == "ok"
+    assert client.calls == [(hash_, "/mnt/library/archive")]
+
+
+def test_move_reverts_when_target_leaves_torrent_without_files(tmp_path):
+    db, _media_id, hash_ = seed(tmp_path)
+    client = VerifiedMoveClient("missingFiles")
+    report = move_completed(
+        str(db), client, dry_run=False, now=NOW, verify_timeout=0.1
+    )
+    assert report["moved"] == []
+    assert any("se revierte" in error for error in report["errors"])
+    assert client.calls == [
+        (hash_, "/mnt/library/archive"),
+        (hash_, "/mnt/descargas/ondemand"),
+    ]

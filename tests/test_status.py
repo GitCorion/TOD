@@ -2,6 +2,7 @@ import sqlite3
 from pathlib import Path
 
 from catalogo.db import init_db
+from catalogo.policy import TrackerPolicy, upsert_policy
 from catalogo.status import asset_status
 
 MIGRATIONS = Path(__file__).resolve().parents[1] / "catalogo" / "migrations"
@@ -241,3 +242,65 @@ def test_playback_state_is_idle_without_progress_or_intent(tmp_path):
     assert status["playback_state"] == "idle"
     assert status["prepare_ms"] is None
     assert status["first_byte_ms"] is None
+
+
+def test_seed_status_counts_from_completion(tmp_path):
+    from datetime import datetime, timedelta, timezone
+
+    now = datetime(2026, 11, 18, 12, 0, tzinfo=timezone.utc)
+    db, _asset_id, _release_id = seed(tmp_path, complete=True, local=True)
+    conn = sqlite3.connect(db)
+    conn.execute(
+        "UPDATE seed_commitments SET seed_started_at=?, "
+        "seed_required_until=NULL, target_ratio=1.0, info_hash='hash1'",
+        ((now - timedelta(hours=2)).isoformat(),),
+    )
+    conn.execute("UPDATE torrents SET ratio=0.5 WHERE info_hash='hash1'")
+    conn.commit()
+    conn.close()
+    upsert_policy(
+        str(db),
+        TrackerPolicy(
+            "TrackerEspanol2 (API)", min_seed_hours=24, target_ratio=1.0,
+            max_active=2, allow_partial=False, privacy="private",
+        ),
+    )
+    status = asset_status(db, "movie:tmdb:1", qbit=None, now=now)
+    assert status["seed"]["remaining_seconds"] == 22 * 3600
+    assert status["seed_required_until"].startswith(
+        (now + timedelta(hours=22)).isoformat()[:19]
+    )
+    assert status["seed"]["target_ratio"] == 1.0
+    assert status["seed"]["ratio"] == 0.5
+    assert status["seed"]["tracker_verdict"] is None
+
+
+def test_seed_status_ignores_closed_commitments(tmp_path):
+    from datetime import datetime, timedelta, timezone
+
+    now = datetime(2026, 11, 18, 12, 0, tzinfo=timezone.utc)
+    db, asset_id, release_id = seed(tmp_path, complete=True, local=True)
+    conn = sqlite3.connect(db)
+    conn.execute(
+        "INSERT INTO seed_commitments(asset_id,release_id,tracker,size_bytes,"
+        "state,seed_required_until) VALUES(?,?,?,?,?,?)",
+        (asset_id, release_id, "TrackerEspanol2 (API)", 1000, "cancelled",
+         (now + timedelta(days=60)).isoformat()),
+    )
+    conn.execute(
+        "UPDATE seed_commitments SET seed_started_at=?, "
+        "seed_required_until=NULL WHERE state='active'",
+        ((now - timedelta(hours=2)).isoformat(),),
+    )
+    conn.commit()
+    conn.close()
+    upsert_policy(
+        str(db),
+        TrackerPolicy(
+            "TrackerEspanol2 (API)", min_seed_hours=24, target_ratio=1.0,
+            max_active=2, allow_partial=False, privacy="private",
+        ),
+    )
+    status = asset_status(db, "movie:tmdb:1", qbit=None, now=now)
+    assert status["seed"]["state"] == "active"
+    assert status["seed"]["remaining_seconds"] == 22 * 3600

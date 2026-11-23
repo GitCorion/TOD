@@ -22,6 +22,10 @@ class FakeSeedingClient:
     def set_force_start(self, info_hash, value=True):
         self.calls.append((info_hash, value))
 
+    def resume(self, info_hash):
+        self.resumed = getattr(self, "resumed", [])
+        self.resumed.append(info_hash)
+
 
 def seed_commitment(
     tmp_path,
@@ -32,6 +36,7 @@ def seed_commitment(
     qbit_state="uploading",
     ratio=0.0,
     progress=1.0,
+    completed_at=None,
 ):
     db = tmp_path / "catalogo.db"
     init_db(db, MIGRATIONS)
@@ -53,14 +58,18 @@ def seed_commitment(
             1000,
             state,
             (NOW - timedelta(hours=24)).isoformat(),
-            (deadline or (NOW + timedelta(hours=48))).isoformat(),
+            None if deadline is False
+            else (deadline or (NOW + timedelta(hours=48))).isoformat(),
             target,
         ),
     )
     conn.execute(
-        "INSERT INTO torrents(info_hash,category,state,qbit_state,progress,ratio) "
-        "VALUES(?,?,?,?,?,?)",
-        ("hash1", "ondemand", "seeding", qbit_state, progress, ratio),
+        "INSERT INTO torrents(info_hash,category,state,qbit_state,progress,"
+        "ratio,completed_at) VALUES(?,?,?,?,?,?,?)",
+        (
+            "hash1", "ondemand", "seeding", qbit_state, progress, ratio,
+            completed_at.isoformat() if completed_at else None,
+        ),
     )
     conn.commit()
     conn.close()
@@ -214,3 +223,128 @@ def test_limit_is_respected(tmp_path):
     report = normalize_completed(str(db), client, limit=1, dry_run=True, now=NOW)
     assert len(report["kept"]) == 1
     assert client.calls == []
+
+
+def add_policy(db, hours=24, ratio=0.0):
+    from catalogo.policy import TrackerPolicy, upsert_policy
+
+    upsert_policy(
+        str(db),
+        TrackerPolicy(
+            "Tracker", min_seed_hours=hours, target_ratio=ratio,
+            max_active=2, allow_partial=False, privacy="private",
+        ),
+    )
+
+
+def test_seed_clock_starts_when_download_completes(tmp_path):
+    db = seed_commitment(
+        tmp_path, deadline=False, completed_at=NOW - timedelta(hours=1),
+        ratio=0.0,
+    )
+    add_policy(db, hours=24)
+    client = FakeSeedingClient(
+        [{"hash": "hash1", "state": "uploading", "progress": 1, "ratio": 0.0}]
+    )
+    report = normalize_completed(str(db), client, now=NOW)
+    # `started_at` es de hace 24 h (inicio de descarga), pero solo lleva
+    # 1 h sembrando: no se puede soltar.
+    assert report["released"] == []
+    assert [item["info_hash"] for item in report["forced"]] == ["hash1"]
+    conn = sqlite3.connect(db)
+    row = conn.execute(
+        "SELECT seed_started_at, seed_required_until FROM seed_commitments"
+    ).fetchone()
+    conn.close()
+    assert row[0].startswith((NOW - timedelta(hours=1)).isoformat()[:19])
+    assert row[1].startswith((NOW + timedelta(hours=23)).isoformat()[:19])
+
+
+def test_paused_torrent_is_resumed_before_forcing(tmp_path):
+    db = seed_commitment(tmp_path, qbit_state="pausedUP", ratio=0.0)
+    add_policy(db, hours=24)
+    client = FakeSeedingClient(
+        [{"hash": "hash1", "state": "pausedUP", "progress": 1, "ratio": 0.0}]
+    )
+    report = normalize_completed(str(db), client, now=NOW)
+    assert client.resumed == ["hash1"]
+    assert client.calls == [("hash1", True)]
+
+
+def test_never_releases_without_a_known_seed_start(tmp_path):
+    db = seed_commitment(tmp_path, deadline=False, ratio=0.0)
+    add_policy(db, hours=24)
+    client = FakeSeedingClient(
+        [{"hash": "hash1", "state": "uploading", "progress": 1, "ratio": 0.0}]
+    )
+    report = normalize_completed(str(db), client, now=NOW)
+    assert report["released"] == []
+    assert report["forced"][0]["seed_started_at"] is not None
+
+
+def test_tracker_verdict_is_stored_and_reported(tmp_path):
+    db = seed_commitment(tmp_path, ratio=0.0)
+    add_policy(db, hours=24)
+    conn = sqlite3.connect(db)
+    conn.execute(
+        "INSERT INTO releases(asset_id,tracker,title,size_bytes,health,"
+        "info_url) VALUES(1,?,?,?,?,?)",
+        ("Tracker", "Test", 1000, "alive", "https://tracker.example/x"),
+    )
+    release_id = conn.execute("SELECT id FROM releases").fetchone()[0]
+    conn.execute(
+        "UPDATE seed_commitments SET release_id=?", (release_id,)
+    )
+    conn.commit()
+    conn.close()
+    client = FakeSeedingClient(
+        [{"hash": "hash1", "state": "uploading", "progress": 1, "ratio": 0.0}]
+    )
+    client.trackers = lambda info_hash: [
+        {"url": "https://tr.tracker.example/announce", "status": 4,
+         "msg": "unregistered torrent"},
+        {"url": "https://otro.example/announce", "status": 4,
+         "msg": "IP banned"},
+    ]
+    report = normalize_completed(str(db), client, now=NOW)
+    assert report["problems"][0]["verdict"] == "unregistered"
+    conn = sqlite3.connect(db)
+    row = conn.execute(
+        "SELECT tracker_verdict, tracker_message, tracker_checked_at "
+        "FROM seed_commitments"
+    ).fetchone()
+    conn.close()
+    assert row[0] == "unregistered"
+    assert "unregistered torrent" in row[1]
+    assert row[2] is not None
+
+
+def test_messages_from_other_trackers_are_ignored(tmp_path):
+    db = seed_commitment(tmp_path, ratio=0.0)
+    add_policy(db, hours=24)
+    conn = sqlite3.connect(db)
+    conn.execute(
+        "INSERT INTO releases(asset_id,tracker,title,size_bytes,health,"
+        "info_url) VALUES(1,?,?,?,?,?)",
+        ("Tracker", "Test", 1000, "alive", "https://tracker.example/x"),
+    )
+    release_id = conn.execute("SELECT id FROM releases").fetchone()[0]
+    conn.execute("UPDATE seed_commitments SET release_id=?", (release_id,))
+    conn.commit()
+    conn.close()
+    client = FakeSeedingClient(
+        [{"hash": "hash1", "state": "uploading", "progress": 1, "ratio": 0.0}]
+    )
+    client.trackers = lambda info_hash: [
+        {"url": "https://publico.example/announce", "status": 4,
+         "msg": "Torrent not registered: e698"},
+        {"url": "udp://otro.example:6969/announce", "status": 4,
+         "msg": "IP banned"},
+    ]
+    report = normalize_completed(str(db), client, now=NOW)
+    assert report["problems"] == []
+    conn = sqlite3.connect(db)
+    assert conn.execute(
+        "SELECT tracker_verdict FROM seed_commitments"
+    ).fetchone()[0] is None
+    conn.close()
