@@ -15,7 +15,6 @@ import json
 import os
 import re
 import socket
-import subprocess
 import threading
 import time
 import urllib.error
@@ -39,7 +38,7 @@ from . import (
     ondemand,
     queries,
 )
-from . import language_settings, policy, seed_settings, settings, strm_inventory
+from . import api_status, language_settings, policy, seed_settings, settings, strm_inventory
 from . import strm as strm_module
 from .arr_data import ArrData
 from .config import Config
@@ -63,20 +62,7 @@ COOKIE_MAX_AGE = 7 * 24 * 3600
 MAX_BODY = 1_000_000
 HASH_RE = re.compile(r"^[0-9a-fA-F]{40}$")
 
-_INDEXER_CACHE: dict[str, tuple[float, list[dict[str, Any]], str | None]] = {}
-_INDEXER_TTL = 120.0
-
-
 INTERNAL_JOB_KINDS = ("attention-check",)
-
-SERVICES = (
-    "tod.service",
-    "qbittorrent.service",
-    "prowlarr.service",
-    "jackett.service",
-    "jellyfin.service",
-)
-
 
 class WebError(RuntimeError):
     def __init__(self, status: int, message: str, detail: Any = None):
@@ -112,29 +98,6 @@ def _valid_cookie(token: str, value: str | None) -> bool:
     if expiry < _now():
         return False
     return hmac.compare_digest(signature, _sign(token, expiry))
-
-
-def _systemctl(unit: str) -> dict[str, Any]:
-    try:
-        result = subprocess.run(
-            ["systemctl", "is-active", unit],
-            capture_output=True,
-            text=True,
-            timeout=3,
-            check=False,
-        )
-        state = (result.stdout or result.stderr or "unknown").strip().splitlines()
-        return {"unit": unit, "active": state[0] if state else "unknown"}
-    except Exception as exc:
-        return {"unit": unit, "active": "unknown", "error": str(exc)[:120]}
-
-
-def _runtime() -> str:
-    """Entorno de ejecución para no interpretar contenedores como servicios."""
-    explicit = (os.environ.get("TOD_RUNTIME") or "").strip().lower()
-    if explicit in ("docker", "systemd"):
-        return explicit
-    return "docker" if Path("/.dockerenv").exists() else "systemd"
 
 
 class App:
@@ -1251,7 +1214,7 @@ class Handler(PlaybackHandler):
             return self._json(200, result, head=head)
 
         if parts == ["indexers"] and not mutate:
-            indexers, error = self._indexers()
+            indexers, error = api_status.list_indexers(app.config)
             return self._json(
                 200,
                 {
@@ -1266,7 +1229,9 @@ class Handler(PlaybackHandler):
             )
 
         if parts == ["monitor", "health"] and not mutate:
-            return self._json(200, self._monitor_health(db), head=head)
+            return self._json(
+                200, api_status.monitor_health(db, app.config), head=head
+            )
 
         if parts == ["monitor"] and not mutate:
             data = ondemand.monitored_items(
@@ -1278,7 +1243,7 @@ class Handler(PlaybackHandler):
                 page=self._int(params.get("page"), 1),
                 per_page=self._int(params.get("per_page"), 50),
             )
-            data["health"] = self._monitor_health(db)
+            data["health"] = api_status.monitor_health(db, app.config)
             return self._json(200, data, head=head)
 
         if len(parts) == 3 and parts[0] == "monitor" and parts[1] == "indexers":
@@ -1296,7 +1261,7 @@ class Handler(PlaybackHandler):
                 ).set_indexer_enabled(indexer_id, enabled)
             except Exception as exc:
                 raise WebError(503, "no se pudo cambiar el indexer", str(exc)[:300])
-            _INDEXER_CACHE.pop(str(app.config.prowlarr_url), None)
+            api_status.invalidate_indexers(app.config)
             app.audit(
                 "web.indexer_toggle",
                 payload={
@@ -1574,7 +1539,20 @@ class Handler(PlaybackHandler):
             )
 
         if parts == ["system"] and not mutate:
-            return self._json(200, self._system(), head=head)
+            qbit, qbit_error = app.qbit()
+            return self._json(
+                200,
+                api_status.system_payload(
+                    config=app.config,
+                    db_path=app.db_path,
+                    qbit=qbit,
+                    qbit_error=qbit_error,
+                    play_service=app.play_service,
+                    play_error=app.play_error,
+                    token=app.token,
+                ),
+                head=head,
+            )
 
         if parts == ["system", "qbit-limits"]:
             if not mutate:
@@ -2383,189 +2361,6 @@ class Handler(PlaybackHandler):
             return self._json(202, result, head=head)
 
         raise WebError(404, "no encontrado")
-
-    def _indexers(self) -> tuple[list[dict[str, Any]], str | None]:
-        """Indexers de Prowlarr con su estado, cacheado unos segundos."""
-        app = self.app
-        indexers: list[dict[str, Any]] = []
-        prowlarr_error = None
-        cache_key = str(app.config.prowlarr_url)
-        cached = _INDEXER_CACHE.get(cache_key)
-        if cached is not None and time.monotonic() - cached[0] < _INDEXER_TTL:
-            return cached[1], cached[2]
-        try:
-            from .prowlarr import ProwlarrClient
-
-            client = ProwlarrClient.from_config(app.config)
-            enabled = {
-                int(row["id"]): bool(row.get("enable"))
-                for row in client.indexers()
-                if row.get("id") is not None
-            }
-            stats = client.indexer_stats()
-            for row in stats.get("indexers") or []:
-                failed = sum(
-                    int(row.get(key) or 0)
-                    for key in (
-                        "numberOfFailedQueries",
-                        "numberOfFailedGrabs",
-                        "numberOfFailedRssQueries",
-                        "numberOfFailedAuthQueries",
-                    )
-                )
-                indexer_id = int(row.get("indexerId") or 0)
-                indexers.append(
-                    {
-                        "id": indexer_id,
-                        "name": row.get("indexerName"),
-                        "enabled": enabled.get(indexer_id, True),
-                        "queries": int(row.get("numberOfQueries") or 0),
-                        "grabs": int(row.get("numberOfGrabs") or 0),
-                        "rss_queries": int(row.get("numberOfRssQueries") or 0),
-                        "failed": failed,
-                        "response_ms": int(row.get("averageResponseTime") or 0),
-                    }
-                )
-            indexers.sort(
-                key=lambda item: (-item["failed"], -item["response_ms"])
-            )
-        except Exception as exc:
-            prowlarr_error = str(exc)[:200]
-        _INDEXER_CACHE[cache_key] = (time.monotonic(), indexers, prowlarr_error)
-        return indexers, prowlarr_error
-
-    def _monitor_health(self, db) -> dict[str, Any]:
-        recent = jobs.list_jobs(db, limit=100)
-
-        def latest(kind: str):
-            return next((job for job in recent if job.get("kind") == kind), None)
-
-        def brief(job):
-            if not job:
-                return None
-            result = job.get("result") or {}
-            keys = (
-                "fetched",
-                "inserted",
-                "updated",
-                "new_titles",
-                "exported_keys",
-                "unmonitored_keys",
-                "checked",
-                "found",
-                "waiting",
-                "errors",
-            )
-            return {
-                "id": job.get("id"),
-                "state": job.get("state"),
-                "created_at": job.get("created_at"),
-                "finished_at": job.get("finished_at"),
-                "message": job.get("message"),
-                "error": job.get("error"),
-                "result": {key: result[key] for key in keys if key in result},
-            }
-
-        indexers, prowlarr_error = self._indexers()
-        # El scheduler real es el interno (`jobs`), no los timers de systemd
-        # de la instalación antigua. Si el planificador no está, se muestra
-        # parado; nunca se inventa un estado.
-        tasks = {task["name"]: task for task in list_tasks(db)}
-
-        def timer(name: str) -> dict[str, Any]:
-            task = tasks.get(name) or {}
-            return {
-                "active": "active" if task.get("enabled") else "inactive",
-                "next_run": task.get("next_run"),
-            }
-
-        return {
-            "timers": {
-                "rss": timer("rss-sync"),
-                "monitor": timer("monitor"),
-            },
-            "last_rss": brief(latest("rss-sync")),
-            "last_monitor": brief(latest("monitor")),
-            "indexers": indexers[:12],
-            "prowlarr_error": prowlarr_error,
-        }
-
-    def _system(self) -> dict[str, Any]:
-        app = self.app
-        db = app.db_path
-        qbit, qbit_error = app.qbit()
-        qbit_info: dict[str, Any] = {"ok": False, "error": qbit_error}
-        if qbit is not None:
-            try:
-                torrents = qbit.torrents()
-                qbit_info = {
-                    "ok": True,
-                    "version": qbit.app_version(),
-                    "torrents": len(torrents),
-                }
-            except Exception as exc:
-                qbit_info = {"ok": False, "error": str(exc)[:200]}
-        with closing(connect(db)) as conn:
-            counts = {
-                "media_items": conn.execute("SELECT COUNT(*) FROM media_items").fetchone()[0],
-                "releases": conn.execute("SELECT COUNT(*) FROM releases").fetchone()[0],
-                "torrents": conn.execute("SELECT COUNT(*) FROM torrents").fetchone()[0],
-                "events": conn.execute("SELECT COUNT(*) FROM events").fetchone()[0],
-            }
-        return {
-            "runtime": _runtime(),
-            "services": [_systemctl(unit) for unit in SERVICES],
-            "disk": [
-                queries._disk(path)
-                for path in dict.fromkeys(
-                    str(path)
-                    for path in (
-                        app.config.catalog_library,
-                        app.config.seed_root,
-                        app.config.library_root,
-                    )
-                )
-            ],
-            "db": {
-                "path": str(db),
-                "size": db.stat().st_size if db.exists() else 0,
-                **counts,
-            },
-            "qbit": qbit_info,
-            "capabilities": {
-                "qbittorrent": bool(app.config.qbittorrent_pass),
-                "prowlarr": bool(app.config.prowlarr_api_key),
-                "jackett": bool(app.config.jackett_api_key),
-                "jellyfin": bool(app.config.jellyfin_api_key),
-                "radarr": bool(app.config.radarr_api_key),
-                "sonarr": bool(app.config.sonarr_api_key),
-                "tmdb": bool(app.config.tmdb_api_key),
-                "play_service": app.play_service is not None,
-            },
-            "play_error": app.play_error,
-            "paths": {
-                "catalog_library": str(app.config.catalog_library),
-                "seed_root": str(app.config.seed_root),
-                "library_root": str(app.config.library_root),
-                "library_root_movies": (
-                    str(app.config.library_root_movies)
-                    if app.config.library_root_movies
-                    else ""
-                ),
-                "library_root_series": (
-                    str(app.config.library_root_series)
-                    if app.config.library_root_series
-                    else ""
-                ),
-                "downloads_root": str(app.config.downloads_root),
-                "ondemand_save_path": str(app.config.ondemand_save_path),
-                "strm_roots": ":".join(app.config.strm_roots),
-            },
-            "auth_required": bool(app.token),
-            "trackers": queries.list_trackers(db),
-            "scheduler": list_tasks(db),
-            "generated_at": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
-        }
 
     # ------------------------------------------------------------- sesiones
 

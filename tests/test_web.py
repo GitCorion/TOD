@@ -423,12 +423,12 @@ def test_title_api_returns_stored_episode_metadata(tmp_path):
 
 
 def test_runtime_detection(monkeypatch):
-    from catalogo import web
+    from catalogo import api_status
 
     monkeypatch.setenv("TOD_RUNTIME", " Docker ")
-    assert web._runtime() == "docker"
+    assert api_status._runtime() == "docker"
     monkeypatch.setenv("TOD_RUNTIME", "systemd")
-    assert web._runtime() == "systemd"
+    assert api_status._runtime() == "systemd"
 
 
 def test_web_token_required(tmp_path):
