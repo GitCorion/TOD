@@ -21,6 +21,7 @@ catalogo/
 ├── api_intake.py     recepción, listas y torrents manuales
 ├── api_tmdb.py       búsqueda, temporadas y episodios
 ├── api_releases.py   fijar, verificar y preparar versiones
+├── api_monitor.py    seguimiento, indexers y siembra
 ├── errors.py         WebError común a la API
 ├── attention.py      avisos agregados de configuración, rutas e integraciones
 ├── integrations.py   pruebas de conexión

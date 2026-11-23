@@ -40,6 +40,7 @@ from . import (
 )
 from . import (
     api_intake,
+    api_monitor,
     api_ondemand,
     api_releases,
     api_status,
@@ -62,9 +63,7 @@ from .log import get_logger
 from .qbittorrent import QbittorrentClient, QbittorrentError
 from .qbit_write import QbittorrentWriteClient
 from .resolver import Resolver
-from .retention import finish_intent
 from .scheduler import Scheduler, list_tasks, save_task
-from .status import asset_status
 from .stream_guard import StreamGuard
 
 LOG = get_logger("web")
@@ -1194,141 +1193,19 @@ class Handler(PlaybackHandler):
                 head=head,
             )
 
-        if parts == ["seeds"] and not mutate:
-            qbit, _ = app.qbit()
-            return self._json(
-                200,
-                queries.list_seeds(
-                    db,
-                    limit=self._int(params.get("limit"), 100),
-                    qbit=qbit,
-                ),
-                head=head,
+        if parts and parts[0] in ("seeds", "indexers", "monitor"):
+            result = api_monitor.handle(
+                app,
+                parts,
+                params,
+                body,
+                client_ip=self.client_address[0],
+                mutate=mutate,
             )
-
-        if len(parts) == 3 and parts[0] == "seeds" and parts[2] == "finish":
-            if not mutate:
-                raise WebError(405, "usa POST")
-            intent_id = self._int(parts[1], 0)
-            with closing(connect(db)) as conn:
-                row = conn.execute(
-                    """
-                    SELECT i.info_hash, i.started_at,
-                           t.seed_started_at,
-                           COALESCE(i.info_hash, t.info_hash) AS effective_hash
-                    FROM seed_commitments i
-                    LEFT JOIN torrents t ON t.id = (
-                        SELECT id FROM torrents WHERE release_id = i.release_id
-                        ORDER BY id DESC LIMIT 1
-                    )
-                    WHERE i.id = ?
-                    """,
-                    (intent_id,),
-                ).fetchone()
-            live_state = None
-            live_ratio = None
-            live_started = None
-            if row is not None and row["effective_hash"]:
-                qbit, _ = app.qbit()
-                if qbit is not None:
-                    try:
-                        torrent = qbit.torrent(str(row["effective_hash"]))
-                    except Exception:
-                        torrent = None
-                    if torrent is not None:
-                        raw = str(torrent.get("state") or "").lower()
-                        live_state = "seeding" if any(
-                            value in raw
-                            for value in ("uploading", "stalledup", "forcedup")
-                        ) else "active"
-                        live_ratio = float(torrent.get("ratio") or 0)
-                        live_started = row["seed_started_at"] or row["started_at"]
-            result = finish_intent(
-                str(db),
-                intent_id,
-                state=live_state,
-                ratio=live_ratio,
-                started=live_started,
-            )
-            if result.get("closed") and row is not None and row["effective_hash"]:
-                try:
-                    writer = (
-                        app.play_service.qbit_write
-                        if app.play_service is not None
-                        else QbittorrentWriteClient.from_config(app.config)
-                    )
-                    writer.set_force_start(str(row["effective_hash"]), False)
-                except Exception:
-                    pass
-            app.audit("web.seed_finish", payload=result)
-            return self._json(200, result, head=head)
-
-        if parts == ["indexers"] and not mutate:
-            indexers, error = api_status.list_indexers(app.config)
-            return self._json(
-                200,
-                {
-                    "items": indexers,
-                    "error": error,
-                    "enabled": sum(
-                        1 for item in indexers if item.get("enabled")
-                    ),
-                    "total": len(indexers),
-                },
-                head=head,
-            )
-
-        if parts == ["monitor", "health"] and not mutate:
-            return self._json(
-                200, api_status.monitor_health(db, app.config), head=head
-            )
-
-        if parts == ["monitor"] and not mutate:
-            data = ondemand.monitored_items(
-                db,
-                app.config,
-                q=params.get("q") or "",
-                state=params.get("state") or "",
-                kind=params.get("kind") or "",
-                page=self._int(params.get("page"), 1),
-                per_page=self._int(params.get("per_page"), 50),
-            )
-            data["health"] = api_status.monitor_health(db, app.config)
-            return self._json(200, data, head=head)
-
-        if len(parts) == 3 and parts[0] == "monitor" and parts[1] == "indexers":
-            if not mutate:
-                raise WebError(405, "usa POST")
-            indexer_id = self._int(parts[2], 0)
-            if indexer_id <= 0:
-                raise WebError(400, "indexer inválido")
-            enabled = bool(body.get("enabled", True))
-            try:
-                from .prowlarr import ProwlarrClient
-
-                result = ProwlarrClient.from_config(
-                    app.config
-                ).set_indexer_enabled(indexer_id, enabled)
-            except Exception as exc:
-                raise WebError(503, "no se pudo cambiar el indexer", str(exc)[:300])
-            api_status.invalidate_indexers(app.config)
-            app.audit(
-                "web.indexer_toggle",
-                payload={
-                    "indexer": indexer_id,
-                    "enabled": enabled,
-                    "name": result.get("name"),
-                },
-            )
-            return self._json(
-                200,
-                {
-                    "id": indexer_id,
-                    "name": result.get("name"),
-                    "enabled": bool(result.get("enable", enabled)),
-                },
-                head=head,
-            )
+            if result is not None:
+                status_code, payload = result
+                return self._json(status_code, payload, head=head)
+            raise WebError(404, "no encontrado")
 
         if parts == ["jobs"]:
             if mutate:
