@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 import os
+import re
 import sqlite3
 from contextlib import contextmanager
 from pathlib import Path
@@ -57,11 +58,25 @@ def migrate(conn: sqlite3.Connection, migrations_dir: Path | str) -> list[str]:
         version = sql_file.stem
         if version in applied:
             continue
-        conn.executescript(sql_file.read_text(encoding="utf-8"))
-        conn.execute(
-            "INSERT INTO schema_migrations(version) VALUES (?)", (version,)
+        script = sql_file.read_text(encoding="utf-8")
+        # Una migración que gestiona su propia transacción (reconstrucción de
+        # tablas) se ejecuta tal cual. El resto se envuelve para que el DDL y
+        # el registro de versión sean atómicos: si falla, no queda a medias.
+        manages_transaction = bool(
+            re.search(r"(?im)^\s*BEGIN(?:\s+TRANSACTION)?\b", script)
         )
-        conn.commit()
+        try:
+            if manages_transaction:
+                conn.executescript(script)
+            else:
+                conn.executescript("BEGIN IMMEDIATE;\n" + script)
+            conn.execute(
+                "INSERT INTO schema_migrations(version) VALUES (?)", (version,)
+            )
+            conn.commit()
+        except Exception:
+            conn.rollback()
+            raise
         newly.append(version)
     return newly
 

@@ -23,6 +23,12 @@ curl -s http://127.0.0.1:8773/healthz
 curl -s http://127.0.0.1:8773/api/system | python3 -m json.tool
 ```
 
+## Logs
+
+TOD escribe con niveles estándar (`INFO` por defecto). Para investigar un
+fallo, arranca con `TOD_LOG_LEVEL=DEBUG`. En systemd la salida ya va a
+`journalctl -u tod.service`; en Docker, a `docker compose logs -f tod`.
+
 Actualizar:
 
 ```bash

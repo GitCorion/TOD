@@ -17,7 +17,6 @@ import re
 import socket
 import subprocess
 import time
-import traceback
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -46,6 +45,7 @@ from .config import Config
 from .db import connect, init_db
 from .http import CatalogHandler as PlaybackHandler
 from .jobs import JobConflict, JobError
+from .log import get_logger
 from .qbittorrent import QbittorrentClient, QbittorrentError
 from .qbit_write import QbittorrentWriteClient
 from .resolver import Resolver
@@ -53,6 +53,8 @@ from .retention import finish_intent
 from .scheduler import Scheduler, list_tasks, save_task
 from .status import asset_status
 from .stream_guard import StreamGuard
+
+LOG = get_logger("web")
 
 STATIC_DIR = Path(__file__).resolve().parent / "web_static"
 COOKIE = "catalogo_web"
@@ -426,7 +428,7 @@ class Handler(PlaybackHandler):
 
     def log_message(self, fmt: str, *args: Any) -> None:
         # Sin IPs ni rutas con secretos en el journal.
-        print(f"web {self.command} {self.path.split('?', 1)[0]}", flush=True)
+        LOG.info("%s %s", self.command, self.path.split("?", 1)[0])
 
     def _dispatch(self, *, head: bool, mutate: bool = False) -> None:
         parsed = urllib.parse.urlparse(self.path)
@@ -479,7 +481,7 @@ class Handler(PlaybackHandler):
         except (BrokenPipeError, ConnectionResetError):
             return
         except Exception as exc:
-            traceback.print_exc()
+            LOG.exception("error atendiendo %s %s", self.command, path)
             self._json(
                 500,
                 {"error": "error interno", "detail": str(exc)[:300]},
@@ -2809,17 +2811,15 @@ def run(host: str, port: int, config: Config) -> int:
         mode = "solo loopback"
     else:
         mode = "abierto en LAN/WireGuard sin token"
-    print(
-        f"TOD en http://{host}:{port} db={config.db_path} "
-        f"({mode}; web+reproducción+scheduler; "
-        f"play_service={'sí' if server.app.play_service else 'no'})",
-        flush=True,
+    LOG.info(
+        "TOD en http://%s:%s db=%s (%s; web+reproducción+scheduler; play_service=%s)",
+        host, port, config.db_path, mode,
+        "sí" if server.app.play_service else "no",
     )
     if not loopback and not config.web_token:
-        print(
-            "AVISO: acceso doméstico sin login. No publiques este puerto en "
-            "Internet; para fuera de casa usa WireGuard.",
-            flush=True,
+        LOG.warning(
+            "acceso doméstico sin login; no publiques este puerto en Internet, "
+            "para fuera de casa usa WireGuard"
         )
     try:
         server.serve_forever()
