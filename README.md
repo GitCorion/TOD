@@ -64,6 +64,22 @@ Un único proceso sirve:
   `/catalog/lookup`, `/prepare`, `/lease`),
 - el scheduler interno de tareas periódicas.
 
+## El ecosistema Medusa
+
+TOD es el motor de catálogo y reproducción bajo demanda. Estas tres piezas se
+complementan:
+
+| Repositorio | Papel |
+|---|---|
+| [Medusa](https://github.com/GitCorion/Medusa) | Cliente nativo para Android TV. Reproduce desde Jellyfin. |
+| [Medusa-Jellyfin-Plugin](https://github.com/GitCorion/Medusa-Jellyfin-Plugin) | Puente dentro de Jellyfin: expone `/Medusa/Status`, `/Prepare` y `/Lease`, y traduce un ítem `.strm` a una clave de TOD. |
+| **TOD** (este repositorio) | Catálogo, fuentes, descargas, `.strm` y streaming por rangos. |
+
+El plugin es el nexo: Medusa no habla con TOD directamente; habla con Jellyfin
+y el plugin traduce esa conversación. Sin el plugin, los `.strm` siguen
+funcionando como cualquier otro ítem de Jellyfin, pero no hay progreso ni
+preparación bajo demanda desde el cliente.
+
 ## Versiones y `.strm`
 
 Cada película o episodio visible en Jellyfin tiene un `.strm` principal. Películas y
