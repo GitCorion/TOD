@@ -46,11 +46,11 @@ export async function renderMonitor({ query, signal }) {
   const items = data.items || [];
   const summary = data.summary || {};
   state.monitorSummary = summary;
-  setHeader('Seguimiento');
+  setHeader('Pendientes');
 
   const chips = [
     ['', 'Todos', summary.total || 0],
-    ['missing', 'Pendientes', summary.missing || 0],
+    ['missing', 'En cola', summary.missing || 0],
     ['pending', 'Sin estrenar', summary.pending || 0],
     ['downloading', 'Descargando', summary.downloading || 0],
   ];
@@ -85,7 +85,7 @@ export async function renderMonitor({ query, signal }) {
   }).join('');
 
   $('#view').innerHTML = `
-    <div class="breadcrumb"><a href="#/catalog">Biblioteca</a>${icon('chevron')}<span>Seguimiento</span></div>
+    <div class="breadcrumb"><a href="#/catalog">Biblioteca</a>${icon('chevron')}<span>Pendientes</span></div>
 
     <div class="toolbar">
       <label class="field grow">

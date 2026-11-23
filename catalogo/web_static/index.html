@@ -59,19 +59,11 @@
       </a>
 
       <nav class="nav" id="nav">
-        <span class="nav-label">Contenido</span>
         <a href="#/dashboard" data-route="dashboard"><svg class="icon"><use href="#i-home"/></svg><span>Inicio</span></a>
-        <a href="#/add" data-route="add"><svg class="icon"><use href="#i-plus"/></svg><span>Añadir</span></a>
         <a href="#/catalog" data-route="catalog"><svg class="icon"><use href="#i-grid"/></svg><span>Biblioteca</span></a>
-        <a href="#/calendar" data-route="calendar"><svg class="icon"><use href="#i-calendar"/></svg><span>Calendario</span></a>
-        <a href="#/monitor" data-route="monitor"><svg class="icon"><use href="#i-search"/></svg><span>Seguimiento</span><em class="nav-count" id="navMonitor"></em></a>
-        <span class="nav-label">Actividad</span>
-        <a href="#/downloads" data-route="downloads"><svg class="icon"><use href="#i-download"/></svg><span>Descargas</span><em class="nav-count" id="navDownloads"></em></a>
-        <a href="#/jobs" data-route="jobs"><svg class="icon"><use href="#i-jobs"/></svg><span>Tareas</span><em class="nav-count" id="navJobs"></em></a>
-        <a href="#/seeds" data-route="seeds"><svg class="icon"><use href="#i-seed"/></svg><span>Siembra</span></a>
-        <span class="nav-label">Sistema</span>
-        <a href="#/system" data-route="system"><svg class="icon"><use href="#i-server"/></svg><span>Estado</span><em class="nav-count attention hidden" id="navAttention" aria-live="polite"></em></a>
-        <a href="#/settings" data-route="settings"><svg class="icon"><use href="#i-wrench"/></svg><span>Configuración</span></a>
+        <a href="#/add" data-route="add"><svg class="icon"><use href="#i-plus"/></svg><span>Añadir</span></a>
+        <a href="#/downloads" data-route="downloads"><svg class="icon"><use href="#i-download"/></svg><span>Actividad</span><em class="nav-count" id="navJobs"></em></a>
+        <a href="#/system" data-route="system"><svg class="icon"><use href="#i-server"/></svg><span>Sistema</span><em class="nav-count attention hidden" id="navAttention" aria-live="polite"></em></a>
       </nav>
 
       <div class="sidebar-foot">
@@ -103,6 +95,7 @@
           <span class="conn" id="liveDot" title="servidor" aria-label="estado del servidor"></span>
         </div>
       </header>
+      <div class="section-tabs hidden" id="sectionTabs" role="navigation" aria-label="Sección"></div>
       <div class="activity-bar hidden" id="activityBar"></div>
       <section id="view" class="view"></section>
     </main>
@@ -111,7 +104,7 @@
       <a href="#/dashboard" data-route="dashboard"><svg class="icon"><use href="#i-home"/></svg><span>Inicio</span></a>
       <a href="#/catalog" data-route="catalog"><svg class="icon"><use href="#i-grid"/></svg><span>Biblioteca</span></a>
       <a href="#/add" data-route="add"><svg class="icon"><use href="#i-plus"/></svg><span>Añadir</span></a>
-      <a href="#/downloads" data-route="downloads"><svg class="icon"><use href="#i-download"/></svg><span>Descargas</span></a>
+      <a href="#/downloads" data-route="downloads"><svg class="icon"><use href="#i-download"/></svg><span>Actividad</span></a>
       <button data-action="menu"><svg class="icon"><use href="#i-menu"/></svg><span>Más</span></button>
     </nav>
   </div>

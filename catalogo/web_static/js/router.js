@@ -1,5 +1,5 @@
 import { beginRequest, state, clearSelection } from './store.js';
-import { $, setActiveNav, setHeader, focusTitle, focusKey, restoreFocus, pageError } from './ui.js';
+import { $, setActiveNav, setHeader, renderSectionTabs, focusTitle, focusKey, restoreFocus, pageError } from './ui.js';
 import { renderDashboard } from './views/dashboard.js';
 import { renderCalendar } from './views/calendar.js';
 import { renderHistory } from './views/history.js';
@@ -20,7 +20,7 @@ const ROUTES = {
   dashboard: { title: 'Inicio', render: renderDashboard },
   calendar: { title: 'Calendario', render: renderCalendar },
   catalog: { title: 'Biblioteca', render: renderCatalog },
-  monitor: { title: 'Seguimiento', render: renderMonitor },
+  monitor: { title: 'Pendientes', render: renderMonitor },
   collection: { title: 'Saga', render: renderCollection },
   series: { title: 'Serie', render: renderSeries },
   title: { title: 'Ficha', render: renderTitle },
@@ -111,6 +111,7 @@ export async function route({ preserveScroll = false } = {}) {
   state.query = parsed.query;
   setActiveNav(parsed.view);
   setHeader(definition.title);
+  renderSectionTabs(parsed.view);
   $('#view').innerHTML = `<div class="view-loading" aria-busy="true" aria-label="Cargando">
     <div class="skeleton" style="height:34px;width:100%"></div>
     <div class="skeleton" style="height:28px;width:44%;margin-top:4px"></div>

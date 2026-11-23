@@ -402,7 +402,7 @@ export async function renderSettings({ signal, query } = {}) {
           Latinoamérica. En el resto de títulos prefiere castellano de España,
           luego V.O./VOSE, y nunca un doblaje latino. «Solo castellano» solo
           acepta castellano de España. Esto no pausa indexers: para eso usa
-          Seguimiento → Indexers.
+          Configuración → Indexers.
         </p>
       </div>
     </div>
@@ -449,7 +449,7 @@ export async function renderSettings({ signal, query } = {}) {
         </div>
         <p class="muted tiny" style="margin:8px 0 0">
           «Descargar» solo permite o bloquea descargas nuevas de TOD en ese tracker.
-          No pausa el indexer: para dejar de buscar, usa Seguimiento → Indexers.
+          No pausa el indexer: para dejar de buscar, usa Configuración → Indexers.
         </p>
       </div>
     </div>

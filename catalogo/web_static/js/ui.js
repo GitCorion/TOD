@@ -1,4 +1,5 @@
 import { esc } from './format.js';
+import { state } from './store.js';
 
 export const $ = (selector, root = document) => root.querySelector(selector);
 export const $$ = (selector, root = document) => Array.from(root.querySelectorAll(selector));
@@ -224,16 +225,90 @@ export function showResult(title, data, isError = false) {
 
 /* ---------------------------------------------------------------- navegación */
 
+const PRIMARY_ROUTE = {
+  dashboard: 'dashboard',
+  add: 'add',
+  intake: 'add',
+  catalog: 'catalog',
+  title: 'catalog',
+  series: 'catalog',
+  collection: 'catalog',
+  monitor: 'catalog',
+  calendar: 'catalog',
+  downloads: 'downloads',
+  jobs: 'downloads',
+  history: 'downloads',
+  seeds: 'downloads',
+  system: 'system',
+  settings: 'system',
+  technical: 'system',
+};
+
+const SECTION_FOR_VIEW = {
+  catalog: 'catalog',
+  title: 'catalog',
+  series: 'catalog',
+  collection: 'catalog',
+  monitor: 'catalog',
+  calendar: 'catalog',
+  downloads: 'activity',
+  jobs: 'activity',
+  history: 'activity',
+  seeds: 'activity',
+  system: 'system',
+  settings: 'system',
+  technical: 'system',
+};
+
+const SECTION_TABS = {
+  catalog: [
+    { label: 'Catálogo', href: '#/catalog', views: ['catalog', 'title', 'series', 'collection'] },
+    { label: 'Pendientes', href: '#/monitor', views: ['monitor'], count: 'pending' },
+    { label: 'Calendario', href: '#/calendar', views: ['calendar'] },
+  ],
+  activity: [
+    { label: 'Descargas', href: '#/downloads', views: ['downloads'] },
+    { label: 'Tareas', href: '#/jobs', views: ['jobs', 'history'], count: 'jobs' },
+    { label: 'Siembra', href: '#/seeds', views: ['seeds'] },
+  ],
+  system: [
+    { label: 'Estado', href: '#/system', views: ['system', 'technical'] },
+    { label: 'Configuración', href: '#/settings', views: ['settings'] },
+  ],
+};
+
+export function setSectionCount(kind, value) {
+  const node = document.querySelector(`[data-tab-count="${kind}"]`);
+  if (!node) return;
+  node.textContent = value ? String(value) : '';
+}
+
+export function renderSectionTabs(view) {
+  const box = document.getElementById('sectionTabs');
+  if (!box) return;
+  const section = SECTION_FOR_VIEW[view];
+  const tabs = SECTION_TABS[section];
+  if (!tabs) {
+    box.innerHTML = '';
+    box.classList.add('hidden');
+    return;
+  }
+  box.classList.remove('hidden');
+  box.dataset.section = section;
+  box.innerHTML = tabs.map((tab) => {
+    const active = tab.views.includes(view);
+    return `<a href="${tab.href}" class="${active ? 'active' : ''}" ${active ? 'aria-current="page"' : ''}>
+      ${esc(tab.label)}${tab.count ? `<em class="nav-count" data-tab-count="${tab.count}"></em>` : ''}
+    </a>`;
+  }).join('');
+  setSectionCount('pending', state.activity?.monitored || 0);
+  setSectionCount('jobs', (state.activity?.active || []).length);
+}
+
 export function setActiveNav(route) {
+  const primary = PRIMARY_ROUTE[route] || 'dashboard';
   $$('#nav a, #mobileNav a').forEach((link) => {
-    const name = link.dataset.route;
-    const active = name === route
-      || (route === 'title' && name === 'catalog')
-      || (route === 'collection' && name === 'catalog')
-      || (route === 'series' && name === 'catalog')
-      || (route === 'intake' && name === 'add')
-      || (route === 'history' && name === 'jobs')
-      || (route === 'technical' && name === 'system');
+    const active = link.dataset.route === primary;
     link.classList.toggle('active', active);
     if (active) link.setAttribute('aria-current', 'page');
     else link.removeAttribute('aria-current');

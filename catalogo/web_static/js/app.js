@@ -7,7 +7,7 @@ import { addSearchResult, submitAdd, uploadTorrent } from './views/add.js';
 import { state, toggleSelection } from './store.js';
 import {
   $, $$, closeModal, confirmModal, icon, openModal, poster, restoreFocus, setLive,
-  showResult, status, toast,
+  setSectionCount, showResult, status, toast,
 } from './ui.js';
 
 function syncThemeButton() {
@@ -120,8 +120,7 @@ function setActivity(data) {
   const text = $('#activityText');
   const bar = $('#activityBar');
   const navJobs = $('#navJobs');
-  const navMonitor = $('#navMonitor');
-  if (navMonitor) navMonitor.textContent = data?.monitored ? String(data.monitored) : '';
+  setSectionCount('pending', data?.monitored || 0);
 
   if (running) {
     const label = `${jobState(running.state).label}, ${jobLabel(running.kind)}`;
@@ -131,6 +130,7 @@ function setActivity(data) {
       pill.href = '#/jobs';
     }
     if (navJobs) navJobs.textContent = String(active.length);
+    setSectionCount('jobs', active.length);
     if (bar) {
       bar.innerHTML = `<span class="spinner" aria-hidden="true"></span>
         <strong>${esc(jobLabel(running.kind))}</strong>
@@ -144,6 +144,7 @@ function setActivity(data) {
     if (pill) pill.classList.add('hidden');
     if (bar) bar.classList.add('hidden');
     if (navJobs) navJobs.textContent = '';
+    setSectionCount('jobs', 0);
   }
 
   const previous = state.activeIds || [];
@@ -246,10 +247,10 @@ async function runAttentionCheck() {
 let paletteTimer = null;
 
 const DESTINATIONS = [
-  { label: 'Inicio', href: '#/dashboard', hint: 'Contenido' },
-  { label: 'Biblioteca', href: '#/catalog', hint: 'Contenido' },
-  { label: 'Calendario', href: '#/calendar', hint: 'Contenido' },
-  { label: 'Seguimiento', href: '#/monitor', hint: 'Contenido' },
+  { label: 'Inicio', href: '#/dashboard', hint: 'Inicio' },
+  { label: 'Biblioteca', href: '#/catalog', hint: 'Biblioteca' },
+  { label: 'Calendario', href: '#/calendar', hint: 'Biblioteca' },
+  { label: 'Pendientes', href: '#/monitor', hint: 'Biblioteca' },
   { label: 'Descargas', href: '#/downloads', hint: 'Actividad' },
   { label: 'Tareas', href: '#/jobs', hint: 'Actividad' },
   { label: 'Historial', href: '#/history', hint: 'Actividad' },
