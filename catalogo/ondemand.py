@@ -611,10 +611,18 @@ def _group_series(items) -> list[dict[str, Any]]:
             (str(row.get("recent_at") or "") for row in rows),
             default="",
         )
-        aired_rows = [row for row in rows if row.get("available") is not False]
+        regular_rows = [
+            row for row in rows if int(row.get("season") or 0) != 0
+        ]
+        special_rows = [
+            row for row in rows if int(row.get("season") or 0) == 0
+        ]
+        aired_rows = [
+            row for row in regular_rows if row.get("available") is not False
+        ]
         aired_count = len(aired_rows)
         published_aired = sum(1 for row in aired_rows if row.get("published"))
-        upcoming = len(rows) - aired_count
+        upcoming = len(regular_rows) - aired_count
         counts = {
             "descargado": 0,
             "descargando": 0,
@@ -705,6 +713,8 @@ def _group_series(items) -> list[dict[str, Any]]:
                 "has_file": any(bool(row.get("has_file")) for row in rows),
                 "episodes": len(rows),
                 "published_episodes": published_count,
+                "regular_episodes": len(regular_rows),
+                "special_episodes": len(special_rows),
                 "aired_episodes": aired_count,
                 "published_aired": published_aired,
                 "upcoming_episodes": upcoming,
@@ -1100,17 +1110,26 @@ def series_detail(
     all_episodes = [
         episode for season in seasons_out for episode in season["episodes"]
     ]
+    regular_episodes = [
+        episode for episode in all_episodes
+        if int(episode.get("season") or 0) != 0
+    ]
+    special_episodes = [
+        episode for episode in all_episodes
+        if int(episode.get("season") or 0) == 0
+    ]
     totals = {
         "episodes": len(all_episodes),
         "catalog_episodes": len(rows),
         "missing_episodes": sum(
-            1 for episode in all_episodes if not episode.get("in_catalog")
+            1 for episode in regular_episodes if not episode.get("in_catalog")
         ),
+        "specials": len(special_episodes),
         "published": sum(1 for episode in all_episodes if episode.get("published")),
         "library": sum(1 for episode in all_episodes if episode.get("library_added")),
         "monitored": sum(1 for episode in all_episodes if episode.get("monitored")),
         "monitored_aired": sum(
-            1 for episode in all_episodes
+            1 for episode in regular_episodes
             if episode.get("monitored") and episode.get("available") is not False
         ),
         "covered": sum(
@@ -1129,25 +1148,25 @@ def series_detail(
             1 for episode in all_episodes if episode.get("incomplete")
         ),
         "aired": sum(
-            1 for episode in all_episodes
+            1 for episode in regular_episodes
             if episode.get("available") is not False
         ),
         "upcoming": sum(
-            1 for episode in all_episodes
+            1 for episode in regular_episodes
             if episode.get("available") is False
         ),
         "catalog_aired": sum(
-            1 for episode in all_episodes
+            1 for episode in regular_episodes
             if episode.get("in_catalog") and episode.get("available") is not False
         ),
         "covered_aired": sum(
-            1 for episode in all_episodes
+            1 for episode in regular_episodes
             if episode.get("in_catalog")
             and episode.get("available") is not False
             and (episode.get("library_added") or episode.get("monitored"))
         ),
         "playable_aired": sum(
-            1 for episode in all_episodes
+            1 for episode in regular_episodes
             if episode.get("available") is not False and episode.get("playable")
         ),
         "seasons": len(seasons_out),

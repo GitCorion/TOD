@@ -119,6 +119,9 @@ vacías se ocultan.
   serie con todos sus episodios emitidos disponibles está `Disponible` aunque
   tenga temporadas futuras; estas se resumen como `N sin estrenar` en la ficha y
   en el título accesible del cartel, no en la línea de metadatos.
+- **Los especiales no cuentan.** La temporada 0 tiene su propio chip y su
+  contador, sin punto de aviso y sin efecto en la disponibilidad ni en los
+  faltantes de la serie. Se pueden catalogar aparte.
 - El contador del menú es el total del catálogo agrupado; el de la línea de
   resultados es el del filtro actual (`753 de 3329`).
 - Las facetas se calculan después de la búsqueda y del tipo, y antes del estado:

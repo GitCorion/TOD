@@ -85,7 +85,7 @@ function card(item, selected, priority) {
   const info = stateInfo(item);
   const sources = Number(item.alive || 0);
   const meta = isSeries
-    ? `${fmtInt(item.episodes)} ${Number(item.episodes) === 1 ? 'episodio' : 'episodios'}`
+    ? `${fmtInt(item.regular_episodes ?? item.episodes)} ${Number(item.regular_episodes ?? item.episodes) === 1 ? 'episodio' : 'episodios'}`
     : 'Película';
   const sourceLabel = `${fmtInt(sources)} ${sources === 1 ? 'fuente' : 'fuentes'}`;
   const rail = coverage(item);

@@ -320,6 +320,7 @@ def test_series_detail_merges_tmdb_episodes(tmp_path):
         "episodes": 4,
         "catalog_episodes": 3,
         "missing_episodes": 1,
+        "specials": 0,
         "published": 0,
         "library": 0,
         "monitored": 0,

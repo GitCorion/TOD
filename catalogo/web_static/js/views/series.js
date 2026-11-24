@@ -51,7 +51,7 @@ function seriesState(totals) {
   if (Number(totals.downloading || 0) > 0) {
     return status('Descargando', 'info');
   }
-  if (Number(totals.published || 0) > 0) {
+  if (Number(totals.catalog_aired || 0) > 0) {
     return status('Sin fuente', 'warn');
   }
   if (Number(totals.incomplete || 0) > 0 || Number(totals.monitored || 0) > 0) {
@@ -75,10 +75,6 @@ export async function renderSeries({ params, query, signal }) {
   const defaultSeason = seasons.find((entry) => entry.season > 0)?.season ?? seasons[0]?.season ?? 1;
   const currentSeason = Number(query.get('season') || defaultSeason);
   const seasonData = seasons.find((entry) => entry.season === currentSeason) || seasons[0];
-  const specialMissing = seasons
-    .filter((entry) => entry.season === 0)
-    .flatMap((entry) => entry.episodes || [])
-    .filter((episode) => !episode.in_catalog && episode.available !== false).length;
   const aired = Number(totals.aired ?? totals.episodes ?? 0);
   const allAdded = aired > 0
     && (totals.catalog_aired || 0) >= aired;
@@ -145,7 +141,7 @@ export async function renderSeries({ params, query, signal }) {
       incomplete ? `${incomplete} sin fuente` : '',
       upcoming ? `${upcoming} sin estrenar` : '',
     ].filter(Boolean).join(', ');
-    const warn = missing || incomplete;
+    const warn = entry.season !== 0 && Boolean(missing || incomplete);
     return `<button class="chip ${entry.season === currentSeason ? 'active' : ''}" data-action="series-season" data-season="${entry.season}">
       ${esc(seasonLabel(entry))} <b>${entry.episode_count || entry.episodes.length}</b>${warn ? ` <span class="warn-dot" title="${esc(note)}"></span>` : ''}
     </button>`;
@@ -186,7 +182,7 @@ export async function renderSeries({ params, query, signal }) {
       <span><b>${fmtInt(totals.incomplete || 0)}</b> sin fuente</span>
       <span><b>${fmtInt(notAdded)}</b> sin catalogar</span>
       ${totals.upcoming ? `<span><b>${fmtInt(totals.upcoming)}</b> sin estrenar</span>` : ''}
-      ${specialMissing ? `<span><b>${fmtInt(specialMissing)}</b> especiales</span>` : ''}
+      ${totals.specials ? `<span><b>${fmtInt(totals.specials)}</b> especiales</span>` : ''}
     </div>
 
     <div class="panel section">

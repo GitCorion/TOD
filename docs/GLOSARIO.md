@@ -29,7 +29,8 @@ Estos son los únicos términos que deberían aparecer en pantalla.
   inconsistencia transitoria: se muestra **Sin fuente** y la reconciliación lo
   retira. Para un episodio futuro, **Sin estrenar**.
 - Para el seguimiento automático, decir **En seguimiento**, **Seguir** y
-  **Dejar de seguir**.
+  **Dejar de seguir**. Los **especiales** se cuentan aparte y no como episodios
+  faltantes.
 - `.strm` solo aparece cuando se habla del fichero en sí (por ejemplo, la
   carpeta que lee Jellyfin). Para el estado se habla de **Disponible** o
   **Pendiente**; Jellyfin se nombra cuando se habla de la integración, la carpeta
