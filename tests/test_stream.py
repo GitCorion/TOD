@@ -164,3 +164,80 @@ def test_far_seek_fails_fast_with_real_position(tmp_path):
     assert caught.value.position == 15 * MB
     assert handler.status is None
     assert time.monotonic() - started < 1
+
+
+def test_multifile_pack_seek_and_start(tmp_path):
+    # Episodio 1: 10 MB, Episodio 2: 20 MB (offset 10 MB)
+    ep1 = tmp_path / "ep1.mkv"
+    ep1.write_bytes(b"1" * (10 * MB))
+    ep2 = tmp_path / "ep2.mkv"
+    ep2.write_bytes(b"2" * (20 * MB))
+    files = [
+        {"index": 0, "name": "ep1.mkv", "size": 10 * MB},
+        {"index": 1, "name": "ep2.mkv", "size": 20 * MB},
+    ]
+    # Piezas de 1 MB:
+    # 0..9 son ep1 (no descargadas, states=0)
+    # 10..13 son las primeras 4 piezas de ep2 (descargadas, states=2)
+    # 14..29 son el resto de ep2 (no descargadas, states=0)
+    states = [0] * 10 + [2, 2, 2, 2] + [0] * 16
+    qbit = FakeQbit(files, states)
+
+    # 1. Reproducir desde el inicio (start=0) de ep2 NO debe fallar con SeekNotReady
+    handler1 = FakeHandler()
+    stream_torrent_file(
+        handler1, qbit, "hash", 1, 0, 2 * MB - 1,
+        roots=[str(tmp_path)], timeout=5, buffer_bytes=2 * MB
+    )
+    assert handler1.status == 206
+    assert len(handler1.wfile.getvalue()) == 2 * MB
+
+    # 2. Seek lejano (start=15 MB) en ep2 SÍ debe fallar con SeekNotReady relativo a ep2
+    handler2 = FakeHandler()
+    with pytest.raises(SeekNotReady) as caught:
+        stream_torrent_file(
+            handler2, qbit, "hash", 1, 15 * MB, 16 * MB - 1,
+            roots=[str(tmp_path)], timeout=5,
+        )
+    assert caught.value.available == 4 * MB
+    assert caught.value.position == 15 * MB
+
+
+def test_mkv_downloading_serves_sequential_stream_without_ranges(tmp_path):
+    movie = tmp_path / "movie.mkv"
+    movie.write_bytes(b"M" * (10 * MB))
+    files = [{"index": 0, "name": "movie.mkv", "size": 10 * MB}]
+    # Incomplete torrent: only first 3 MB ready
+    states = [2, 2, 2] + [0] * 7
+    qbit = FakeQbit(files, states)
+
+    handler = FakeHandler()
+    stream_torrent_file(
+        handler, qbit, "hash", 0, 0, 10 * MB - 1,
+        roots=[str(tmp_path)], timeout=1, buffer_bytes=2 * MB
+    )
+    # Serves 200 OK with Accept-Ranges: none to prevent ffprobe/ffmpeg jumping to Cues at the end
+    assert handler.status == 200
+    assert handler.headers["Accept-Ranges"] == "none"
+    assert handler.headers["Content-Length"] == str(10 * MB)
+    assert "Content-Range" not in handler.headers
+
+
+def test_mkv_complete_serves_range_with_bytes_accepted(tmp_path):
+    movie = tmp_path / "movie.mkv"
+    movie.write_bytes(b"M" * (10 * MB))
+    files = [{"index": 0, "name": "movie.mkv", "size": 10 * MB}]
+    # Complete torrent: all pieces ready
+    states = [2] * 10
+    qbit = FakeQbit(files, states)
+
+    handler = FakeHandler()
+    handler.headers["Range"] = f"bytes=0-{10 * MB - 1}"
+    stream_torrent_file(
+        handler, qbit, "hash", 0, 0, 10 * MB - 1,
+        roots=[str(tmp_path)], timeout=1, buffer_bytes=2 * MB
+    )
+    assert handler.status == 206
+    assert handler.headers["Accept-Ranges"] == "bytes"
+    assert handler.headers["Content-Range"] == f"bytes 0-{10 * MB - 1}/{10 * MB}"
+

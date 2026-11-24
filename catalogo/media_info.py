@@ -203,6 +203,13 @@ def _title_language(title: str) -> str:
     return "spa"
 
 
+def _default_runtime(asset: Any) -> float:
+    kind = str((asset["kind"] if asset is not None else "") or "").casefold()
+    if kind == "series":
+        return 2700.0  # 45 min
+    return 5400.0  # 90 min
+
+
 def _release_fallback(
     asset: Any,
     release: Any,
@@ -237,6 +244,8 @@ def _release_fallback(
         duration = float(asset["runtime_seconds"] or 0) or None
     except (TypeError, ValueError):
         duration = None
+    if duration is None:
+        duration = _default_runtime(asset)
     size = file_size
     if size is None and release is not None:
         size = _as_int(release["size_bytes"])
@@ -391,6 +400,7 @@ def build_media_info(
                 if not info.get("duration_seconds"):
                     info["duration_seconds"] = (
                         _as_float(asset["runtime_seconds"])
+                        or _default_runtime(asset)
                     )
                 if cache_key is not None:
                     _CACHE[cache_key] = dict(info)

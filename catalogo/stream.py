@@ -17,6 +17,7 @@ from .config import media_type
 CHUNK = 1024 * 1024
 BUFFER = 4 * 1024 * 1024
 DEFAULT_TIMEOUT = 20.0
+STREAM_CHUNK_TIMEOUT = 60.0
 PIECE_READY = 2
 # Margen para no rechazar un seek que está a punto de llegar.
 SEEK_TOLERANCE = 8 * 1024 * 1024
@@ -178,14 +179,19 @@ def stream_torrent_file(
         )
     )
     if not ready_now and len(states) > end_piece:
-        frontier = 0
-        for piece, state in enumerate(states):
-            if state != PIECE_READY:
+        file_start_piece = max(0, int(offset) // piece_size)
+        file_end_piece = max(
+            file_start_piece,
+            (int(offset) + max(1, size) - 1) // piece_size,
+        )
+        frontier_piece = file_start_piece
+        for piece in range(file_start_piece, min(len(states), file_end_piece + 1)):
+            if states[piece] != PIECE_READY:
                 break
-            frontier = piece + 1
-        available = frontier * piece_size
-        if int(offset + start) > available + SEEK_TOLERANCE:
-            raise SeekNotReady(int(offset + start), available)
+            frontier_piece = piece + 1
+        available = max(0, frontier_piece * piece_size - int(offset))
+        if start > available + SEEK_TOLERANCE:
+            raise SeekNotReady(start, min(size, available))
     if not wait_pieces(
         qbit, info_hash, offset + start, initial, piece_size, timeout=timeout
     ):
@@ -197,25 +203,55 @@ def stream_torrent_file(
         raise StreamTimeout("piezas iniciales no disponibles")
 
     mime = media_type(str(path))
-    handler.send_response(206)
-    handler.send_header("Content-Type", mime)
-    handler.send_header("Accept-Ranges", "bytes")
-    handler.send_header("Content-Length", str(length))
-    handler.send_header("Content-Range", f"bytes {start}-{end}/{size}")
-    handler.send_header("ETag", f'"{info_hash[:20]}-{file_index}"')
-    handler.send_header("Cache-Control", "no-store")
-    handler.end_headers()
+    file_start_piece = max(0, int(offset) // piece_size)
+    file_end_piece = max(
+        file_start_piece,
+        (int(offset) + max(1, size) - 1) // piece_size,
+    )
+    is_complete = all(
+        states[p] == PIECE_READY
+        for p in range(file_start_piece, min(len(states), file_end_piece + 1))
+    )
+    is_mkv = path.suffix.lower() == ".mkv"
+    has_range_header = bool(getattr(handler, "headers", None) and handler.headers.get("Range"))
+
+    if not is_complete and is_mkv and start == 0 and end == size - 1:
+        # Modo secuencial puro mientras descarga: mientras el progreso sea menor al 100%
+        # y el contenedor sea MKV, sirve como stream secuencial (200 OK con Accept-Ranges: none).
+        # Al no anunciar rangos, ffprobe y ffmpeg leen SegmentInfo y Tracks al principio sin
+        # saltar al final a buscar Cues, arrancando en segundos.
+        handler.send_response(200)
+        handler.send_header("Content-Type", mime)
+        handler.send_header("Accept-Ranges", "none")
+        handler.send_header("Content-Length", str(size))
+        handler.send_header("ETag", f'"{info_hash[:20]}-{file_index}"')
+        handler.send_header("Cache-Control", "no-store")
+        handler.end_headers()
+    else:
+        accept_ranges = "bytes" if is_complete else "none"
+        handler.send_response(206 if (has_range_header or start > 0 or end < size - 1) else 200)
+        handler.send_header("Content-Type", mime)
+        handler.send_header("Accept-Ranges", accept_ranges)
+        handler.send_header("Content-Length", str(length))
+        if has_range_header or start > 0 or end < size - 1:
+            handler.send_header("Content-Range", f"bytes {start}-{end}/{size}")
+        handler.send_header("ETag", f'"{info_hash[:20]}-{file_index}"')
+        handler.send_header("Cache-Control", "no-store")
+        handler.end_headers()
     if head:
         return
 
     first_byte_sent = False
+    chunk_timeout = max(timeout, STREAM_CHUNK_TIMEOUT) if timeout >= DEFAULT_TIMEOUT else timeout
     with path.open("rb") as fh:
         pos = start
         while pos <= end:
-            chunk = min(CHUNK, end - pos + 1)
+            bytes_into_piece = (offset + pos) % piece_size
+            bytes_left_in_piece = piece_size - bytes_into_piece
+            chunk = min(CHUNK, bytes_left_in_piece, end - pos + 1)
             if not wait_pieces(
                 qbit, info_hash, offset + pos, chunk, piece_size,
-                timeout=timeout,
+                timeout=chunk_timeout,
             ):
                 # Ya se enviaron headers: cortamos para no mentir.
                 break

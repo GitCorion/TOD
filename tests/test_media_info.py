@@ -65,6 +65,34 @@ def test_media_info_falls_back_to_the_release_title(tmp_path):
     assert info["audio"][0]["language"] == "spa"
 
 
+def test_media_info_fallback_runtime_when_missing(tmp_path):
+    db, asset_id, release_id = seed(tmp_path)
+    conn = sqlite3.connect(db)
+    # Set runtime_seconds to None for the series
+    conn.execute("UPDATE media_items SET runtime_seconds = NULL WHERE id = ?", (asset_id,))
+    # Add a movie item without runtime_seconds
+    conn.execute(
+        "INSERT INTO media_items(key,media_id,kind,tmdb,title,year,status,runtime_seconds)"
+        " VALUES('movie:tmdb:99', 'movie:99', 'movie', 99, 'Test Movie', 2025, 'COLD', NULL)"
+    )
+    movie_id = conn.execute("SELECT id FROM media_items WHERE key = 'movie:tmdb:99'").fetchone()[0]
+    conn.execute(
+        "INSERT INTO releases(asset_id,tracker,title,size_bytes,health,source,privacy,seeders,quality)"
+        " VALUES(?, 'HD-Olimpo', 'Test Movie 1080p', 2000000000, 'alive', 'prowlarr', 'private', 5, '1080p')",
+        (movie_id,),
+    )
+    conn.commit()
+    conn.close()
+
+    series_info = build_media_info(str(db), "series:tmdb:1:1", release_id=release_id)
+    assert series_info is not None
+    assert series_info["duration_seconds"] == 2700.0
+
+    movie_info = build_media_info(str(db), "movie:tmdb:99")
+    assert movie_info is not None
+    assert movie_info["duration_seconds"] == 5400.0
+
+
 def test_media_info_normalizes_ffprobe_streams():
     data = {
         "format": {
