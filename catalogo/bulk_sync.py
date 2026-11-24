@@ -21,6 +21,11 @@ from .importer import norm_title
 from .jackett import sanitize_link
 from .policy import reconcile_privacy
 from .public_sync import quality_of, year_of
+from .release_parse import (
+    episode_in_release,
+    pack_matches_season,
+    parse_episode,
+)
 from .trackers import (
     GENERAL_TRACKERS,
     audio_for,
@@ -52,26 +57,6 @@ def _norm_candidates(asset) -> list[str]:
         if normalized and normalized not in result:
             result.append(normalized)
     return result
-
-
-SXXEYY = re.compile(r"(?i)\bS(\d{1,2})E(\d{1,3})\b")
-XXYY = re.compile(r"(?i)\b(\d{1,2})x(\d{2,3})\b")
-SEASON = re.compile(r"(?i)\bS(\d{1,2})\b")
-SEASON_WORD = re.compile(r"(?i)\b(?:temporada|season)\s*(\d{1,2})\b")
-PACK = re.compile(r"(?i)\b(?:pack|complete|completa|temporada|season)\b")
-
-
-def parse_episode(title: str | None) -> tuple[int, int] | None:
-    match = SXXEYY.search(title or "") or XXYY.search(title or "")
-    if not match:
-        return None
-    return int(match.group(1)), int(match.group(2))
-
-
-def season_of(title: str | None) -> int | None:
-    text = title or ""
-    match = SEASON.search(text) or SEASON_WORD.search(text)
-    return int(match.group(1)) if match else None
 
 
 def matches_asset(asset, result: dict, kind: str = "movie") -> bool:
@@ -112,11 +97,10 @@ def matches_asset(asset, result: dict, kind: str = "movie") -> bool:
     if kind == "series":
         season = int(asset["season"] or 0)
         episode = int(asset["episode"] or 0)
-        parsed = parse_episode(result.get("title"))
-        if parsed is not None:
-            return parsed == (season, episode)
-        result_season = season_of(result.get("title"))
-        return result_season == season
+        title = result.get("title")
+        if parse_episode(title) is not None:
+            return episode_in_release(title, season, episode)
+        return pack_matches_season(title, season)
 
     return True
 
@@ -499,23 +483,20 @@ def sync_sources(
                 item for item in matched
                 if matches_asset(asset, item, kind=kind)
             ]
-        if accept_unmatched:
-            return matched
         if kind == "series":
+            season = int(asset["season"] or 0)
+            episode = int(asset["episode"] or 0)
             exact = [
                 item for item in matched
-                if parse_episode(item.get("title"))
-                == (
-                    int(asset["season"] or 0),
-                    int(asset["episode"] or 0),
-                )
+                if episode_in_release(item.get("title"), season, episode)
             ]
             if exact:
                 return exact
-            # Nunca otro episodio: solo packs de temporada/serie.
+            # Nunca otro episodio ni otra temporada. Los packs de serie
+            # completa o sin temporada identificable sí sirven.
             return [
                 item for item in matched
-                if parse_episode(item.get("title")) is None
+                if pack_matches_season(item.get("title"), season)
             ]
         return matched
 

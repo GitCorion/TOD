@@ -130,6 +130,42 @@ def handle(
         raise WebError(404, "no encontrado")
 
     if parts and parts[0] == "series":
+        if len(parts) == 3 and parts[2] == "monitor":
+            if not mutate:
+                raise WebError(405, "usa POST")
+            tmdb = _int(parts[1], 0)
+            if tmdb <= 0:
+                raise WebError(400, "tmdb inválido")
+            raw_seasons = body.get("seasons")
+            if raw_seasons is None and body.get("season") is not None:
+                raw_seasons = [body["season"]]
+            if raw_seasons is not None and not isinstance(raw_seasons, list):
+                raise WebError(400, "seasons inválido")
+            result = admin.set_series_monitored(
+                app.config,
+                tmdb,
+                monitored=bool(body.get("monitored", True)),
+                seasons=raw_seasons,
+                source="manual",
+            )
+            app.audit("web.series_monitor", payload=result)
+            return 200, result
+        if len(parts) == 5 and parts[2] == "season" and parts[4] == "monitor":
+            if not mutate:
+                raise WebError(405, "usa POST")
+            tmdb = _int(parts[1], 0)
+            season = _int(parts[3], -1)
+            if tmdb <= 0 or season < 0:
+                raise WebError(400, "serie o temporada inválida")
+            result = admin.set_series_monitored(
+                app.config,
+                tmdb,
+                monitored=bool(body.get("monitored", True)),
+                seasons=[season],
+                source="manual",
+            )
+            app.audit("web.season_monitor", payload=result)
+            return 200, result
         if len(parts) == 3 and parts[2] == "library":
             if not mutate:
                 raise WebError(405, "usa POST")

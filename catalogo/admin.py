@@ -468,6 +468,74 @@ def set_monitored(
     return {"key": row["key"], "monitored": bool(monitored)}
 
 
+def set_series_monitored(
+    config: Config,
+    tmdb: int,
+    *,
+    monitored: bool = True,
+    seasons: list[int] | None = None,
+    source: str = "manual",
+) -> dict[str, Any]:
+    """Activa o desactiva el seguimiento de una serie o de varias temporadas.
+
+    Igual que en Sonarr, el cambio afecta a todos los episodios. Los que
+    están en Radarr/Sonarr se dejan al espejo de los *arr: TOD no debe
+    pelearse con el estado que marca la fuente.
+    """
+    from contextlib import closing
+
+    from .db import connect
+
+    where = "kind = 'series' AND tmdb = ? AND library_added = 0"
+    params: list[Any] = [int(tmdb)]
+    clean = sorted(
+        {
+            int(value)
+            for value in (seasons or [])
+            if str(value).lstrip("-").isdigit() and int(value) >= 0
+        }
+    )
+    if clean:
+        where += " AND season IN (" + ",".join("?" for _ in clean) + ")"
+        params.extend(clean)
+    with closing(connect(config.db_path)) as conn:
+        rows = conn.execute(
+            f"SELECT id, key, season FROM media_items WHERE {where} ORDER BY season, episode",
+            params,
+        ).fetchall()
+        if rows:
+            ids = [int(row["id"]) for row in rows]
+            for start in range(0, len(ids), 500):
+                chunk = ids[start:start + 500]
+                placeholders = ",".join("?" for _ in chunk)
+                conn.execute(
+                    f"""
+                    UPDATE media_items SET
+                        monitored = ?,
+                        monitored_at = ?,
+                        monitor_source = ?,
+                        updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+                    WHERE id IN ({placeholders})
+                    """,
+                    [
+                        1 if monitored else 0,
+                        time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+                        if monitored else None,
+                        source if monitored else None,
+                        *chunk,
+                    ],
+                )
+            conn.commit()
+    keys = [str(row["key"]) for row in rows]
+    return {
+        "tmdb": int(tmdb),
+        "seasons": clean,
+        "monitored": bool(monitored),
+        "titles": len(keys),
+        "keys": keys,
+    }
+
+
 def set_library(
     config: Config,
     *,

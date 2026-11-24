@@ -22,6 +22,7 @@ from .evict import evict_completed
 from .health import apply_health, pending_releases, summary as health_summary
 from .health_worker import run as health_run
 from .importer import import_legacy, norm_title
+from .intake import set_follow
 from .jackett import JackettClient, JackettError
 from .jellyfin_leases import touch_active_leases
 from .library_sync import sync_library
@@ -29,6 +30,7 @@ from .metadata import backfill as metadata_backfill
 from .admin import monitor_titles
 from .mover import move_completed
 from .normalize_series import normalize_series_titles
+from .packs import prune_misassigned_packs
 from .policy import (
     TrackerPolicy,
     list_policies,
@@ -240,11 +242,17 @@ def cmd_tmdb_sync(args, config: Config) -> int:
             )
             return 0
         report = upsert_episodes(config.db_path, series, episodes)
+        keys = [
+            f"series:tmdb:{int(series['tmdb'])}:{int(item['season'])}:{int(item['episode'])}"
+            for item in episodes
+        ]
+        followed = set_follow(config.db_path, keys, follow=not args.no_follow)
         _print(
             {
                 "series": series,
                 "seasons": seasons,
                 "episodes": len(episodes),
+                "followed": followed,
                 **report,
             }
         )
@@ -290,7 +298,15 @@ def cmd_tmdb_sync(args, config: Config) -> int:
         )
         return 0
     report = upsert_movies(config.db_path, items, source="tmdb")
-    _print({"year": args.year, "count": len(items), "pages": pages, **report})
+    keys = [f"movie:tmdb:{int(item['tmdb'])}" for item in items if item.get("tmdb")]
+    followed = set_follow(config.db_path, keys, follow=not args.no_follow)
+    _print({
+        "year": args.year,
+        "count": len(items),
+        "pages": pages,
+        "followed": followed,
+        **report,
+    })
     return 0
 
 
@@ -858,6 +874,14 @@ def cmd_prune_library(args, config: Config) -> int:
     return 0
 
 
+def cmd_prune_packs(args, config: Config) -> int:
+    report = prune_misassigned_packs(
+        str(config.db_path), dry_run=not args.execute
+    )
+    _print(report)
+    return 0
+
+
 def cmd_jellyfin_leases(args, config: Config) -> int:
     if not config.jellyfin_api_key:
         _print({"error": "sin JELLYFIN_API_KEY"})
@@ -1192,6 +1216,7 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--tv")
     p.add_argument("--tv-year", type=int)
     p.add_argument("--seasons", default="1")
+    p.add_argument("--no-follow", action="store_true", help="añade sin seguimiento")
     p.add_argument("--dry-run", action="store_true")
 
     p = sub.add_parser("normalize-series", help="normaliza títulos de series desde TMDB")
@@ -1395,6 +1420,12 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--out", required=True)
     p.add_argument("--execute", action="store_true")
 
+    p = sub.add_parser(
+        "prune-packs",
+        help="borra packs asignados a episodios de otra temporada",
+    )
+    p.add_argument("--execute", action="store_true")
+
     p = sub.add_parser("bridge", help="copia al *arr lo descargado por el catálogo")
     p.add_argument(
         "--limit", type=int, default=1,
@@ -1516,6 +1547,7 @@ def main(argv: list[str] | None = None) -> int:
         "block-tracker": cmd_block_tracker,
         "jellyfin-leases": cmd_jellyfin_leases,
         "prune-library": cmd_prune_library,
+        "prune-packs": cmd_prune_packs,
         "bridge": cmd_bridge,
         "rss-sync": cmd_rss_sync,
         "backfill": cmd_backfill,

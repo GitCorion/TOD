@@ -1460,6 +1460,28 @@ document.addEventListener('click', async (event) => {
       }
       return;
     }
+    if (['monitor-series', 'unmonitor-series', 'monitor-season', 'unmonitor-season'].includes(action)) {
+      element.disabled = true;
+      const monitored = action.startsWith('monitor-');
+      const tmdb = Number(element.dataset.tmdb);
+      const season = element.dataset.season ? [Number(element.dataset.season)] : null;
+      const scope = season ? 'temporada' : 'serie';
+      try {
+        const result = await apiPost(`/api/series/${tmdb}/monitor`, { monitored, seasons: season });
+        toast(
+          monitored
+            ? `Seguimiento activado en ${fmtInt(result.titles || 0)} episodios de la ${scope}`
+            : `Seguimiento desactivado en ${fmtInt(result.titles || 0)} episodios de la ${scope}`,
+          'ok',
+        );
+        await route();
+      } catch (error) {
+        toast(error.message, 'error');
+      } finally {
+        element.disabled = false;
+      }
+      return;
+    }
     if (action === 'publish-title') {
       await acquireKeys([element.dataset.key], element.dataset.key.startsWith('series:') ? 'series' : 'movie', 'publish');
       await route();

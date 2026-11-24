@@ -14,12 +14,12 @@ from datetime import datetime, timezone
 from .bulk_sync import (
     _jackett_item,
     _upsert_release,
-    parse_episode,
     resolve_indexers,
 )
 from .db import connect
 from .importer import norm_title
 from .public_sync import year_of
+from .release_parse import parse_episode
 from .title_sync import upsert_episodes, upsert_movies
 from .tmdb import episode_items, movie_item, tv_item
 from .trackers import GENERAL_TRACKERS, spanish_trackers_from_indexers

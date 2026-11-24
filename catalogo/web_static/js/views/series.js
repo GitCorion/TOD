@@ -88,6 +88,11 @@ export async function renderSeries({ params, query, signal }) {
   ].filter(Boolean).join(', ');
   const seriesMode = totals.library || totals.monitored ? 'update' : 'add';
   const seriesAction = totalRequested(totals) ? 'Catalogar episodios que faltan' : 'Catalogar serie';
+  const seriesTrackable = Math.max(0, Number(totals.catalog_episodes || 0) - Number(totals.library || 0));
+  const seriesFollowed = Math.min(seriesTrackable, Number(totals.monitored || 0));
+  const seasonEpisodes = seasonData?.episodes || [];
+  const seasonTrackable = seasonEpisodes.filter((ep) => ep.in_catalog && !ep.library_added).length;
+  const seasonFollowed = seasonEpisodes.filter((ep) => ep.monitored && !ep.library_added).length;
   const seasonAdded = (seasonData?.aired || 0) > 0
     && (seasonData?.catalog_aired || 0) >= (seasonData?.aired || 0);
   const seasonMode = seasonData?.library || seasonData?.monitored ? 'update' : 'add';
@@ -165,6 +170,8 @@ export async function renderSeries({ params, query, signal }) {
           <div class="detail-actions">
             ${allAdded ? '' : `<button class="btn btn-primary" data-action="library-series" data-tmdb="${tmdb}" data-title="${esc(series.title || '')}" data-mode="${seriesMode}">${icon('plus')} ${seriesAction}</button>`}
             <button class="btn" data-action="sync-series" data-tmdb="${tmdb}">${icon('search')} Buscar y añadir</button>
+            ${seriesTrackable && seriesFollowed < seriesTrackable ? `<button class="btn btn-ghost" data-action="monitor-series" data-tmdb="${tmdb}">${icon('plus')} Seguir serie</button>` : ''}
+            ${seriesFollowed > 0 ? `<button class="btn btn-ghost danger-action" data-action="unmonitor-series" data-tmdb="${tmdb}">Dejar de seguir serie</button>` : ''}
             <a class="btn btn-ghost" href="${esc(data.tmdb_url || '#')}" target="_blank" rel="noreferrer">${icon('external')} TMDB</a>
             ${totals.library ? `<button class="btn btn-sm btn-ghost danger-action" data-action="unpublish-series" data-tmdb="${tmdb}">Quitar de TOD</button>` : ''}
           </div>
@@ -190,6 +197,8 @@ export async function renderSeries({ params, query, signal }) {
         <div class="chips">${seasonChips}</div>
         <div class="right row" style="gap:6px">
           ${seasonAdded ? '' : `<button class="btn btn-sm btn-ghost" data-action="library-season" data-season="${currentSeason}" data-tmdb="${tmdb}" data-title="${esc(series.title || '')}" data-mode="${seasonMode}">${icon('plus', 'sm')} ${seasonAction}</button>`}
+          ${seasonTrackable && seasonFollowed < seasonTrackable ? `<button class="btn btn-sm btn-ghost" data-action="monitor-season" data-season="${currentSeason}" data-tmdb="${tmdb}">${icon('plus', 'sm')} Seguir temporada</button>` : ''}
+          ${seasonFollowed > 0 ? `<button class="btn btn-sm btn-ghost danger-action" data-action="unmonitor-season" data-season="${currentSeason}" data-tmdb="${tmdb}">Dejar de seguir temporada</button>` : ''}
           <button class="btn btn-sm btn-ghost" data-action="sync-season" data-season="${currentSeason}">${icon('search', 'sm')} Buscar y añadir</button>
           <button class="btn btn-sm btn-ghost" data-action="manual-search-season" data-season="${currentSeason}">${icon('search', 'sm')} Buscar manualmente</button>
         </div>

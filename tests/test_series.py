@@ -93,6 +93,63 @@ def test_pack_matches_midseason_episode():
     assert not matches_asset(
         row, pack_result(title="ONE PIECE (2023) S02 [PACK]"), kind="series"
     )
+    assert not matches_asset(
+        row,
+        pack_result(title="ONE PIECE (2023) [SEGUNDA TEMPORADA] [PACK]"),
+        kind="series",
+    )
+    assert matches_asset(
+        row,
+        pack_result(title="ONE PIECE (2023) Complete Series 1080p"),
+        kind="series",
+    )
+
+
+class IdSeasonProwlarr:
+    """Búsqueda por TMDB que devuelve packs de varias temporadas."""
+
+    def indexers(self):
+        return [
+            {
+                "id": 1,
+                "name": "TrackerEspanol (API)",
+                "capabilities": {"tvSearchParams": ["tmdbid"]},
+            }
+        ]
+
+    def torznab_search(self, indexer_id, **kwargs):
+        assert kwargs["tmdb_id"] == 111110
+        return [
+            pack_result(guid="s01", infoHash="s01"),
+            pack_result(
+                title="ONE PIECE (2023) S02 [PACK]",
+                guid="s02",
+                infoHash="s02",
+            ),
+        ]
+
+    def search(self, query, **kwargs):
+        return []
+
+
+def test_id_search_rejects_packs_from_other_seasons(tmp_path):
+    db = seed_series(tmp_path, episodes=(1,))
+    report = sync_sources(
+        db,
+        IdSeasonProwlarr(),
+        kind="series",
+        limit=1,
+        delay=0,
+        key="series:tmdb:111110:1:1",
+        id_fallback=True,
+    )
+    assert report["accepted"] == 1
+    assert report["inserted"] == 1
+    conn = sqlite3.connect(db)
+    titles = [row[0] for row in conn.execute("SELECT title FROM releases")]
+    conn.close()
+    assert len(titles) == 1
+    assert "S01" in titles[0]
 
 
 def test_anime_is_rejected_by_tmdb_id():
