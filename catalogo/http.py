@@ -137,6 +137,38 @@ class CatalogHandler(BaseHTTPRequestHandler):
         app = getattr(self, "app", None)
         return getattr(app, "config", None)
 
+    def _local_ready_status(self, key: str, status: dict) -> dict:
+        """Marca el estado como listo si el fichero ya está en biblioteca/local.
+
+        La última fila de torrent puede ser de otra versión (o estar evicted)
+        y dejaba el overlay en COLD aunque el fichero estuviera disponible.
+        """
+        if status.get("stream_ready"):
+            return status
+        try:
+            resolution = self.resolver.resolve(key)
+        except Exception:
+            return status
+        if resolution.source not in ("library", "local_seed"):
+            return status
+        ready = dict(status)
+        ready.update(
+            {
+                "state": "AVAILABLE",
+                "playback_state": "idle",
+                "stream_ready": True,
+                "progress": 1.0,
+                "waiting_reason": None,
+                "source": (
+                    "library" if resolution.source == "library" else "local"
+                ),
+                "reason": resolution.reason,
+                "release_id": resolution.release_id,
+                "buffer_bytes": resolution.size or ready.get("size_bytes"),
+            }
+        )
+        return ready
+
     def _alive_sources(self, key: str) -> int:
         with closing(connect(self.db_path)) as conn:
             row = conn.execute(
@@ -376,6 +408,8 @@ class CatalogHandler(BaseHTTPRequestHandler):
                         self.db_path, key,
                         release_id=resolution.release_id, qbit=None,
                     )
+                    if status is not None:
+                        status = self._local_ready_status(key, status)
                     return _prepared(
                         202,
                         {
@@ -543,6 +577,8 @@ class CatalogHandler(BaseHTTPRequestHandler):
                 return self._json(
                     404, {"error": "sin_estado", "key": key}, head=head
                 )
+            if release_id is None:
+                status = self._local_ready_status(key, status)
             return self._json(200, status, head=head)
 
         if parsed.path == "/media-info":
