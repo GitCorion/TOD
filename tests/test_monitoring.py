@@ -5,6 +5,7 @@ from catalogo.admin import set_series_monitored
 from catalogo.config import Config
 from catalogo.db import init_db
 from catalogo.intake import set_follow
+from catalogo.monitoring import monitor_all
 
 MIGRATIONS = Path(__file__).resolve().parents[1] / "catalogo" / "migrations"
 
@@ -95,3 +96,48 @@ def test_set_follow_false_leaves_arr_items_alone(tmp_path):
     assert changed == 1
     assert monitored(db)["series:tmdb:1:1:1"] == 0
     assert monitored(db)["series:tmdb:1:2:2"] == 1
+
+
+def seed_unmonitored(tmp_path):
+    db = tmp_path / "all.db"
+    init_db(db, MIGRATIONS)
+    conn = sqlite3.connect(db)
+    rows = (
+        ("movie:tmdb:9", "movie", 0),
+        ("series:tmdb:1:1:1", "series", 0),
+        ("series:tmdb:1:1:2", "series", 1),
+    )
+    for key, kind, library_added in rows:
+        conn.execute(
+            "INSERT INTO media_items(key,kind,tmdb,season,episode,monitored,"
+            "library_added) VALUES(?,?,?,?,?,0,?)",
+            (key, kind, 9 if kind == "movie" else 1, None, None, library_added),
+        )
+    conn.commit()
+    conn.close()
+    return db
+
+
+def test_monitor_all_marks_everything_once(tmp_path):
+    db = seed_unmonitored(tmp_path)
+    assert monitor_all(db, dry_run=True)["changed"] == 3
+    report = monitor_all(db, dry_run=False)
+    assert report == {
+        "changed": 3,
+        "movies": 1,
+        "series": 2,
+        "include_arr": True,
+        "dry_run": False,
+    }
+    assert all(value == 1 for value in monitored(db).values())
+    conn = sqlite3.connect(db)
+    sources = {row[0] for row in conn.execute("SELECT monitor_source FROM media_items")}
+    conn.close()
+    assert sources == {"bulk"}
+
+
+def test_monitor_all_can_skip_arr_items(tmp_path):
+    db = seed_unmonitored(tmp_path)
+    report = monitor_all(db, dry_run=False, include_arr=False)
+    assert report["changed"] == 2
+    assert monitored(db)["series:tmdb:1:1:2"] == 0

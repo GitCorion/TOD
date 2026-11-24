@@ -228,6 +228,28 @@ def test_arr_import_clears_auto_monitoring(tmp_path):
     conn.close()
 
 
+def test_arr_mirror_does_not_unmonitor_bulk_marking(tmp_path):
+    db = tmp_path / "catalogo.db"
+    init_db(db, MIGRATIONS)
+    conn = sqlite3.connect(db)
+    conn.execute(
+        "INSERT INTO media_items(key,kind,tmdb,title,monitored,monitor_source) "
+        "VALUES('movie:tmdb:100','movie',100,'Pelicula',1,'bulk')"
+    )
+    conn.commit()
+    conn.close()
+
+    mirror_library(db, FakeRadarr(), None)
+
+    conn = sqlite3.connect(db)
+    row = conn.execute(
+        "SELECT monitored, monitor_source FROM media_items "
+        "WHERE key='movie:tmdb:100'"
+    ).fetchone()
+    conn.close()
+    assert row == (1, "bulk")
+
+
 class FallbackRadarr:
     def movies(self):
         return [

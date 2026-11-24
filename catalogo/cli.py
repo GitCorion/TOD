@@ -27,6 +27,7 @@ from .jackett import JackettClient, JackettError
 from .jellyfin_leases import touch_active_leases
 from .library_sync import sync_library
 from .metadata import backfill as metadata_backfill
+from .monitoring import monitor_all
 from .admin import monitor_titles
 from .mover import move_completed
 from .normalize_series import normalize_series_titles
@@ -882,6 +883,16 @@ def cmd_prune_packs(args, config: Config) -> int:
     return 0
 
 
+def cmd_monitor_all(args, config: Config) -> int:
+    report = monitor_all(
+        str(config.db_path),
+        dry_run=not args.execute,
+        include_arr=not args.exclude_arr,
+    )
+    _print(report)
+    return 0
+
+
 def cmd_jellyfin_leases(args, config: Config) -> int:
     if not config.jellyfin_api_key:
         _print({"error": "sin JELLYFIN_API_KEY"})
@@ -1426,6 +1437,16 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p.add_argument("--execute", action="store_true")
 
+    p = sub.add_parser(
+        "monitor-all",
+        help="marca todas las fichas para seguimiento (una sola vez)",
+    )
+    p.add_argument("--execute", action="store_true")
+    p.add_argument(
+        "--exclude-arr", action="store_true",
+        help="no marca lo que ya está en Radarr/Sonarr",
+    )
+
     p = sub.add_parser("bridge", help="copia al *arr lo descargado por el catálogo")
     p.add_argument(
         "--limit", type=int, default=1,
@@ -1548,6 +1569,7 @@ def main(argv: list[str] | None = None) -> int:
         "jellyfin-leases": cmd_jellyfin_leases,
         "prune-library": cmd_prune_library,
         "prune-packs": cmd_prune_packs,
+        "monitor-all": cmd_monitor_all,
         "bridge": cmd_bridge,
         "rss-sync": cmd_rss_sync,
         "backfill": cmd_backfill,
