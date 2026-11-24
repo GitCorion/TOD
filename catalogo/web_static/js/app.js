@@ -824,7 +824,7 @@ async function openSyncPending(publication) {  const routeInfo = parseRoute();
       return;
     }
     const label = publication === 'pendiente'
-      ? 'Buscar fuentes para los títulos que faltan en Jellyfin'
+      ? 'Buscar fuentes para los títulos pendientes'
       : 'Buscar fuentes para los títulos sin fuente';
     openModal(
       label,

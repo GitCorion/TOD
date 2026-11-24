@@ -43,9 +43,9 @@ export async function renderDashboard({ signal }) {
   const disk = data?.disk || {};
   const active = activity?.running || (activity?.active || [])[0] || null;
   const latest = recentJobs[0] || null;
-  const onJellyfin = (movies.published || 0) + (series.published || 0);
+  const availableCount = (movies.published || 0) + (series.published || 0);
   const usedPct = disk.total ? Math.round(((disk.total - (disk.free || 0)) / disk.total) * 100) : 0;
-  const missingJellyfin = (movies.pending || 0) + (series.pending || 0);
+  const pendingCount = (movies.pending || 0) + (series.pending || 0);
   const num = (value) => (hasData ? fmtInt(value) : '—');
   const bytes = (value) => (hasData ? fmtBytes(value) : '—');
 
@@ -92,15 +92,15 @@ export async function renderDashboard({ signal }) {
     ${hasData ? '' : `<div class="notice section">No se pudo leer el resumen del servidor a tiempo. Los contadores se actualizarán al recargar.</div>`}
 
     <div class="kpi-grid section">
-      <a class="kpi accent" href="#/catalog?publication=publicado" title="Películas, series y episodios que ya están disponibles en Jellyfin.">
+      <a class="kpi accent" href="#/catalog?publication=publicado" title="Películas, series y episodios que ya están disponibles.">
         <span class="label">Disponible</span>
-        <span class="value">${num(onJellyfin)}</span>
+        <span class="value">${num(availableCount)}</span>
         <span class="hint">${hasData ? `${fmtInt(movies.published || 0)} películas, ${fmtInt(series.published || 0)} series` : 'Sin datos del servidor'}</span>
         <span class="hint">${hasData ? `${fmtInt(catalog.episodes || 0)} episodios en total` : ''}</span>
       </a>
-      <a class="kpi ${missingJellyfin ? 'amber' : ''}" href="#/catalog?publication=pendiente" title="Tienen una fuente reproducible; solo falta crear su acceso en Jellyfin.">
+      <a class="kpi ${pendingCount ? 'amber' : ''}" href="#/catalog?publication=pendiente" title="Tienen una fuente reproducible; solo falta crear su acceso.">
         <span class="label">Pendiente</span>
-        <span class="value">${num(missingJellyfin)}</span>
+        <span class="value">${num(pendingCount)}</span>
         <span class="hint">${hasData ? 'con fuente, sin añadir' : 'Sin datos del servidor'}</span>
       </a>
       <a class="kpi ${downloads.error ? 'red' : downloads.downloading ? 'amber' : ''}" href="#/downloads" title="Ver descargas en qBittorrent.">

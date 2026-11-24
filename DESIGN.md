@@ -360,8 +360,9 @@ Un título tiene un estado principal, el que explica si se puede ver.
   eje y el contador; «Seeds» para las semillas de un torrent; «Siembra» para la
   política; «Indexers» solo en Configuración; «Seguimiento» para lo que TOD
   buscará.
-- Un botón dice lo que hace: «Buscar fuentes», «Añadir a Jellyfin», «Quitar de
-  TOD». Nunca «Aceptar» para una acción destructiva.
+- Un botón dice lo que hace: «Buscar fuentes», «Buscar y añadir», «Quitar de
+  TOD». Jellyfin solo se nombra en la configuración de la integración y en los
+  ficheros que lee. Nunca «Aceptar» para una acción destructiva.
 - Los errores dicen qué pasó, por qué y qué hacer después.
 - Los vacíos dicen qué falta y cuál es la siguiente acción.
 - Sin puntos medios entre metadatos: coma. Sin flechas pegadas al texto. Sin

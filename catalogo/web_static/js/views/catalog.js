@@ -193,8 +193,8 @@ export async function renderCatalog({ query, signal }) {
   ];
   const publicationChips = [
     { label: 'Todos', value: '', count: publicationTotal || kindTotal, hint: 'Quita el filtro de disponibilidad' },
-    { label: 'Disponible', value: 'publicado', count: facets.publication?.publicado || 0, hint: 'Está en Jellyfin: TOD ya creó su .strm' },
-    { label: 'Pendiente', value: 'pendiente', count: facets.publication?.pendiente || 0, hint: 'Tiene una fuente, pero todavía no está en Jellyfin' },
+    { label: 'Disponible', value: 'publicado', count: facets.publication?.publicado || 0, hint: 'TOD ya creó su .strm' },
+    { label: 'Pendiente', value: 'pendiente', count: facets.publication?.pendiente || 0, hint: 'Tiene una fuente, pero todavía no tiene acceso' },
     { label: 'Sin fuente', value: 'sin_fuente', count: facets.publication?.sin_fuente || 0, hint: 'No hay ningún release que reproducir' },
   ];
   const downloadChips = [
@@ -214,9 +214,9 @@ export async function renderCatalog({ query, signal }) {
         button: `Buscar fuentes en los ${fmtInt(data.total || 0)}`,
       }
     : {
-        title: `${fmtInt(data.total || 0)} títulos con fuente, fuera de Jellyfin`,
-        text: 'TOD comprobará las fuentes de cada película y episodio y creará su acceso en Jellyfin. Puede tardar; en el siguiente paso puedes poner un límite.',
-        button: `Preparar los ${fmtInt(data.total || 0)} para Jellyfin`,
+        title: `${fmtInt(data.total || 0)} títulos con fuente, pendientes`,
+        text: 'TOD comprobará las fuentes de cada película y episodio y creará su acceso. Puede tardar; en el siguiente paso puedes poner un límite.',
+        button: `Preparar los ${fmtInt(data.total || 0)}`,
       };
 
   const originChips = Object.entries(facets.origin || {})

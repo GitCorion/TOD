@@ -172,7 +172,7 @@ export function publicationStatus(item) {
   if (item.kind === 'series' && item.library_episodes !== undefined) {
     if (item.library_episodes > 0) {
       return {
-        label: `${item.library_episodes}/${item.episodes || 0} en Jellyfin`,
+        label: `${item.library_episodes}/${item.episodes || 0} disponibles`,
         tone: 'ok',
       };
     }
@@ -279,7 +279,7 @@ export const TASKS = [
   },
   {
     kind: 'rss-sync', title: 'Novedades RSS', category: 'captura',
-    desc: 'Ingesta lo último de Prowlarr/Jackett y añade a Jellyfin los seguimientos encontrados.',
+    desc: 'Ingesta lo último de Prowlarr/Jackett y añade los seguimientos encontrados.',
     fields: [
       { name: 'limit', label: 'Resultados', type: 'number', value: 200, min: 1 },
       { name: 'delay', label: 'Pausa (s)', type: 'number', value: 0.2, step: 0.1 },
@@ -299,8 +299,8 @@ export const TASKS = [
     ],
   },
   {
-    kind: 'export-strm', title: 'Crear entradas de Jellyfin', category: 'biblioteca',
-    desc: 'Genera los ficheros estables de Jellyfin.',
+    kind: 'export-strm', title: 'Crear accesos', category: 'biblioteca',
+    desc: 'Genera los ficheros estables de acceso.',
     fields: [
       { name: 'year', label: 'Año (vacío = todo)', type: 'number', value: CURRENT_YEAR, min: 1900 },
       { name: 'kind', label: 'Tipo', type: 'select', value: 'movie', options: [['', 'Todo'], ['movie', 'Películas'], ['series', 'Series']] },
@@ -335,10 +335,10 @@ export const TASKS = [
   },
   {
     kind: 'arr-mirror', title: 'Espejo Radarr/Sonarr', category: 'biblioteca',
-    desc: 'Importa altas, busca fuentes y crea sus entradas de Jellyfin.',
+    desc: 'Importa altas, busca fuentes y crea sus accesos.',
     fields: [
       { name: 'source_limit', label: 'Títulos a buscar', type: 'number', value: 50, min: 0 },
-      { name: 'publish_limit', label: 'Títulos a añadir a Jellyfin', type: 'number', value: 200, min: 0 },
+      { name: 'publish_limit', label: 'Títulos a preparar', type: 'number', value: 200, min: 0 },
       { name: 'delay', label: 'Pausa (s)', type: 'number', value: 0.2, step: 0.1 },
     ],
   },

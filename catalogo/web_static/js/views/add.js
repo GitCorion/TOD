@@ -438,7 +438,7 @@ export async function renderAdd({ query, params, signal }) {
         <button type="submit" class="btn btn-primary" id="addSubmit">Buscar</button>
       </div>
       <div class="add-search-options">
-        <label class="inline check" title="Si ahora no hay fuente, TOD la buscará y añadirá el título a Jellyfin cuando aparezca">
+        <label class="inline check" title="Si ahora no hay fuente, TOD la buscará y añadirá el título cuando aparezca">
           <input type="checkbox" id="addFollow" checked> Seguir buscando fuente
         </label>
         <div class="row">

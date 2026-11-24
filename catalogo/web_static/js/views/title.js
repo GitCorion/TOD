@@ -280,7 +280,7 @@ export async function renderTitle({ params, query, signal }) {
             ${od.library_added && !od.published && !item.monitored && !od.has_file && !od.downloaded ? `<button class="btn" data-action="monitor-title" data-id="${item.id}">Seguir</button>` : ''}
             ${!od.downloaded && data.releases.length ? `<button class="btn" data-action="download-now" data-key="${esc(item.key)}">${icon('download')} Descargar ahora</button>` : ''}
             <button class="btn btn-ghost" data-action="manual-search" data-id="${item.id}" data-title="${esc(item.title || '')}">${icon('search')} Buscar fuentes</button>
-            <button class="btn btn-ghost" data-action="sync-title" data-id="${item.id}">${icon('search')} Buscar y añadir a Jellyfin</button>
+            <button class="btn btn-ghost" data-action="sync-title" data-id="${item.id}">${icon('search')} Buscar y añadir</button>
             ${item.tmdb ? `<a class="btn btn-ghost" href="${esc(data.tmdb_url || '#')}" target="_blank" rel="noreferrer">${icon('external')} TMDB</a>` : ''}
             ${od.published ? `<button class="btn btn-sm btn-ghost danger-action" data-action="unpublish-title" data-id="${item.id}">Quitar de TOD</button>` : ''}
           </div>
