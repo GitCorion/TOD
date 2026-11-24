@@ -361,7 +361,7 @@ PLAYBACK_PATHS = {
 
 
 class Handler(PlaybackHandler):
-    server_version = "tod/0.2"
+    server_version = "tod/0.3"
     protocol_version = "HTTP/1.1"
 
     @property
