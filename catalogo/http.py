@@ -790,6 +790,21 @@ class CatalogHandler(BaseHTTPRequestHandler):
                     head=head,
                     extra_headers={"Retry-After": "5"},
                 )
+            if (
+                resolution.source == "torrent"
+                and resolution.release_id is not None
+                and self.play_service is not None
+                and self.play_service.is_failed(resolution.release_id)
+                and self.play_service.has_progress(resolution.info_hash)
+            ):
+                # Un fallo transitorio de arranque no debe bloquear cinco
+                # minutos una fuente que ya está descargando.
+                self.play_service.clear_failed(resolution.release_id)
+                print(
+                    f"retry_failed_release key={resolution.key} "
+                    f"release={resolution.release_id} reason=progress",
+                    flush=True,
+                )
             candidates = self._candidate_release_ids(
                 resolution.key, release_id
             )

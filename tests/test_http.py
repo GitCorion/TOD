@@ -179,9 +179,18 @@ class FakePlayService:
         self.calls = []
         self.ensured = []
         self.failed = set()
+        self.cleared = []
+        self.progress = False
 
     def is_failed(self, release_id):
         return release_id in self.failed
+
+    def has_progress(self, info_hash):
+        return self.progress
+
+    def clear_failed(self, release_id):
+        self.cleared.append(release_id)
+        self.failed.discard(release_id)
 
     def ensure(self, media_id, *, release_id=None, torrent_bytes=None, force=False):
         self.ensured.append((media_id, release_id))
@@ -388,6 +397,42 @@ def _two_releases(db):
     conn.commit()
     conn.close()
     return asset_id, first, second
+
+
+def test_failed_release_with_progress_is_retried(tmp_path):
+    db, _content = build_db(tmp_path)
+    conn = sqlite3.connect(db)
+    asset_id = conn.execute(
+        "SELECT id FROM media_items WHERE key='movie:tmdb:2'"
+    ).fetchone()[0]
+    release_id = conn.execute(
+        "SELECT id FROM releases WHERE asset_id=?", (asset_id,)
+    ).fetchone()[0]
+    conn.close()
+
+    service = FakePlayService()
+    service.failed.add(release_id)
+    service.progress = True
+    server = make_server("127.0.0.1", 0, db, play_service=service)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    host, port = server.server_address
+    try:
+        conn = http.client.HTTPConnection(host, port, timeout=5)
+        conn.request(
+            "GET", "/play?key=movie%3Atmdb%3A2&download=1",
+            headers={"Range": "bytes=0-99"},
+        )
+        response = conn.getresponse()
+        response.read()
+        conn.close()
+        assert response.status == 206
+        assert service.cleared == [release_id]
+        assert service.ensured == [("movie:tmdb:2", release_id)]
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=5)
 
 
 def test_candidate_order_avoids_a_source_that_already_failed(tmp_path):

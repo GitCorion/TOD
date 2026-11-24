@@ -103,6 +103,26 @@ class PlayService:
         until = self._failed.get(int(release_id))
         return until is not None and until > time.monotonic()
 
+    def clear_failed(self, release_id: int | None) -> None:
+        """Olvida el cooldown de una fuente que ya está descargando."""
+        if release_id is not None:
+            self._failed.pop(int(release_id), None)
+
+    def has_progress(self, info_hash: str | None) -> bool:
+        """¿El torrent existe y ya tiene datos o velocidad?"""
+        if not info_hash:
+            return False
+        live = self._live_torrent(info_hash)
+        if live is None:
+            return False
+        try:
+            return (
+                float(live.get("progress") or 0) > 0
+                or int(live.get("dlspeed") or 0) > 0
+            )
+        except (TypeError, ValueError):
+            return False
+
     def mark_failed(self, release_id: int | None) -> None:
         if release_id is not None:
             self._failed[int(release_id)] = time.monotonic() + FAIL_COOLDOWN

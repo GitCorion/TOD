@@ -140,6 +140,28 @@ def test_preflight_fails_without_peers_and_passes_with_progress(tmp_path):
     service.preflight(handle, timeout=1.0)
 
 
+def test_failed_release_clears_when_torrent_has_progress(tmp_path):
+    db = seed(tmp_path)
+    qbit = FakeQbit([])
+    service = PlayService(
+        str(db), qbit, qbit, data_path=str(tmp_path),
+        save_path=str(tmp_path / "ondemand"), reserve_bytes=0,
+    )
+
+    service.mark_failed(7)
+    assert service.is_failed(7)
+    qbit.torrents_list = [
+        {"hash": "abc", "progress": 0, "dlspeed": 0}
+    ]
+    assert not service.has_progress("abc")
+
+    qbit.torrents_list[0].update({"progress": 0.01})
+    assert service.has_progress("abc")
+    service.clear_failed(7)
+    assert not service.is_failed(7)
+    assert not service.has_progress("missing")
+
+
 def test_preflight_warms_when_swarm_has_peers(tmp_path):
     db = seed(tmp_path)
     qbit = FakeQbit([{"index": 0, "name": "Movie.mkv", "size": 1000}])
