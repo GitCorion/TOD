@@ -207,6 +207,24 @@ def test_buffer_state_counts_contiguous_from_start():
     assert required == 8 * 1024**2
     assert tail_ready is True
 
+    # Si la cola del torrent no está lista para un fichero que coincide con el final:
+    states[-1] = 0
+    buffer_bytes, required, tail_ready = _buffer_state(
+        BufferQbit(states), "hash", files, 0, size
+    )
+    assert tail_ready is False
+
+    # Para un fichero en medio de un pack (no es cola del torrent), no se exige:
+    pack_files = [
+        {"index": 0, "size": size},
+        {"index": 1, "size": size * 3},
+    ]
+    pack_states = [2] * 50 + [0] * 350
+    buffer_bytes, required, tail_ready = _buffer_state(
+        BufferQbit(pack_states), "hash", pack_files, 0, size
+    )
+    assert tail_ready is True
+
 
 def test_playback_state_preparing_and_startup_metrics(tmp_path):
     from datetime import datetime, timedelta, timezone

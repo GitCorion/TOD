@@ -284,9 +284,11 @@ def _buffer_state(
             total = file_size
             break
     tail_piece = max(0, (offset + file_size - 1) // piece_size)
-    tail_ready = (
+    is_torrent_tail = tail_piece >= len(states) - 4
+    piece_ready = (
         tail_piece < len(states) and states[tail_piece] == PIECE_READY
     )
+    tail_ready = piece_ready if is_torrent_tail else True
     return min(total, file_size), required, tail_ready
 
 
@@ -572,13 +574,13 @@ def asset_status(
 
     source = resolution.source if resolution is not None else "unavailable"
     if source == "torrent":
-        # La cola del fichero no hace falta para arrancar: se necesita al
-        # llegar al final. Exigirla retrasaba packs donde la última pieza
-        # del torrent no es la del episodio pedido.
+        # Requiere el buffer contiguo inicial y que la cola esté lista si
+        # el fichero coincide con el final del torrent (priorizado por first_last).
         buffered = (
             buffer_bytes is not None
             and buffer_required > 0
             and buffer_bytes >= buffer_required
+            and tail_ready
         )
         stream_ready = bool(
             buffered or (progress >= 1 and live is not None)

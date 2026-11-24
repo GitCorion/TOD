@@ -241,3 +241,44 @@ def test_mkv_complete_serves_range_with_bytes_accepted(tmp_path):
     assert handler.headers["Accept-Ranges"] == "bytes"
     assert handler.headers["Content-Range"] == f"bytes 0-{10 * MB - 1}/{10 * MB}"
 
+
+def test_tail_seek_waits_and_serves_partial_content(tmp_path):
+    movie = tmp_path / "movie.mkv"
+    movie.write_bytes(b"M" * (20 * MB))
+    files = [{"index": 0, "name": "movie.mkv", "size": 20 * MB}]
+    # Incomplete torrent: first 2 pieces ready and tail piece ready
+    states = [2, 2] + [0] * 17 + [2]
+    qbit = FakeQbit(files, states)
+
+    handler = FakeHandler()
+    handler.headers["Range"] = f"bytes={20 * MB - 1000}-{20 * MB - 1}"
+    # Tail seek (last 1000 bytes) must NOT raise SeekNotReady
+    stream_torrent_file(
+        handler, qbit, "hash", 0, 20 * MB - 1000, 20 * MB - 1,
+        roots=[str(tmp_path)], timeout=1, buffer_bytes=2 * MB
+    )
+    assert handler.status == 206
+    assert handler.headers["Accept-Ranges"] == "bytes"
+    assert handler.headers["Content-Range"] == f"bytes {20 * MB - 1000}-{20 * MB - 1}/{20 * MB}"
+    assert len(handler.wfile.getvalue()) == 1000
+
+
+def test_mkv_downloading_with_range_header_serves_206(tmp_path):
+    movie = tmp_path / "movie.mkv"
+    movie.write_bytes(b"M" * (10 * MB))
+    files = [{"index": 0, "name": "movie.mkv", "size": 10 * MB}]
+    # Incomplete torrent: only first 3 MB ready
+    states = [2, 2, 2] + [0] * 7
+    qbit = FakeQbit(files, states)
+
+    handler = FakeHandler()
+    handler.headers["Range"] = f"bytes=0-{10 * MB - 1}"
+    stream_torrent_file(
+        handler, qbit, "hash", 0, 0, 10 * MB - 1,
+        roots=[str(tmp_path)], timeout=1, buffer_bytes=2 * MB
+    )
+    assert handler.status == 206
+    assert handler.headers["Accept-Ranges"] == "bytes"
+    assert handler.headers["Content-Range"] == f"bytes 0-{10 * MB - 1}/{10 * MB}"
+
+
