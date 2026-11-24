@@ -10,6 +10,15 @@ function isPlayable(item) {
 
 function stateInfo(item) {
   const playable = isPlayable(item);
+  if (!playable && item.download === 'descargando') {
+    const progress = Math.round(Number(item.progress || 0) * 100);
+    return {
+      label: progress ? `Descargando ${progress}%` : 'Descargando',
+      tone: 'info',
+    };
+  }
+  if (!playable && item.download === 'pausado') return { label: 'Descarga pausada', tone: 'warn' };
+  if (!playable && item.download === 'error') return { label: 'Error de descarga', tone: 'bad' };
   if (item.published) {
     if (playable) {
       if (item.kind === 'series' && item.episodes) {

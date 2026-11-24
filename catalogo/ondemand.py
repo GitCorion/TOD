@@ -75,7 +75,8 @@ def _ondemand_torrents(db_path, qbit=None) -> dict[int, dict[str, Any]]:
                    t.progress, t.ratio, t.id AS torrent_id
             FROM torrent_files f
             JOIN torrents t ON t.id = f.torrent_id
-            WHERE t.category = 'ondemand' AND t.state <> 'removed'
+            WHERE t.category IN ('ondemand', 'radarr', 'tv-sonarr')
+              AND t.state <> 'removed'
               AND f.asset_id IS NOT NULL
             ORDER BY t.id
             """

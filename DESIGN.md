@@ -292,9 +292,10 @@ Un título tiene un estado principal, el que explica si se puede ver.
   cover lo dice: un `.strm` sin fuente ni fichero se muestra `Sin fuente` en
   ámbar, no como un estado más. Es una inconsistencia transitoria: la
   reconciliación retira el `.strm`, o se quita desde la ficha. Si el `.strm`
-  existe porque Radarr/Sonarr tiene la descarga en cola, la ficha lo muestra
-  como `Descargando`, que es el hecho real; la biblioteca seguirá avisando
-  `Sin fuente` hasta que haya fuente o fichero.
+  existe porque Radarr/Sonarr tiene la descarga en cola, el *arr ya tiene una
+  fuente y la ficha y el cartel muestran `Descargando`, que es el hecho real.
+  El contador `0 fuentes` sigue contando solo releases verificados por TOD, no
+  la cola del *arr; por eso el estado es la lectura principal.
 - **Fuentes vivas:** el número siempre se imprime, incluido `0 fuentes`. Un
   título con `0` y sin fichero no se pinta verde.
 - **Calidad:** la biblioteca no inventa una calidad por título; muestra fuentes

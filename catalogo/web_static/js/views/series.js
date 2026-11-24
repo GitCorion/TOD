@@ -48,6 +48,9 @@ function seriesState(totals) {
   if (playable > 0) {
     return status(`${fmtInt(playable)}/${fmtInt(aired)} disponibles`, 'info');
   }
+  if (Number(totals.downloading || 0) > 0) {
+    return status('Descargando', 'info');
+  }
   if (Number(totals.published || 0) > 0) {
     return status('Sin fuente', 'warn');
   }

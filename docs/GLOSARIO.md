@@ -10,7 +10,7 @@ Estos son los únicos términos que deberían aparecer en pantalla.
 | **Sin fuente** | No hay ningún release que se pueda reproducir. | `sin_fuente` |
 | **En seguimiento** | TOD buscará fuentes para ese título y lo añadirá a Jellyfin cuando aparezcan. | `monitored` |
 | **Sin estrenar** | El episodio aún no se ha emitido; no cuenta como ausente ni incompleto. | `available=false` |
-| **Fuente** | Un release o torrent que se puede reproducir. | `release` |
+| **Fuente** | Un release o torrent que TOD puede reproducir, o que Radarr/Sonarr está descargando. | `release` |
 | **Carpeta de los `.strm`** | Carpeta donde TOD escribe los ficheros que lee Jellyfin. | `catalog_library` |
 
 ## Trackers
