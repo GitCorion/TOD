@@ -106,14 +106,14 @@ vacías se ocultan.
 
 - La vista por defecto es carteles. La tabla es una elección explícita.
 - El estado de la portada describe **reproducción**: verde si hay fuente viva o
-  fichero; ámbar `Disponible, sin fuente` si el `.strm` existe pero no hay nada
-  que reproducir; azul `Pendiente` si hay fuente pero no `.strm`; gris
+  fichero; ámbar `Sin fuente` si el `.strm` existe pero no hay nada que
+  reproducir (se retirará al reconciliar); azul `Pendiente` si hay fuente pero no `.strm`; gris
   `Sin fuente` si no hay ni lo uno ni lo otro.
 - La fila de filtros describe **publicación**, que es el eje con el que se
   trabaja: Disponible, Pendiente, Sin fuente. El estado compuesto de la portada
   reconcilia ambos sin mentir. Un título publicado sin fuente sigue contando en
-  «Disponible» porque el `.strm` existe; la portada añade «sin fuente» para que
-  el verde no mienta.
+  «Disponible» porque el `.strm` existe; la portada lo pinta como `Sin fuente`
+  en ámbar para que el verde no mienta.
 - **Solo cuenta lo emitido.** Un episodio sin estrenar se muestra
   `Sin estrenar` y no suma como fuente ausente, sin catalogar ni incompleto. Una
   serie con todos sus episodios emitidos disponibles está `Disponible` aunque
@@ -279,7 +279,6 @@ Un título tiene un estado principal, el que explica si se puede ver.
 | Estado | Cuándo | Tono |
 |---|---|---|
 | **Disponible** | Publicado y reproducible: fuente viva o fichero local | verde |
-| **Disponible, sin fuente** | Publicado, pero sin fuente viva ni fichero | ámbar |
 | **Pendiente** | Hay fuente o fichero, pero no `.strm` | azul |
 | **En seguimiento** | TOD buscará fuente; todavía no hay nada | azul |
 | **Sin fuente** | No hay nada reproducible | gris |
@@ -290,7 +289,12 @@ Un título tiene un estado principal, el que explica si se puede ver.
 
 - **Publicación y reproducción son dos hechos.** El filtro de la biblioteca usa
   la publicación; la portada usa la reproducción. Cuando no coinciden, el estado
-  compuesto `Disponible, sin fuente` lo dice sin ocultar ninguno.
+  cover lo dice: un `.strm` sin fuente ni fichero se muestra `Sin fuente` en
+  ámbar, no como un estado más. Es una inconsistencia transitoria: la
+  reconciliación retira el `.strm`, o se quita desde la ficha. Si el `.strm`
+  existe porque Radarr/Sonarr tiene la descarga en cola, la ficha lo muestra
+  como `Descargando`, que es el hecho real; la biblioteca seguirá avisando
+  `Sin fuente` hasta que haya fuente o fichero.
 - **Fuentes vivas:** el número siempre se imprime, incluido `0 fuentes`. Un
   título con `0` y sin fichero no se pinta verde.
 - **Calidad:** la biblioteca no inventa una calidad por título; muestra fuentes
@@ -350,8 +354,7 @@ Un título tiene un estado principal, el que explica si se puede ver.
 ## Copy
 
 - Español de España, frases cortas, sin mayúsculas decorativas.
-- **Estados:** «Disponible», «Disponible, sin fuente», «Pendiente»,
-  «En seguimiento», «Sin fuente», «Sin estrenar».
+- **Estados:** «Disponible», «Pendiente», «En seguimiento», «Sin fuente», «Sin estrenar».
 - **Vocabulario:** «Versiones» para las entradas de una fuente; «Fuentes» para el
   eje y el contador; «Seeds» para las semillas de un torrent; «Siembra» para la
   política; «Indexers» solo en Configuración; «Seguimiento» para lo que TOD

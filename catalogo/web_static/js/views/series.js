@@ -11,7 +11,7 @@ function episodeStatus(ep) {
   if (ep.published) {
     return playable
       ? status('Disponible', 'ok')
-      : status('Disponible, sin fuente', 'warn');
+      : status('Sin fuente', 'warn');
   }
   if (ep.download === 'descargando') return status(`Descargando ${pct(ep.progress)}%`, 'info');
   if (ep.download === 'pausado') return status('Descarga pausada', 'warn');
@@ -49,7 +49,7 @@ function seriesState(totals) {
     return status(`${fmtInt(playable)}/${fmtInt(aired)} disponibles`, 'info');
   }
   if (Number(totals.published || 0) > 0) {
-    return status('Disponible, sin fuente', 'warn');
+    return status('Sin fuente', 'warn');
   }
   if (Number(totals.incomplete || 0) > 0 || Number(totals.monitored || 0) > 0) {
     return status('En seguimiento', 'info');

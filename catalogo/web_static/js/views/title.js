@@ -90,13 +90,23 @@ export async function renderTitle({ params, query, signal }) {
     : '';
   const alive = data.releases.filter((release) => release.health === 'alive').length;
   const showProgress = data.releases.some((release) => release.torrent_progress !== null && release.torrent_progress !== undefined);
-  const watch = od.published
-    ? (alive > 0 || od.has_file || od.downloaded
-      ? WATCH.ready
-      : { label: 'Disponible, sin fuente', tone: 'warn' })
-    : od.publication === 'pendiente'
-      ? WATCH.pending
-      : item.monitored ? WATCH.monitoring : WATCH.unavailable;
+  const streamState = String(statusData.state || '').toUpperCase();
+  const streamDownloading = ['DOWNLOADING', 'QUEUED', 'ACTIVATING', 'DOWNLOADING_LOCAL', 'PREPARING']
+    .includes(streamState);
+  const watch = streamDownloading
+    ? {
+        label: Number(statusData.progress) > 0
+          ? `Descargando ${Math.round(Number(statusData.progress) * 100)}%`
+          : 'Descargando',
+        tone: 'info',
+      }
+    : od.published
+      ? (alive > 0 || od.has_file || od.downloaded
+        ? WATCH.ready
+        : { label: 'Sin fuente', tone: 'warn' })
+      : od.publication === 'pendiente'
+        ? WATCH.pending
+        : item.monitored ? WATCH.monitoring : WATCH.unavailable;
 
   const libraryFiles = data.library || [];
   const fileCount = data.files.length + libraryFiles.length;

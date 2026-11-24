@@ -40,9 +40,9 @@ function stateInfo(item) {
       return { label: WATCH.ready.label, tone: WATCH.ready.tone };
     }
     return {
-      label: 'Disponible, sin fuente',
+      label: 'Sin fuente',
       tone: 'warn',
-      hint: 'Está en Jellyfin, pero no hay fuentes vivas ni fichero local',
+      hint: 'El .strm existe, pero todavía no hay fuente viva ni fichero',
     };
   }
   if (item.download === 'descargando') {

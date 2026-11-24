@@ -6,7 +6,6 @@ Estos son los únicos términos que deberían aparecer en pantalla.
 | En la interfaz | Qué significa | Nombre interno |
 |---|---|---|
 | **Disponible** | El título ya está en Jellyfin y se puede reproducir: tiene `.strm` y fuente viva o fichero. | `publicado` |
-| **Disponible, sin fuente** | El `.strm` existe, pero no hay fuente viva ni fichero: no se puede reproducir. | `publicado`, sin fuente |
 | **Pendiente** | Hay una fuente o un fichero, pero todavía no existe el `.strm`. | `pendiente` |
 | **Sin fuente** | No hay ningún release que se pueda reproducir. | `sin_fuente` |
 | **En seguimiento** | TOD buscará fuentes para ese título y lo añadirá a Jellyfin cuando aparezcan. | `monitored` |
@@ -26,8 +25,8 @@ Estos son los únicos términos que deberían aparecer en pantalla.
 - No usar **publicar**, **publicación**, **publicado** ni **monitorizar** en la
   interfaz. Son nombres del motor y no explican nada al usuario.
 - Para el resultado visible, decir **Disponible**. Para lo que tiene fuente pero
-  no está en Jellyfin, **Pendiente**. Para un `.strm` sin nada que reproducir,
-  **Disponible, sin fuente**. Para un episodio futuro, **Sin estrenar**.
+  no está en Jellyfin, **Pendiente**. Un `.strm` sin nada que reproducir es una inconsistencia transitoria: se
+  muestra **Sin fuente** y la reconciliación lo retira. Para un episodio futuro, **Sin estrenar**.
 - Para el seguimiento automático, decir **En seguimiento**, **Seguir** y
   **Dejar de seguir**.
 - `.strm` solo aparece cuando se habla del fichero en sí (por ejemplo, la
