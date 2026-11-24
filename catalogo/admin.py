@@ -1693,8 +1693,7 @@ def job_move(ctx: JobContext) -> dict[str, Any]:
     return move_completed(
         str(ctx.config.db_path),
         _qb_write(ctx.config),
-        target=ctx.params.get("target")
-        or str(ctx.config.library_root / "descargas"),
+        target=ctx.params.get("target") or str(ctx.config.move_destination()),
         source_root=str(ctx.config.ondemand_save_path),
         grace_seconds=_int(ctx.params.get("grace"), 120),
         limit=_int(ctx.params.get("limit"), 10),
@@ -1739,7 +1738,7 @@ def job_evict(ctx: JobContext) -> dict[str, Any]:
                 (
                     str(ctx.config.ondemand_save_path),
                     str(ctx.config.downloads_root / "ondemand"),
-                    str(ctx.config.library_root / "descargas"),
+                    str(ctx.config.move_destination()),
                     "/mnt/cache/tmp/ondemand",
                 )
             )
@@ -2200,6 +2199,7 @@ def job_attention(ctx: JobContext) -> dict[str, Any]:
 
 JOB_HANDLERS = {
     "attention-check": job_attention,
+    "move-completed": job_move,
     "health": job_health,
     "sync-sources": job_sync_sources,
     "rss-sync": job_rss,

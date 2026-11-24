@@ -114,9 +114,10 @@ def test_stream_size_and_roots_conversions(tmp_path):
 
     payload = app_settings.serialize(loaded)
     assert _item(payload, "max_stream_gb")["value"] == 2.5
-    assert os.pathsep.join(loaded.strm_roots) == _item(
-        payload, "strm_roots"
-    )["value"]
+    # Las rutas .strm se calculan solas: no aparecen como campo en la web.
+    assert "strm_roots" not in {item["key"] for item in payload["settings"]}
+    assert "library_root" not in {item["key"] for item in payload["settings"]}
+    assert "seed_root" not in {item["key"] for item in payload["settings"]}
 
 
 def test_downloads_root_derives_ondemand_path(tmp_path):
@@ -127,6 +128,32 @@ def test_downloads_root_derives_ondemand_path(tmp_path):
     loaded = app_settings.load_config(base)
     assert loaded.downloads_root == downloads
     assert loaded.ondemand_save_path == downloads / "ondemand"
+
+
+def test_move_target_setting_and_destination(tmp_path):
+    db = _db(tmp_path)
+    base = _config(tmp_path, db)
+    assert base.move_target is None
+    assert base.move_destination() == tmp_path / "library" / "descargas"
+
+    target = tmp_path / "archivo"
+    app_settings.save_settings(db, {"move_target": str(target)})
+    loaded = app_settings.load_config(base)
+    assert loaded.move_target == target
+    assert loaded.move_destination() == target
+    assert target in loaded.archive_roots()
+    assert _item(app_settings.serialize(loaded), "move_target")["value"] == str(
+        target
+    )
+
+    empty = _item(app_settings.serialize(base), "move_target")
+    assert empty["value"] == ""
+    assert empty["effective"] == str(tmp_path / "library" / "descargas")
+
+    app_settings.save_settings(db, {}, clear=["move_target"])
+    restored = app_settings.load_config(base)
+    assert restored.move_target is None
+    assert restored.move_destination() == tmp_path / "library" / "descargas"
 
 
 def test_config_load_does_not_create_missing_db(tmp_path):
@@ -152,10 +179,12 @@ def test_path_status_reports_space_and_writability(tmp_path):
 
 def test_tod_env_aliases(monkeypatch, tmp_path):
     monkeypatch.setenv("TOD_LIBRARY_ROOT", str(tmp_path / "library"))
+    monkeypatch.setenv("TOD_MOVE_TARGET", str(tmp_path / "archivo"))
     monkeypatch.setenv("TOD_WEB_TOKEN", "token-tod")
     monkeypatch.setenv("TOD_DB", str(tmp_path / "tod.db"))
     config = Config.from_env()
     assert config.library_root == tmp_path / "library"
+    assert config.move_target == tmp_path / "archivo"
     assert config.web_token == "token-tod"
     assert config.db_path == tmp_path / "tod.db"
 
@@ -166,3 +195,40 @@ def test_source_reports_environment(monkeypatch, tmp_path):
     monkeypatch.setenv("PROWLARR_URL", "http://env.local:9696/api/v1")
     payload = app_settings.serialize(base)
     assert _item(payload, "prowlarr_url")["source"] == "env"
+
+
+def test_paths_derived_from_library_and_downloads(tmp_path):
+    db = _db(tmp_path)
+    base = _config(tmp_path, db)
+    movies = tmp_path / "fichier" / "Peliculas"
+    series = tmp_path / "fichier" / "Series"
+    app_settings.save_settings(
+        db,
+        {
+            "catalog_library": str(tmp_path / "accesos"),
+            "library_root_movies": str(movies),
+            "library_root_series": str(series),
+            "downloads_root": str(tmp_path / "descargas"),
+        },
+    )
+    loaded = app_settings.load_config(base)
+    assert loaded.strm_roots == (str(tmp_path / "accesos"),)
+    assert loaded.effective_library_root() == tmp_path / "fichier"
+    assert loaded.move_destination() == tmp_path / "fichier" / "descargas"
+    assert loaded.seed_root == tmp_path / "descargas" / "catalogo"
+
+
+def test_from_env_derives_strm_roots_and_seed_root(monkeypatch, tmp_path):
+    for key in (
+        "CATALOGO_STRM_ROOTS", "TOD_STRM_ROOTS",
+        "CATALOGO_SEED_ROOT", "TOD_SEED_ROOT",
+    ):
+        monkeypatch.delenv(key, raising=False)
+    monkeypatch.setenv("TOD_CATALOG_LIBRARY", str(tmp_path / "accesos"))
+    monkeypatch.setenv("TOD_DOWNLOADS_ROOT", str(tmp_path / "descargas"))
+    config = Config.from_env()
+    assert config.strm_roots == (str(tmp_path / "accesos"),)
+    assert config.seed_root == tmp_path / "descargas" / "catalogo"
+
+    monkeypatch.setenv("TOD_STRM_ROOTS", str(tmp_path / "otras"))
+    assert Config.from_env().strm_roots == (str(tmp_path / "otras"),)

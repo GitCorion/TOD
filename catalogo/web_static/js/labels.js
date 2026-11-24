@@ -367,6 +367,17 @@ export const TASKS = [
     ],
   },
   {
+    kind: 'move-completed', title: 'Mover a archivo', category: 'siembra',
+    desc: 'Mueve los torrents on-demand completados al archivo siguiendo sembrando.',
+    fields: [
+      { name: 'limit', label: 'Torrents', type: 'number', value: 10, min: 1 },
+      { name: 'grace', label: 'Gracia (s)', type: 'number', value: 300, min: 0 },
+      { name: 'target', label: 'Destino (vacío = configurado)', type: 'text' },
+      { name: 'execute', label: 'Ejecutar de verdad (no dry-run)', type: 'checkbox', value: false },
+    ],
+    danger: true,
+  },
+  {
     kind: 'seeding', title: 'Mantener siembra mínima', category: 'siembra',
     desc: 'Fuerza la siembra hasta horas/ratio; después suelta y qBittorrent decide.',
     fields: [

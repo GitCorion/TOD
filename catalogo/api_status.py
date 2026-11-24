@@ -327,7 +327,7 @@ def system_payload(
                 for path in (
                     config.catalog_library,
                     config.seed_root,
-                    config.library_root,
+                    config.effective_library_root(),
                 )
             )
         ],
@@ -351,7 +351,7 @@ def system_payload(
         "paths": {
             "catalog_library": str(config.catalog_library),
             "seed_root": str(config.seed_root),
-            "library_root": str(config.library_root),
+            "library_root": str(config.effective_library_root()),
             "library_root_movies": (
                 str(config.library_root_movies)
                 if config.library_root_movies
@@ -364,6 +364,7 @@ def system_payload(
             ),
             "downloads_root": str(config.downloads_root),
             "ondemand_save_path": str(config.ondemand_save_path),
+            "move_target": str(config.move_destination()),
             "strm_roots": ":".join(config.strm_roots),
         },
         "auth_required": bool(token),

@@ -34,12 +34,15 @@ function integrationDot(attention, name) {
 function sourceBadge(source) {
   if (source === 'db') return badge('web', 'ok');
   if (source === 'env') return badge('entorno', 'muted');
-  return badge('defecto', 'muted');
+  return badge('por defecto', 'muted');
 }
 
 function field(item) {
   const key = esc(item.key);
   const label = `<label for="set-${key}">${esc(item.label)}</label>`;
+  const effective = item.effective && item.effective !== item.value
+    ? `<span class="tiny faint">Se usa: <span class="mono">${esc(item.effective)}</span></span>`
+    : '';
   let input;
   if (item.secret) {
     input = `<input id="set-${key}" class="input" type="password" autocomplete="new-password"
@@ -63,13 +66,37 @@ function field(item) {
     }
   }
   if (item.kind === 'path' || item.kind === 'paths') {
-    extra.push(`<button class="btn btn-sm btn-ghost" data-action="settings-path" data-path-setting="${key}">${icon('search', 'sm')} Comprobar</button>`);
+    extra.push(`<button class="btn btn-sm btn-ghost" data-action="settings-path" data-path-setting="${key}" data-effective="${esc(item.effective || '')}">${icon('search', 'sm')} Comprobar</button>`);
   }
   return `<div class="settings-item">
     <div class="settings-label">${label}<span class="tiny faint">${esc(item.help || '')}</span></div>
     <div class="settings-control">
       ${input}
+      ${effective}
       <div class="settings-extra">${extra.join('')}${sourceBadge(item.source)}</div>
+      <span class="tiny faint path-status" role="status" data-path-for="${key}"></span>
+    </div>
+  </div>`;
+}
+
+function dirField(item, paths) {
+  const key = esc(item.key);
+  const effective = item.effective && item.effective !== item.value
+    ? `<span class="tiny faint">Se usa: <span class="mono">${esc(item.effective)}</span></span>`
+    : '';
+  return `<div class="dir-item">
+    <div class="dir-item-head">
+      <label class="dir-label" for="set-${key}">${esc(item.label)}</label>
+      ${sourceBadge(item.source)}
+    </div>
+    <p class="dir-help">${esc(item.help || '')}</p>
+    <div class="dir-control">
+      <input id="set-${key}" class="input" type="text" data-setting="${key}" value="${esc(item.value)}">
+      <button class="btn btn-sm btn-ghost" data-action="settings-path" data-path-setting="${key}" data-effective="${esc(item.effective || '')}">${icon('search', 'sm')} Comprobar</button>
+    </div>
+    ${effective}
+    <div class="dir-status">
+      ${diskLine(paths?.[item.key], item.key)}
       <span class="tiny faint path-status" role="status" data-path-for="${key}"></span>
     </div>
   </div>`;
@@ -199,6 +226,7 @@ export async function renderSettings({ signal, query } = {}) {
     items.filter((item) => item.key.startsWith(`${meta.prefix}_`)).map((item) => item.key)));
   const otherIntegrations = items.filter((item) => item.section === 'integraciones' && !integrationKeys.has(item.key));
   const dirs = items.filter((item) => item.section === 'directorios');
+  const dirKeys = (...keys) => dirs.filter((item) => keys.includes(item.key));
   const setupSteps = setupData?.steps || {};
   const setup = [
     {
@@ -218,7 +246,7 @@ export async function renderSettings({ signal, query } = {}) {
     {
       key: 'directories',
       label: 'Revisar los directorios',
-      help: 'Carpeta de los .strm, descargas y biblioteca existente.',
+      help: 'Accesos .strm, descargas y biblioteca existente.',
       done: Boolean(setupSteps.directories?.done),
       target: 'settings-directories',
     },
@@ -298,7 +326,7 @@ export async function renderSettings({ signal, query } = {}) {
       <div class="row between" style="align-items:flex-start">
         <div style="flex:1;min-width:280px">
           <strong>Ajustes de TOD</strong>
-          <p class="muted tiny" style="margin:4px 0 0">Integraciones, indexers, directorios, reproducción y tareas. Los cambios se aplican al guardar; la URL de reproducción requiere reinicio.</p>
+          <p class="muted tiny" style="margin:4px 0 0">Integraciones, fuentes, directorios, reproducción, seguridad, idioma, siembra y tareas. Los cambios se aplican al guardar; la URL de reproducción requiere reinicio.</p>
         </div>
         <div class="row">
           <a href="#/system" title="Ver avisos en Estado" style="text-decoration:none">${attentionSummary(attention)}</a>
@@ -365,20 +393,26 @@ export async function renderSettings({ signal, query } = {}) {
       </div>
     </div>
 
-    <div class="grid grid-2 section" id="settings-directories">
-      <div class="panel">
-        <div class="panel-head"><h2>${sectionDot(attention, 'directorios')}Directorios</h2>
-          <button class="btn btn-sm btn-ghost" data-action="settings-test" data-name="directories">Comprobar todo</button>
-        </div>
-        <div class="panel-body">
-          ${dirs.map((item) => `${field(item)}${diskLine(data.paths?.[item.key], item.key)}`).join('')}
-          <span class="tiny faint" data-integration-result="directories"></span>
-        </div>
+    <div class="panel section" id="settings-directories">
+      <div class="panel-head"><h2>${sectionDot(attention, 'directorios')}Directorios</h2>
+        <button class="btn btn-sm btn-ghost" data-action="settings-test" data-name="directories">Comprobar todo</button>
       </div>
-      <div class="panel" id="settings-playback">
-        <div class="panel-head"><h2>Reproducción</h2></div>
-        <div class="panel-body">${playback.map(field).join('')}</div>
+      <div class="panel-body">
+        <p class="muted tiny" style="margin-top:0">TOD solo lee la biblioteca de Radarr/Sonarr: no mueve esos ficheros. Lo único que mueve son los torrents on-demand terminados, al Archivo de torrents.</p>
+        <h3 class="dir-group">Accesos para Jellyfin</h3>
+        ${dirKeys('catalog_library').map((item) => dirField(item, data.paths)).join('')}
+        <h3 class="dir-group">Biblioteca existente</h3>
+        ${dirKeys('library_root_movies', 'library_root_series').map((item) => dirField(item, data.paths)).join('')}
+        <p class="tiny faint dir-note">TOD calcula solo la carpeta común a Películas y Series para saber qué está en la nube.</p>
+        <h3 class="dir-group">Descargas y archivo</h3>
+        ${dirKeys('downloads_root', 'ondemand_save_path', 'move_target').map((item) => dirField(item, data.paths)).join('')}
+        <span class="tiny faint" data-integration-result="directories"></span>
       </div>
+    </div>
+
+    <div class="panel section" id="settings-playback">
+      <div class="panel-head"><h2>Reproducción</h2></div>
+      <div class="panel-body">${playback.map(field).join('')}</div>
     </div>
 
     <div class="panel section" id="settings-security">
@@ -459,9 +493,6 @@ export async function renderSettings({ signal, query } = {}) {
             <button class="btn btn-primary" data-action="seed-save">${icon('check', 'sm')} Guardar siembra</button>
           </label>
         </div>
-        <p class="muted tiny" style="margin:12px 0 8px">
-          «Descargar» solo permite o bloquea descargas nuevas. «Bloquear» marca sus versiones como no disponibles y, si lo eliges, borra sus <span class="mono">.strm</span>.
-        </p>
         <div class="table-wrap">
           <table class="table--stack">
             <thead><tr><th>Tracker</th><th>Privacidad</th><th>Días</th><th>Ratio</th><th>Descargar</th><th title="Última comprobación de salud">Última</th><th></th></tr></thead>
@@ -469,8 +500,10 @@ export async function renderSettings({ signal, query } = {}) {
           </table>
         </div>
         <p class="muted tiny" style="margin:8px 0 0">
-          «Descargar» solo permite o bloquea descargas nuevas de TOD en ese tracker.
-          No pausa el indexer: para dejar de buscar, usa Configuración → Indexers.
+          «Descargar» solo permite o bloquea descargas nuevas de TOD en ese
+          tracker; no pausa el indexer (para eso, usa Configuración → Indexers).
+          «Bloquear» marca sus versiones como no disponibles y, si lo eliges,
+          borra sus <span class="mono">.strm</span>.
         </p>
       </div>
     </div>
@@ -487,7 +520,6 @@ export async function renderSettings({ signal, query } = {}) {
 
     <div class="row between section settings-footer">
       <span class="tiny faint">Los cambios se guardan en la configuración local de TOD.</span>
-      <button class="btn btn-primary" data-action="settings-save">${icon('check', 'sm')} Guardar configuración</button>
     </div>
   `;
 

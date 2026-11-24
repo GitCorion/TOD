@@ -208,27 +208,42 @@ país y el latino se queda como respaldo.
 Valores por defecto en una instalación systemd:
 
 ```text
+accesos .strm:    /mnt/catalogo
+películas:        /mnt/library/Peliculas
+series:           /mnt/library/Series
 descargas:        /mnt/descargas
 on-demand:        /mnt/descargas/ondemand
-archivo:          /mnt/library/archive
-biblioteca .strm: /mnt/catalogo
+archivo:          /mnt/library/descargas
 ```
 
 En Docker se usan `/downloads`, `/library` y `/media/catalogo` dentro del
 contenedor, montados desde `./data/`.
 
-Las rutas se cambian en **Configuración → Directorios**. TOD valida que
-existan y sean escribibles; no mueve datos por su cuenta.
+**Configuración → Directorios** solo pide cuatro decisiones:
+
+1. **Accesos para Jellyfin**: dónde escribe TOD los `.strm`.
+2. **Biblioteca existente**: las carpetas de Películas (Radarr) y Series (Sonarr).
+3. **Descargas**: la raíz de qBittorrent y la carpeta on-demand.
+4. **Archivo de torrents**: dónde se guardan los torrents terminados. Vacío =
+   la carpeta común de la biblioteca `/descargas`.
+
+La carpeta común de la biblioteca, la lista de rutas `.strm` permitidas y la
+raíz de semillas se calculan solas a partir de esas cuatro rutas. Solo hace
+faltar fijarlas a mano en casos especiales, con `CATALOGO_LIBRARY_ROOT`,
+`CATALOGO_STRM_ROOTS` y `CATALOGO_SEED_ROOT`.
 
 TOD **no recorre las bibliotecas de Radarr/Sonarr**. `library_files` se
 reconstruye desde sus APIs y `qbit-sync` mantiene el estado de los torrents;
-las rutas de archivo se dan por buenas sin hacer `stat` por red. Solo se
-comprueba el disco local de descargas y el fichero concreto cuando se sirve
-una reproducción. Así no se duplica el trabajo del *arr.
+las rutas de archivo se dan por buenas sin hacer `stat` por red, también cuando
+la biblioteca está en un disco remoto (rclone, cloud, etc.). Solo se comprueba
+el disco local de descargas y el fichero concreto al servir una reproducción.
 
-Si Radarr y Sonarr comparten un directorio padre, ponlo en **Carpeta común**
-(por ejemplo `/mnt/fichier`). TOD lo usa para reconocer todo lo que vive en la
-biblioteca de red, incluidas las descargas que qBittorrent guarda allí.
+Los torrents on-demand que terminan se mueven solos al **Archivo de torrents**
+y siguen sembrando desde allí. La tarea **Mover completados a archivo**
+(Configuración → Tareas) corre cada 10 minutos y mueve hasta 10 torrents por
+pasada: ahí puedes cambiar la cadencia, el límite, la gracia, el destino o
+desactivarla. Solo afecta a descargas on-demand de trackers privados;
+Radarr/Sonarr no se mueven.
 
 ## Copias
 

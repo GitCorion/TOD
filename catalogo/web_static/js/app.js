@@ -1227,7 +1227,7 @@ document.addEventListener('click', async (event) => {
     if (action === 'settings-path') {
       const key = element.dataset.pathSetting;
       const input = $(`[data-setting="${CSS.escape(key)}"]`);
-      const result = await apiPost('/api/settings/path-check', { key, path: input?.value || '' });
+      const result = await apiPost('/api/settings/path-check', { key, path: input?.value || element.dataset.effective || '' });
       const target = $(`[data-path-for="${CSS.escape(key)}"]`);
       if (target) {
         const creatable = ['catalog_library', 'downloads_root', 'seed_root', 'ondemand_save_path'].includes(key);

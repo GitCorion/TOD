@@ -87,10 +87,10 @@ SERVICES: dict[str, dict[str, Any]] = {
 # Rutas que se comprueban siempre. `fail` significa que sin ellas no se puede
 # completar el flujo principal; `warn`, que conviene revisarlas.
 PATHS: tuple[tuple[str, str, str], ...] = (
-    ("catalog_library", "Carpeta de los .strm", "fail"),
-    ("downloads_root", "Descargas de qBittorrent", "fail"),
-    ("ondemand_save_path", "Carpeta on-demand", "fail"),
-    ("seed_root", "Raíz de semillas", "warn"),
+    ("catalog_library", "Accesos .strm", "fail"),
+    ("downloads_root", "Descargas", "fail"),
+    ("ondemand_save_path", "Descargas on-demand", "fail"),
+    ("seed_root", "Semillas del catálogo", "warn"),
 )
 
 
@@ -189,7 +189,7 @@ def _paths(config: Config) -> list[Item]:
                 ("library_root_series", "Carpeta de series", "warn")
             )
     elif config.radarr_api_key or config.sonarr_api_key:
-        paths.append(("library_root", "Carpeta de biblioteca", "warn"))
+        paths.append(("library_root", "Raíz de la biblioteca", "warn"))
     for attr, label, severity in paths:
         raw = getattr(config, attr, None)
         if not raw:

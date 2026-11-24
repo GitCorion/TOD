@@ -39,8 +39,14 @@ class TaskSpec:
 DEFAULT_TASKS: tuple[TaskSpec, ...] = (
     TaskSpec(
         "worker-cycle", "Ciclo del worker", "worker-cycle",
-        "Sincroniza qBittorrent, mueve completados, repara, reseed y limpia.",
+        "Sincroniza qBittorrent, repara, reseed y limpia.",
         interval=300,
+    ),
+    TaskSpec(
+        "move-completed", "Mover completados a archivo", "move-completed",
+        "Mueve los torrents on-demand terminados al archivo sin dejar de sembrar.",
+        interval=600,
+        params={"execute": True, "limit": 10, "grace": 300},
     ),
     TaskSpec(
         "attention-check", "Comprobación de estado", "attention-check",

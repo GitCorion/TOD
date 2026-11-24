@@ -137,12 +137,19 @@ class Config:
     # sobre `library_root`; si no, se mantiene la raíz común histórica.
     library_root_movies: Path | None = None
     library_root_series: Path | None = None
+    move_target: Path | None = None
 
     @classmethod
     def from_env(cls) -> "Config":
         db_env = os.environ.get("TOD_DB") or os.environ.get("CATALOGO_DB")
         db_path = (
             Path(db_env).expanduser() if db_env else _default_db_path()
+        )
+        catalog_library = _path(
+            "CATALOGO_CATALOG_LIBRARY", Path("/mnt/catalogo")
+        )
+        downloads_root = _path(
+            "CATALOGO_DOWNLOADS_ROOT", Path("/mnt/descargas")
         )
         return cls(
             db_path=db_path,
@@ -156,8 +163,9 @@ class Config:
             library_root_series=_optional_path(
                 "CATALOGO_LIBRARY_ROOT_SERIES"
             ),
+            move_target=_optional_path("CATALOGO_MOVE_TARGET"),
             seed_root=_path(
-                "CATALOGO_SEED_ROOT", Path("/mnt/descargas/catalogo")
+                "CATALOGO_SEED_ROOT", downloads_root / "catalogo"
             ),
             migrations_dir=_path(
                 "CATALOGO_MIGRATIONS",
@@ -181,9 +189,7 @@ class Config:
                 * 1024**3
             ),
             tmdb_api_key=_secret("TMDB_API_KEY"),
-            catalog_library=_path(
-                "CATALOGO_CATALOG_LIBRARY", Path("/mnt/catalogo")
-            ),
+            catalog_library=catalog_library,
             max_active_ondemand=int(
                 _env_value("CATALOGO_MAX_ACTIVE_ONDEMAND", "4") or "4"
             ),
@@ -205,14 +211,12 @@ class Config:
             web_allowed_hosts=_env_value(
                 "CATALOGO_WEB_ALLOWED_HOSTS", ""
             ) or "",
-            downloads_root=_path(
-                "CATALOGO_DOWNLOADS_ROOT", Path("/mnt/descargas")
-            ),
+            downloads_root=downloads_root,
             ondemand_save_path=_path(
                 "CATALOGO_ONDEMAND_SAVE", Path("/mnt/descargas/ondemand")
             ),
             strm_roots=_roots_from_env(
-                "CATALOGO_STRM_ROOTS", ("/mnt/catalogo",)
+                "CATALOGO_STRM_ROOTS", (str(catalog_library),)
             ),
             playback_base_url=_env_value(
                 "CATALOGO_PLAYBACK_BASE_URL", "http://127.0.0.1:8773"
@@ -233,6 +237,22 @@ class Config:
 
         return load_config(base)
 
+    def effective_library_root(self) -> Path:
+        """Carpeta padre de Películas y Series, calculada cuando se puede."""
+        roots = [
+            root
+            for root in (self.library_root_movies, self.library_root_series)
+            if root is not None
+        ]
+        if len(roots) >= 2:
+            try:
+                return Path(os.path.commonpath([str(root) for root in roots]))
+            except ValueError:
+                pass
+        if roots:
+            return roots[0].parent
+        return self.library_root
+
     def library_roots(self) -> tuple[Path, ...]:
         """Raíces de la biblioteca existente: películas y series, o la común."""
         specific = (
@@ -240,13 +260,20 @@ class Config:
             self.library_root_series,
         )
         roots = tuple(root for root in specific if root is not None)
-        return roots or (self.library_root,)
+        return roots or (self.effective_library_root(),)
+
+    def move_destination(self) -> Path:
+        """Ruta donde se archivan los torrents on-demand completados."""
+        return self.move_target or (self.effective_library_root() / "descargas")
 
     def archive_roots(self) -> tuple[Path, ...]:
         """Raíces donde qBittorrent puede tener ficheros ya archivados."""
         roots = list(self.library_roots())
-        if self.library_root not in roots:
-            roots.append(self.library_root)
+        library_root = self.effective_library_root()
+        if library_root not in roots:
+            roots.append(library_root)
+        if self.move_target and self.move_target not in roots:
+            roots.append(self.move_target)
         return tuple(roots)
 
     def content_roots(self) -> list[str]:
@@ -255,7 +282,7 @@ class Config:
             self.ondemand_save_path,
             self.downloads_root,
             self.catalog_library,
-            self.library_root,
+            self.effective_library_root(),
             self.seed_root,
         )
         return list(dict.fromkeys(str(value) for value in values))

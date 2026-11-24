@@ -3,7 +3,7 @@ from pathlib import Path
 
 import pytest
 
-from catalogo import scheduler
+from catalogo import admin, scheduler
 from catalogo.db import init_db
 
 MIGRATIONS = Path(__file__).resolve().parents[1] / "catalogo" / "migrations"
@@ -22,8 +22,15 @@ def test_defaults_are_exposed(tmp_path):
     )
     names = [task["name"] for task in tasks]
     assert "worker-cycle" in names
+    assert "move-completed" in names
     assert "rss-sync" in names
     assert "restore-strm" in names
+    move = next(task for task in tasks if task["name"] == "move-completed")
+    assert move["kind"] == "move-completed"
+    assert move["enabled"] is True
+    assert move["interval"] == 600
+    assert move["params"] == {"execute": True, "limit": 10, "grace": 300}
+    assert "move-completed" in admin.JOB_HANDLERS
     worker = next(task for task in tasks if task["name"] == "worker-cycle")
     assert worker["enabled"] is True
     assert worker["next_run"] is not None
@@ -94,6 +101,31 @@ def test_scheduler_tick_submits_due_tasks(tmp_path):
     assert submitted == [{"name": "worker-cycle", "job_id": 1}]
     assert runner.calls[0][0] == "worker-cycle"
     assert runner.calls[0][2] == "scheduler"
+
+
+def test_scheduler_submits_move_task_with_real_execution(tmp_path):
+    db = _db(tmp_path)
+    for task in scheduler.DEFAULT_TASKS:
+        if task.name != "move-completed":
+            scheduler.save_task(db, task.name, {"enabled": False})
+
+    class FakeRunner:
+        def __init__(self):
+            self.calls = []
+
+        def submit(self, kind, params=None, *, requested_by=None):
+            self.calls.append((kind, params, requested_by))
+            return len(self.calls)
+
+    runner = FakeRunner()
+    now = datetime(2026, 11, 20, 12, 0, tzinfo=timezone.utc)
+    sched = scheduler.Scheduler(db, runner, clock=lambda: now)
+    sched._prepare_initial(now)
+    assert sched.tick(now + timedelta(seconds=11)) == []
+    submitted = sched.tick(now + timedelta(seconds=61))
+    assert submitted == [{"name": "move-completed", "job_id": 1}]
+    assert runner.calls[0][0] == "move-completed"
+    assert runner.calls[0][1]["execute"] is True
 
 
 def test_scheduler_cooldown_on_conflict(tmp_path):

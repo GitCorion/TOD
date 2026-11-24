@@ -627,7 +627,7 @@ def cmd_move_completed(args, config: Config) -> int:
     report = move_completed(
         str(config.db_path),
         client,
-        target=args.target or str(config.library_root / "descargas"),
+        target=args.target or str(config.move_destination()),
         source_root=str(config.ondemand_save_path),
         grace_seconds=args.grace,
         limit=args.limit,
@@ -1079,6 +1079,7 @@ def cmd_worker(args, config: Config) -> int:
             return {"skipped": "sin_qbit"}
         return move_completed(
             str(config.db_path), qbit_write,
+            target=str(config.move_destination()),
             source_root=str(config.ondemand_save_path),
             grace_seconds=args.grace,
             limit=args.move_limit,

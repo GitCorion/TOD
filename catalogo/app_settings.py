@@ -46,6 +46,7 @@ class Setting:
     maximum: float | None = None
     help: str = ""
     restart_required: bool = False
+    hidden: bool = False
 
 
 # El orden importa: es el que verá la pantalla de configuración.
@@ -126,49 +127,57 @@ SETTINGS: tuple[Setting, ...] = (
     # Directorios
     Setting(
         "catalog_library", "catalog_library", "directorios",
-        "Carpeta de los .strm", kind="path",
+        "Accesos .strm (salida)", kind="path",
         env="CATALOGO_CATALOG_LIBRARY", default="/mnt/catalogo",
-        help="Aquí escribe TOD los .strm que Jellyfin lee como películas y series.",
+        help="TOD escribe aquí los accesos que Jellyfin abre como películas y series.",
+    ),
+    Setting(
+        "strm_roots", "strm_roots", "directorios",
+        "Rutas .strm permitidas", kind="paths", env="CATALOGO_STRM_ROOTS",
+        default="", hidden=True,
+        help="Lista de seguridad de /catalog/lookup. Normalmente se calcula sola desde Accesos .strm; solo configúrala si los accesos están repartidos en varias carpetas.",
     ),
     Setting(
         "library_root_movies", "library_root_movies", "directorios",
-        "Carpeta de películas (Radarr)", kind="path",
+        "Películas en Radarr", kind="path",
         env="CATALOGO_LIBRARY_ROOT_MOVIES",
-        help="Carpeta que usa Radarr para películas. Debe existir; TOD solo la lee.",
+        help="La usa Radarr. TOD solo la lee para saber qué títulos ya están en la biblioteca.",
     ),
     Setting(
         "library_root_series", "library_root_series", "directorios",
-        "Carpeta de series (Sonarr)", kind="path",
+        "Series en Sonarr", kind="path",
         env="CATALOGO_LIBRARY_ROOT_SERIES",
-        help="Carpeta que usa Sonarr para series. Debe existir; TOD solo la lee.",
+        help="La usa Sonarr. TOD solo la lee para saber qué títulos ya están en la biblioteca.",
     ),
     Setting(
         "library_root", "library_root", "directorios",
-        "Carpeta común (opcional)", kind="path",
-        env="CATALOGO_LIBRARY_ROOT", default="/mnt/library",
-        help="Solo si las carpetas anteriores comparten un padre. También sirve de base para el archivo de torrents privados; con él TOD reconoce qué rutas son de red y no las recorre.",
+        "Raíz de la biblioteca en la nube", kind="path",
+        env="CATALOGO_LIBRARY_ROOT", default="/mnt/library", hidden=True,
+        help="Carpeta padre calculada a partir de Películas y Series. Solo se configura a mano si no hay esas dos rutas; admite discos remotos (rclone, cloud, 1Fichier, etc.).",
     ),
     Setting(
-        "seed_root", "seed_root", "directorios", "Raíz de semillas",
-        kind="path", env="CATALOGO_SEED_ROOT",
-        default="/mnt/descargas/catalogo",
+        "seed_root", "seed_root", "directorios",
+        "Semillas del catálogo", kind="path", env="CATALOGO_SEED_ROOT",
+        default="", hidden=True,
+        help="Referencia de espacio libre al admitir descargas. Se calcula desde Descargas/catalogo.",
     ),
     Setting(
         "downloads_root", "downloads_root", "directorios",
-        "Descargas de qBittorrent", kind="path",
+        "Descargas", kind="path",
         env="CATALOGO_DOWNLOADS_ROOT", default="/mnt/descargas",
+        help="Raíz donde qBittorrent guarda las descargas de Radarr y Sonarr.",
     ),
     Setting(
         "ondemand_save_path", "ondemand_save_path", "directorios",
-        "Carpeta on-demand", kind="path", env="CATALOGO_ONDEMAND_SAVE",
+        "Descargas on-demand", kind="path", env="CATALOGO_ONDEMAND_SAVE",
         default="/mnt/descargas/ondemand",
-        help="Si se deja vacía se usa Descargas/ondemand.",
+        help="Aquí se descarga lo que reproduces bajo demanda. Vacío = Descargas/ondemand.",
     ),
     Setting(
-        "strm_roots", "strm_roots", "directorios", "Raíces .strm",
-        kind="paths", env="CATALOGO_STRM_ROOTS",
-        default="/mnt/catalogo",
-        help="Rutas permitidas para /catalog/lookup, separadas por ':' o ','. Se aplican al guardar.",
+        "move_target", "move_target", "directorios",
+        "Archivo de torrents", kind="path",
+        env="CATALOGO_MOVE_TARGET",
+        help="Destino de los torrents on-demand terminados. TOD cambia su ruta en qBittorrent y siguen sembrando. Vacío = raíz de la biblioteca/descargas.",
     ),
     # Reproducción
     Setting(
@@ -373,6 +382,26 @@ def load_config(base: Config) -> Config:
         config = replace(
             config, ondemand_save_path=config.downloads_root / "ondemand"
         )
+    explicit_seed = "seed_root" in overrides or any(
+        key in os.environ
+        for key in ("CATALOGO_SEED_ROOT", "TOD_SEED_ROOT")
+    )
+    if (
+        "downloads_root" in applied
+        and "seed_root" not in applied
+        and not explicit_seed
+    ):
+        config = replace(config, seed_root=config.downloads_root / "catalogo")
+    explicit_roots = "strm_roots" in overrides or any(
+        key in os.environ
+        for key in ("CATALOGO_STRM_ROOTS", "TOD_STRM_ROOTS")
+    )
+    if (
+        "catalog_library" in applied
+        and "strm_roots" not in applied
+        and not explicit_roots
+    ):
+        config = replace(config, strm_roots=(str(config.catalog_library),))
     return config
 
 
@@ -422,6 +451,8 @@ def serialize(config: Config) -> dict[str, Any]:
     overrides = _read_overrides(config.db_path)
     items: list[dict[str, Any]] = []
     for setting in SETTINGS:
+        if setting.hidden:
+            continue
         source = _source(setting, config, overrides)
         item: dict[str, Any] = {
             "key": setting.key,
@@ -445,6 +476,9 @@ def serialize(config: Config) -> dict[str, Any]:
             item["value"] = ""
         else:
             item["value"] = _display(config, setting)
+        if setting.key == "move_target":
+            # La ruta efectiva no es obvia cuando el campo está vacío.
+            item["effective"] = str(config.move_destination())
         items.append(item)
     sections = [
         {
