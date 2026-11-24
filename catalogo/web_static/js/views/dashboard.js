@@ -92,14 +92,14 @@ export async function renderDashboard({ signal }) {
     ${hasData ? '' : `<div class="notice section">No se pudo leer el resumen del servidor a tiempo. Los contadores se actualizarán al recargar.</div>`}
 
     <div class="kpi-grid section">
-      <a class="kpi accent" href="#/catalog?publication=publicado" title="Películas, series y episodios que ya aparecen en Jellyfin.">
-        <span class="label">En Jellyfin</span>
+      <a class="kpi accent" href="#/catalog?publication=publicado" title="Películas, series y episodios que ya están disponibles en Jellyfin.">
+        <span class="label">Disponible</span>
         <span class="value">${num(onJellyfin)}</span>
         <span class="hint">${hasData ? `${fmtInt(movies.published || 0)} películas, ${fmtInt(series.published || 0)} series` : 'Sin datos del servidor'}</span>
         <span class="hint">${hasData ? `${fmtInt(catalog.episodes || 0)} episodios en total` : ''}</span>
       </a>
       <a class="kpi ${missingJellyfin ? 'amber' : ''}" href="#/catalog?publication=pendiente" title="Tienen una fuente reproducible; solo falta crear su acceso en Jellyfin.">
-        <span class="label">Falta en Jellyfin</span>
+        <span class="label">Pendiente</span>
         <span class="value">${num(missingJellyfin)}</span>
         <span class="hint">${hasData ? 'con fuente, sin añadir' : 'Sin datos del servidor'}</span>
       </a>

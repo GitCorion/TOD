@@ -13,14 +13,34 @@ function stateInfo(item) {
   if (item.published) {
     if (playable) {
       if (item.kind === 'series' && item.episodes) {
-        const published = fmtInt(item.published_episodes || 0);
-        const total = fmtInt(item.episodes);
-        return { label: `${published}/${total} en Jellyfin`, tone: 'ok' };
+        const aired = Number(item.aired_episodes || item.episodes || 0);
+        const published = Number(item.published_aired || item.published_episodes || 0);
+        if (!aired) {
+          return {
+            label: 'Sin estrenar',
+            tone: 'muted',
+            hint: 'Todavía no se ha emitido ningún episodio',
+          };
+        }
+        if (published >= aired) {
+          return {
+            label: WATCH.ready.label,
+            tone: WATCH.ready.tone,
+            hint: item.upcoming_episodes
+              ? `${fmtInt(item.upcoming_episodes)} episodios sin estrenar`
+              : 'Todos los episodios emitidos están disponibles',
+          };
+        }
+        return {
+          label: `${fmtInt(published)}/${fmtInt(aired)} disponibles`,
+          tone: 'info',
+          hint: `${fmtInt(aired)} episodios emitidos${item.upcoming_episodes ? `, ${fmtInt(item.upcoming_episodes)} sin estrenar` : ''}`,
+        };
       }
       return { label: WATCH.ready.label, tone: WATCH.ready.tone };
     }
     return {
-      label: 'En Jellyfin, sin fuente',
+      label: 'Disponible, sin fuente',
       tone: 'warn',
       hint: 'Está en Jellyfin, pero no hay fuentes vivas ni fichero local',
     };
@@ -43,8 +63,10 @@ function stateInfo(item) {
 
 function coverage(item) {
   if (item.kind !== 'series') return item.published ? 100 : 0;
-  const total = Number(item.episodes || 0);
-  return total ? Math.round((Number(item.published_episodes || 0) / total) * 100) : 0;
+  const total = Number(item.aired_episodes || item.episodes || 0);
+  return total
+    ? Math.round((Number(item.published_aired || item.published_episodes || 0) / total) * 100)
+    : 0;
 }
 
 function card(item, selected, priority) {
@@ -161,9 +183,9 @@ export async function renderCatalog({ query, signal }) {
     { label: 'Series', value: 'series', count: facets.kind?.series || 0 },
   ];
   const publicationChips = [
-    { label: 'Todos', value: '', count: publicationTotal || kindTotal, hint: 'Quita el filtro de Jellyfin' },
-    { label: 'En Jellyfin', value: 'publicado', count: facets.publication?.publicado || 0, hint: 'Aparece en Jellyfin: TOD ya creó su .strm' },
-    { label: 'Falta en Jellyfin', value: 'pendiente', count: facets.publication?.pendiente || 0, hint: 'Tiene una fuente, pero todavía no aparece en Jellyfin' },
+    { label: 'Todos', value: '', count: publicationTotal || kindTotal, hint: 'Quita el filtro de disponibilidad' },
+    { label: 'Disponible', value: 'publicado', count: facets.publication?.publicado || 0, hint: 'Está en Jellyfin: TOD ya creó su .strm' },
+    { label: 'Pendiente', value: 'pendiente', count: facets.publication?.pendiente || 0, hint: 'Tiene una fuente, pero todavía no está en Jellyfin' },
     { label: 'Sin fuente', value: 'sin_fuente', count: facets.publication?.sin_fuente || 0, hint: 'No hay ningún release que reproducir' },
   ];
   const downloadChips = [
@@ -258,7 +280,7 @@ export async function renderCatalog({ query, signal }) {
       <div class="library-subbar">
         <div class="seg-group">
           <span class="seg-label">Estado</span>
-          <div class="seg seg-quiet" role="group" aria-label="Estado en Jellyfin">
+          <div class="seg seg-quiet" role="group" aria-label="Disponibilidad">
             ${publicationChips.map((chip) => filterChip({
               label: chip.label,
               count: chip.count,

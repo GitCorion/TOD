@@ -1,5 +1,5 @@
 /* Hallmark · shape: app screen · genre: modern-minimal · theme: project (DESIGN.md) · redesign: full · scope: app · screens: library, title, add
- * nav: kept, sidebar and section tabs · signature: the poster wall, each cover carrying its Jellyfin state and live source count
+ * nav: kept, sidebar and section tabs · signature: the poster wall, each cover carrying its availability state and live source count
  * states: catalog full, empty, loading, error · title full, no sources, no files · add idle, results, error · axes: grafito/IBM Plex/ámbar · posture: restrained · contrast: pass · v2.0.0 */
 /* Hallmark · pre-emit critique: P4 H4 E4 S5 R4 V4 · weakest: H, the filter panel ate the first screen; folded it into one toolbar so the posters start higher */
 /* Hallmark · answered F7 · the locked DESIGN.md asks for one card level; panels, stats and tables share the hairline on purpose */

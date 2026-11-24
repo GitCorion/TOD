@@ -4,7 +4,7 @@ import { updateQuery } from '../router.js';
 import { $, badge, empty, icon, poster, setHeader, status } from '../ui.js';
 
 function partState(part) {
-  if (part.published) return status('En Jellyfin', 'ok');
+  if (part.published) return status('Disponible', 'ok');
   if (part.downloaded) return status('Descargado', 'ok');
   if (part.library_added && part.monitored && part.available === false) return status('Sin estrenar', 'muted');
   if (part.library_added && part.monitored) return `${status('En Radarr/Sonarr', 'info')} ${status('En seguimiento', 'info')}`;

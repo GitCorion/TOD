@@ -5,16 +5,21 @@ import { state } from '../store.js';
 import { $, badge, bar, empty, icon, poster, setHeader, status } from '../ui.js';
 
 function episodeStatus(ep) {
-  if (ep.published) return status('En Jellyfin', 'ok');
+  if (ep.available === false) return status('Sin estrenar', 'muted');
+  const hasSource = Number(ep.alive || 0) > 0 || Number(ep.releases || 0) > 0;
+  const playable = Boolean(ep.downloaded) || Number(ep.alive || 0) > 0;
+  if (ep.published) {
+    return playable
+      ? status('Disponible', 'ok')
+      : status('Disponible, sin fuente', 'warn');
+  }
   if (ep.download === 'descargando') return status(`Descargando ${pct(ep.progress)}%`, 'info');
   if (ep.download === 'pausado') return status('Descarga pausada', 'warn');
   if (ep.download === 'error') return status('Error de descarga', 'bad');
-  if (ep.downloaded) return status('Fichero listo, falta en Jellyfin', 'info');
-  const hasSource = Number(ep.alive || 0) > 0 || Number(ep.releases || 0) > 0;
+  if (ep.downloaded) return status('Fichero listo, pendiente', 'info');
   if (ep.library_added) {
-    if (ep.available === false) return status('Sin estrenar', 'muted');
     if (hasSource) return status('Fuente lista, sin descargar', 'info');
-    return status('Sin fichero', 'warn');
+    return status('Sin fuente', 'warn');
   }
   if (ep.monitored) {
     return hasSource
@@ -37,11 +42,14 @@ function totalRequested(totals) {
 }
 
 function seriesState(totals) {
-  const episodes = Number(totals.episodes || 0);
-  const published = Number(totals.published || 0);
-  if (published > 0 && published >= episodes) return status('En Jellyfin', 'ok');
-  if (published > 0) {
-    return status(`${fmtInt(published)}/${fmtInt(episodes)} en Jellyfin`, 'info');
+  const aired = Number(totals.aired ?? totals.episodes ?? 0);
+  const playable = Number(totals.playable_aired ?? totals.published ?? 0);
+  if (aired > 0 && playable >= aired) return status('Disponible', 'ok');
+  if (playable > 0) {
+    return status(`${fmtInt(playable)}/${fmtInt(aired)} disponibles`, 'info');
+  }
+  if (Number(totals.published || 0) > 0) {
+    return status('Disponible, sin fuente', 'warn');
   }
   if (Number(totals.incomplete || 0) > 0 || Number(totals.monitored || 0) > 0) {
     return status('En seguimiento', 'info');
@@ -67,20 +75,22 @@ export async function renderSeries({ params, query, signal }) {
   const specialMissing = seasons
     .filter((entry) => entry.season === 0)
     .flatMap((entry) => entry.episodes || [])
-    .filter((episode) => !episode.in_catalog).length;
-  const allAdded = (totals.episodes || 0) > 0
-    && (totals.covered || 0) >= (totals.episodes || 0);
-  const notAdded = Math.max(0, (totals.episodes || 0) - (totals.catalog_episodes || 0));
+    .filter((episode) => !episode.in_catalog && episode.available !== false).length;
+  const aired = Number(totals.aired ?? totals.episodes ?? 0);
+  const allAdded = aired > 0
+    && (totals.catalog_aired || 0) >= aired;
+  const notAdded = Math.max(0, aired - (totals.catalog_aired || 0));
   const seriesSummary = [
     totals.library ? `${fmtInt(totals.library)} en Radarr/Sonarr` : '',
     totals.monitored ? `${fmtInt(totals.monitored)} en seguimiento` : '',
     totals.incomplete ? `${fmtInt(totals.incomplete)} sin fuente` : '',
     notAdded ? `${fmtInt(notAdded)} sin catalogar` : '',
+    totals.upcoming ? `${fmtInt(totals.upcoming)} sin estrenar` : '',
   ].filter(Boolean).join(', ');
   const seriesMode = totals.library || totals.monitored ? 'update' : 'add';
   const seriesAction = totalRequested(totals) ? 'Catalogar episodios que faltan' : 'Catalogar serie';
-  const seasonAdded = (seasonData?.episode_count || 0) > 0
-    && (seasonData?.covered || 0) >= (seasonData?.episode_count || 0);
+  const seasonAdded = (seasonData?.aired || 0) > 0
+    && (seasonData?.catalog_aired || 0) >= (seasonData?.aired || 0);
   const seasonMode = seasonData?.library || seasonData?.monitored ? 'update' : 'add';
   const seasonAction = seasonData?.library || seasonData?.monitored
     ? 'Catalogar episodios que faltan'
@@ -123,14 +133,18 @@ export async function renderSeries({ params, query, signal }) {
   }).join('');
 
   const seasonChips = seasons.map((entry) => {
-    const missing = (entry.episodes || []).filter((episode) => !episode.in_catalog).length;
+    const missing = (entry.episodes || [])
+      .filter((episode) => !episode.in_catalog && episode.available !== false).length;
     const incomplete = (entry.episodes || []).filter((episode) => episode.incomplete).length;
+    const upcoming = (entry.episodes || []).filter((episode) => episode.available === false).length;
     const note = [
       missing ? `${missing} sin catalogar` : '',
       incomplete ? `${incomplete} sin fuente` : '',
+      upcoming ? `${upcoming} sin estrenar` : '',
     ].filter(Boolean).join(', ');
+    const warn = missing || incomplete;
     return `<button class="chip ${entry.season === currentSeason ? 'active' : ''}" data-action="series-season" data-season="${entry.season}">
-      ${esc(seasonLabel(entry))} <b>${entry.episode_count || entry.episodes.length}</b>${note ? ` <span class="warn-dot" title="${esc(note)}"></span>` : ''}
+      ${esc(seasonLabel(entry))} <b>${entry.episode_count || entry.episodes.length}</b>${warn ? ` <span class="warn-dot" title="${esc(note)}"></span>` : ''}
     </button>`;
   }).join('');
 
@@ -168,6 +182,7 @@ export async function renderSeries({ params, query, signal }) {
       <span><b>${fmtInt(totals.monitored || 0)}</b> en seguimiento</span>
       <span><b>${fmtInt(totals.incomplete || 0)}</b> sin fuente</span>
       <span><b>${fmtInt(notAdded)}</b> sin catalogar</span>
+      ${totals.upcoming ? `<span><b>${fmtInt(totals.upcoming)}</b> sin estrenar</span>` : ''}
       ${specialMissing ? `<span><b>${fmtInt(specialMissing)}</b> especiales</span>` : ''}
     </div>
 
@@ -187,6 +202,7 @@ export async function renderSeries({ params, query, signal }) {
             <span>${fmtInt(seasonData?.episode_count || 0)} episodios</span>
             <span>${fmtInt(seasonData?.library || 0)} en Radarr/Sonarr</span>
             ${seasonData?.incomplete ? `<span class="warn-text">${fmtInt(seasonData.incomplete)} sin fuente</span>` : ''}
+            ${seasonData?.upcoming ? `<span>${fmtInt(seasonData.upcoming)} sin estrenar</span>` : ''}
           </span>
         </div>
         <div class="table-wrap">

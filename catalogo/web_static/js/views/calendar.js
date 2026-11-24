@@ -37,7 +37,7 @@ export async function renderCalendar({ query, signal }) {
           <span class="poster">${poster(item.poster_path, item.title, { size: 'w92' })}</span>
           <div class="info"><strong>${esc(item.title || '—')}</strong><small>${esc(tag(item))}${item.monitored ? ', en seguimiento' : ''}</small></div>
           ${item.published
-            ? status('En Jellyfin', 'ok')
+            ? status('Disponible', 'ok')
             : item.library_added
               ? status('En Radarr/Sonarr', 'info')
               : item.monitored

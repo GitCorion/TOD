@@ -385,6 +385,7 @@ def _catalog_base(db_path, config) -> list[dict[str, Any]]:
                 "progress": progress,
                 "in_library": library_added,
                 "has_file": has_file,
+                "available": available,
                 "recent_at": (
                     item.get("library_added_at")
                     or item.get("created_at")
@@ -609,6 +610,10 @@ def _group_series(items) -> list[dict[str, Any]]:
             (str(row.get("recent_at") or "") for row in rows),
             default="",
         )
+        aired_rows = [row for row in rows if row.get("available") is not False]
+        aired_count = len(aired_rows)
+        published_aired = sum(1 for row in aired_rows if row.get("published"))
+        upcoming = len(rows) - aired_count
         counts = {
             "descargado": 0,
             "descargando": 0,
@@ -699,6 +704,9 @@ def _group_series(items) -> list[dict[str, Any]]:
                 "has_file": any(bool(row.get("has_file")) for row in rows),
                 "episodes": len(rows),
                 "published_episodes": published_count,
+                "aired_episodes": aired_count,
+                "published_aired": published_aired,
+                "upcoming_episodes": upcoming,
                 "download_counts": counts,
                 "incomplete": incomplete_count > 0,
                 "incomplete_episodes": incomplete_count,
@@ -889,6 +897,7 @@ def series_detail(
             "download": download,
             "downloaded": downloaded,
             "incomplete": incomplete,
+            "playable": bool(published and (downloaded or alive > 0)),
             "progress": progress,
             "releases": releases,
             "alive": alive,
@@ -961,6 +970,24 @@ def series_detail(
             available, available_at = _release_available(source.get("air_date"))
             episode["available"] = available
             episode["available_at"] = available_at
+            if episode.get("in_catalog"):
+                episode["incomplete"] = bool(
+                    episode.get("library_added")
+                    and not episode.get("downloaded")
+                    and int(episode.get("alive") or 0) == 0
+                    and available
+                    and number > 0
+                )
+                episode["playable"] = bool(
+                    episode.get("published")
+                    and (
+                        episode.get("downloaded")
+                        or int(episode.get("alive") or 0) > 0
+                    )
+                )
+            else:
+                episode["incomplete"] = False
+                episode["playable"] = False
             episodes.append(episode)
         seasons_out.append(
             {
@@ -1024,6 +1051,28 @@ def series_detail(
         season["incomplete"] = sum(
             1 for episode in season["episodes"] if episode.get("incomplete")
         )
+        season["aired"] = sum(
+            1 for episode in season["episodes"]
+            if episode.get("available") is not False
+        )
+        season["upcoming"] = sum(
+            1 for episode in season["episodes"]
+            if episode.get("available") is False
+        )
+        season["catalog_aired"] = sum(
+            1 for episode in season["episodes"]
+            if episode.get("in_catalog") and episode.get("available") is not False
+        )
+        season["covered_aired"] = sum(
+            1 for episode in season["episodes"]
+            if episode.get("in_catalog")
+            and episode.get("available") is not False
+            and (episode.get("library_added") or episode.get("monitored"))
+        )
+        season["playable_aired"] = sum(
+            1 for episode in season["episodes"]
+            if episode.get("available") is not False and episode.get("playable")
+        )
 
     first = rows[0] if rows else {}
     tmdb_series = (tmdb_data or {}).get("series") or {}
@@ -1073,6 +1122,28 @@ def series_detail(
         ),
         "incomplete": sum(
             1 for episode in all_episodes if episode.get("incomplete")
+        ),
+        "aired": sum(
+            1 for episode in all_episodes
+            if episode.get("available") is not False
+        ),
+        "upcoming": sum(
+            1 for episode in all_episodes
+            if episode.get("available") is False
+        ),
+        "catalog_aired": sum(
+            1 for episode in all_episodes
+            if episode.get("in_catalog") and episode.get("available") is not False
+        ),
+        "covered_aired": sum(
+            1 for episode in all_episodes
+            if episode.get("in_catalog")
+            and episode.get("available") is not False
+            and (episode.get("library_added") or episode.get("monitored"))
+        ),
+        "playable_aired": sum(
+            1 for episode in all_episodes
+            if episode.get("available") is not False and episode.get("playable")
         ),
         "seasons": len(seasons_out),
     }

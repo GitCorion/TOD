@@ -75,7 +75,7 @@ tabla queda para trabajo fino.
 1. Buscador de la biblioteca: título, serie o año.
 2. **Tipo:** Todos, Películas, Series.
 3. **Vista:** carteles o tabla.
-4. **Estado:** Todos, En Jellyfin, Falta en Jellyfin, Sin fuente. En móvil, una
+4. **Estado:** Todos, Disponible, Pendiente, Sin fuente. En móvil, una
    rejilla 2×2 con los cuatro estados y sus contadores.
 5. **Orden:** popularidad, título, año, añadido.
 6. Filtros activos como chips con su aspa: Descargado, Radarr, Solo incompletos…
@@ -106,14 +106,19 @@ vacías se ocultan.
 
 - La vista por defecto es carteles. La tabla es una elección explícita.
 - El estado de la portada describe **reproducción**: verde si hay fuente viva o
-  fichero; ámbar `En Jellyfin, sin fuente` si el `.strm` existe pero no hay nada
-  que reproducir; azul `Falta en Jellyfin` si hay fuente pero no `.strm`; gris
+  fichero; ámbar `Disponible, sin fuente` si el `.strm` existe pero no hay nada
+  que reproducir; azul `Pendiente` si hay fuente pero no `.strm`; gris
   `Sin fuente` si no hay ni lo uno ni lo otro.
 - La fila de filtros describe **publicación**, que es el eje con el que se
-  trabaja: En Jellyfin, Falta, Sin fuente. El estado compuesto de la portada
+  trabaja: Disponible, Pendiente, Sin fuente. El estado compuesto de la portada
   reconcilia ambos sin mentir. Un título publicado sin fuente sigue contando en
-  «En Jellyfin» porque el `.strm` existe; la portada añade «sin fuente» para que
+  «Disponible» porque el `.strm` existe; la portada añade «sin fuente» para que
   el verde no mienta.
+- **Solo cuenta lo emitido.** Un episodio sin estrenar se muestra
+  `Sin estrenar` y no suma como fuente ausente, sin catalogar ni incompleto. Una
+  serie con todos sus episodios emitidos disponibles está `Disponible` aunque
+  tenga temporadas futuras; estas se resumen como `N sin estrenar` en la ficha y
+  en el título accesible del cartel, no en la línea de metadatos.
 - El contador del menú es el total del catálogo agrupado; el de la línea de
   resultados es el del filtro actual (`753 de 3329`).
 - Las facetas se calculan después de la búsqueda y del tipo, y antes del estado:
@@ -128,7 +133,7 @@ La página de la película o del episodio.
 - **Migas:** Biblioteca › serie › episodio.
 - **Héroe:** póster (148 px, hasta 196 en pantallas grandes), título y año,
   sinopsis a 65ch, colección si existe y fila de acciones. El estado y la pertenencia van en la
-  misma fila que el título: `En Jellyfin`, `En Radarr/Sonarr`, `Descargada`.
+  misma fila que el título: `Disponible`, `En Radarr/Sonarr`, `Descargada`.
 - **Franja de datos reales:** fuentes vivas, versiones, ficheros, calidad,
   compromisos y eventos. Es la misma franja en la ficha y en la serie.
 - **Pestañas:** Resumen, Fuentes, Ficheros, Historial.
@@ -202,7 +207,7 @@ del bloque de tokens.
 | `--accent-hover` | `#f6c65f` | `#c9861c` | Hover de la acción |
 | `--accent-fill` | `#eab64b` | `#e0a63a` | Relleno del botón primario |
 | `--accent-ink` | `#17120a` | `#1a1405` | Texto sobre ámbar |
-| `--green` | `#62bd84` | `#2a7449` | En Jellyfin, correcto |
+| `--green` | `#62bd84` | `#2a7449` | Disponible, correcto |
 | `--amber` | `#e08a45` | `#9a5a12` | Aviso, fuente ausente |
 | `--red` | `#e2707a` | `#b33a44` | Error, destructivo |
 | `--blue` | `#63aee3` | `#2f6f9e` | Información, pendiente |
@@ -273,18 +278,19 @@ Un título tiene un estado principal, el que explica si se puede ver.
 
 | Estado | Cuándo | Tono |
 |---|---|---|
-| **En Jellyfin** | Publicado y reproducible: fuente viva o fichero local | verde |
-| **En Jellyfin, sin fuente** | Publicado, pero sin fuente viva ni fichero | ámbar |
-| **Falta en Jellyfin** | Hay fuente o fichero, pero no `.strm` | azul |
+| **Disponible** | Publicado y reproducible: fuente viva o fichero local | verde |
+| **Disponible, sin fuente** | Publicado, pero sin fuente viva ni fichero | ámbar |
+| **Pendiente** | Hay fuente o fichero, pero no `.strm` | azul |
 | **En seguimiento** | TOD buscará fuente; todavía no hay nada | azul |
 | **Sin fuente** | No hay nada reproducible | gris |
+| **Sin estrenar** | El episodio aún no se ha emitido | gris |
 | **Descargando** | Descarga activa; con porcentaje si lo hay | azul |
 | **Descarga pausada** | Descarga detenida | ámbar |
 | **Error de descarga** | qBittorrent informó de un error | rojo |
 
 - **Publicación y reproducción son dos hechos.** El filtro de la biblioteca usa
   la publicación; la portada usa la reproducción. Cuando no coinciden, el estado
-  compuesto `En Jellyfin, sin fuente` lo dice sin ocultar ninguno.
+  compuesto `Disponible, sin fuente` lo dice sin ocultar ninguno.
 - **Fuentes vivas:** el número siempre se imprime, incluido `0 fuentes`. Un
   título con `0` y sin fichero no se pinta verde.
 - **Calidad:** la biblioteca no inventa una calidad por título; muestra fuentes
@@ -344,8 +350,8 @@ Un título tiene un estado principal, el que explica si se puede ver.
 ## Copy
 
 - Español de España, frases cortas, sin mayúsculas decorativas.
-- **Estados:** «En Jellyfin», «En Jellyfin, sin fuente», «Falta en Jellyfin»,
-  «En seguimiento», «Sin fuente».
+- **Estados:** «Disponible», «Disponible, sin fuente», «Pendiente»,
+  «En seguimiento», «Sin fuente», «Sin estrenar».
 - **Vocabulario:** «Versiones» para las entradas de una fuente; «Fuentes» para el
   eje y el contador; «Seeds» para las semillas de un torrent; «Siembra» para la
   política; «Indexers» solo en Configuración; «Seguimiento» para lo que TOD

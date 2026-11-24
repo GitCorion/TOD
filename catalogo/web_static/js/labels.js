@@ -9,8 +9,8 @@ const DOWNLOAD = {
 };
 
 const PUBLICATION = {
-  publicado: { label: 'En Jellyfin', tone: 'ok' },
-  pendiente: { label: 'Falta en Jellyfin', tone: 'info' },
+  publicado: { label: 'Disponible', tone: 'ok' },
+  pendiente: { label: 'Pendiente', tone: 'info' },
   sin_fuente: { label: 'Sin fuente', tone: 'muted' },
 };
 
@@ -19,8 +19,8 @@ const PUBLICATION = {
  * (origen, Radarr/Sonarr, seguimiento, descarga) son datos secundarios.
  */
 export const WATCH = {
-  ready: { label: 'En Jellyfin', tone: 'ok' },
-  pending: { label: 'Falta en Jellyfin', tone: 'info' },
+  ready: { label: 'Disponible', tone: 'ok' },
+  pending: { label: 'Pendiente', tone: 'info' },
   monitoring: { label: 'En seguimiento', tone: 'info' },
   unavailable: { label: 'Sin fuente', tone: 'muted' },
 };

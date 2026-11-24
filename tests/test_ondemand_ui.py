@@ -327,6 +327,11 @@ def test_series_detail_merges_tmdb_episodes(tmp_path):
         "downloaded": 0,
         "downloading": 0,
         "incomplete": 0,
+        "aired": 4,
+        "upcoming": 0,
+        "catalog_aired": 3,
+        "covered_aired": 0,
+        "playable_aired": 0,
         "seasons": 2,
     }
     episode = detail["seasons"][0]["episodes"][0]
