@@ -206,6 +206,8 @@ class FakePlayService:
         return None
 
     def wait_stream_ready(self, handle, *, timeout=60.0):
+        self.waits = getattr(self, "waits", [])
+        self.waits.append(handle.get("release_id"))
         return True
 
     def discard_failed(self, handle):
@@ -397,6 +399,45 @@ def _two_releases(db):
     conn.commit()
     conn.close()
     return asset_id, first, second
+
+
+def test_prepared_play_waits_for_buffer(tmp_path):
+    db, _content = build_db(tmp_path)
+    conn = sqlite3.connect(db)
+    asset_id = conn.execute(
+        "SELECT id FROM media_items WHERE key='movie:tmdb:2'"
+    ).fetchone()[0]
+    release_id = conn.execute(
+        "SELECT id FROM releases WHERE asset_id=?", (asset_id,)
+    ).fetchone()[0]
+    conn.execute(
+        "INSERT INTO seed_commitments(asset_id,release_id,tracker,size_bytes,state) "
+        "VALUES(?,?,?,?,?)",
+        (asset_id, release_id, "TrackerEspanol2", 5000, "active"),
+    )
+    conn.commit()
+    conn.close()
+
+    service = FakePlayService()
+    server = make_server("127.0.0.1", 0, db, play_service=service)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    host, port = server.server_address
+    try:
+        conn = http.client.HTTPConnection(host, port, timeout=5)
+        conn.request(
+            "GET", "/play?key=movie%3Atmdb%3A2&download=0",
+            headers={"Range": "bytes=0-99"},
+        )
+        response = conn.getresponse()
+        response.read()
+        conn.close()
+        assert response.status == 206
+        assert service.waits == [release_id]
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=5)
 
 
 def test_failed_release_with_progress_is_retried(tmp_path):

@@ -768,6 +768,12 @@ class CatalogHandler(BaseHTTPRequestHandler):
                         head=head,
                         extra_headers={"Retry-After": "5"},
                     )
+            elif not head and self.headers.get("Range"):
+                # Ya se pidió Prepare y el reproductor está pidiendo vídeo.
+                # Si aún no hay buffer, esperar aquí evita que ffmpeg reciba
+                # un 503 por una carrera de arranque y marque la fuente como
+                # fallida durante cinco minutos.
+                auto_prepare = True
             if self.play_service is None:
                 intent = play_intents.create(
                     self.db_path,
