@@ -9,16 +9,16 @@ function episodeStatus(ep) {
   if (ep.download === 'descargando') return status(`Descargando ${pct(ep.progress)}%`, 'info');
   if (ep.download === 'pausado') return status('Descarga pausada', 'warn');
   if (ep.download === 'error') return status('Error de descarga', 'bad');
-  if (ep.downloaded) return status('Fichero listo · falta en Jellyfin', 'info');
+  if (ep.downloaded) return status('Fichero listo, falta en Jellyfin', 'info');
   const hasSource = Number(ep.alive || 0) > 0 || Number(ep.releases || 0) > 0;
   if (ep.library_added) {
     if (ep.available === false) return status('Sin estrenar', 'muted');
-    if (hasSource) return status('Fuente lista · sin descargar', 'info');
+    if (hasSource) return status('Fuente lista, sin descargar', 'info');
     return status('Sin fichero', 'warn');
   }
   if (ep.monitored) {
     return hasSource
-      ? status('Fuente lista · sin descargar', 'info')
+      ? status('Fuente lista, sin descargar', 'info')
       : status('Buscando fuente', 'info');
   }
   if (!ep.in_catalog) return status('Sin catalogar', 'muted');
@@ -76,7 +76,7 @@ export async function renderSeries({ params, query, signal }) {
     totals.monitored ? `${fmtInt(totals.monitored)} en seguimiento` : '',
     totals.incomplete ? `${fmtInt(totals.incomplete)} sin fuente` : '',
     notAdded ? `${fmtInt(notAdded)} sin catalogar` : '',
-  ].filter(Boolean).join(' · ');
+  ].filter(Boolean).join(', ');
   const seriesMode = totals.library || totals.monitored ? 'update' : 'add';
   const seriesAction = totalRequested(totals) ? 'Catalogar episodios que faltan' : 'Catalogar serie';
   const seasonAdded = (seasonData?.episode_count || 0) > 0
@@ -111,7 +111,7 @@ export async function renderSeries({ params, query, signal }) {
           ${still(ep.still_path, name)}
           <div class="cell-title">
             <strong>${esc(name)}</strong>
-            <small>${tag}, ${esc(fmtShortDate(ep.air_date))}${ep.library_added ? ' · En Sonarr' : ''}</small>
+            <small>${tag}, ${esc(fmtShortDate(ep.air_date))}${ep.library_added ? ', En Sonarr' : ''}</small>
           </div>
         </a>
       </td>
@@ -137,7 +137,7 @@ export async function renderSeries({ params, query, signal }) {
   $('#view').innerHTML = `
     <div class="breadcrumb"><a href="#/catalog">Biblioteca</a>${icon('chevron')}<span>${esc(series.title || 'Serie')}</span></div>
 
-    <div class="panel pad">
+    <div class="panel pad detail-card">
       <div class="detail-hero">
         <div class="poster">${poster(series.poster_path, series.title)}</div>
         <div class="info">
@@ -181,7 +181,7 @@ export async function renderSeries({ params, query, signal }) {
         </div>
       </div>
       <div class="panel-body" style="padding:0">
-        <div class="row between" style="padding:9px 0;border-bottom:1px solid var(--rule)">
+        <div class="row between" style="padding:8px 12px;border-bottom:1px solid var(--rule)">
           <span class="tiny muted">${esc(seasonLabel(seasonData || { season: currentSeason }))}</span>
           <span class="row tiny faint" style="gap:14px">
             <span>${fmtInt(seasonData?.episode_count || 0)} episodios</span>

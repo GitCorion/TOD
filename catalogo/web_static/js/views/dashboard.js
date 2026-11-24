@@ -95,7 +95,7 @@ export async function renderDashboard({ signal }) {
       <a class="kpi accent" href="#/catalog?publication=publicado" title="Películas, series y episodios que ya aparecen en Jellyfin.">
         <span class="label">En Jellyfin</span>
         <span class="value">${num(onJellyfin)}</span>
-        <span class="hint">${hasData ? `${fmtInt(movies.published || 0)} películas · ${fmtInt(series.published || 0)} series` : 'Sin datos del servidor'}</span>
+        <span class="hint">${hasData ? `${fmtInt(movies.published || 0)} películas, ${fmtInt(series.published || 0)} series` : 'Sin datos del servidor'}</span>
         <span class="hint">${hasData ? `${fmtInt(catalog.episodes || 0)} episodios en total` : ''}</span>
       </a>
       <a class="kpi ${missingJellyfin ? 'amber' : ''}" href="#/catalog?publication=pendiente" title="Tienen una fuente reproducible; solo falta crear su acceso en Jellyfin.">
@@ -106,7 +106,7 @@ export async function renderDashboard({ signal }) {
       <a class="kpi ${downloads.error ? 'red' : downloads.downloading ? 'amber' : ''}" href="#/downloads" title="Ver descargas en qBittorrent.">
         <span class="label">Descargando</span>
         <span class="value">${num(downloads.downloading || 0)}</span>
-        <span class="hint">${hasData ? `${fmtInt(downloads.seeding || 0)} sembrando · ${fmtInt(downloads.paused || 0)} pausadas` : 'Sin datos de qBittorrent'}</span>
+        <span class="hint">${hasData ? `${fmtInt(downloads.seeding || 0)} sembrando, ${fmtInt(downloads.paused || 0)} pausadas` : 'Sin datos de qBittorrent'}</span>
       </a>
       <a class="kpi" href="#/system" title="Espacio libre en la carpeta de los .strm.">
         <span class="label">Espacio libre</span>

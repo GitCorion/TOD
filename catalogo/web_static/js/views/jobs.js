@@ -68,7 +68,7 @@ export async function renderJobs({ signal }) {
     </div>
 
     <div class="panel flush section">
-      <div class="panel-head"><h2>Historial</h2><span class="right tiny faint">${jobs.length} trabajos recientes · <a href="#/history">auditoría completa</a></span></div>
+      <div class="panel-head"><h2>Historial</h2><span class="right tiny faint">${jobs.length} trabajos recientes, <a href="#/history">auditoría completa</a></span></div>
       ${rows ? `<div class="table-wrap"><table class="table--stack">
         <thead><tr><th>Estado</th><th>Tarea</th><th>Mensaje</th><th>Duración</th><th>Cuándo</th><th></th></tr></thead>
         <tbody>${rows}</tbody>

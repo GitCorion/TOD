@@ -16,9 +16,9 @@ function typeLabel(row) {
   if (row.kind === 'torrent') return 'Torrent';
   if (row.kind !== 'series') return '—';
   if (row.season && row.episode) {
-    return `Serie · T${String(row.season).padStart(2, '0')}E${String(row.episode).padStart(2, '0')}`;
+    return `Serie, T${String(row.season).padStart(2, '0')}E${String(row.episode).padStart(2, '0')}`;
   }
-  if (row.season) return `Serie · T${String(row.season).padStart(2, '0')}`;
+  if (row.season) return `Serie, T${String(row.season).padStart(2, '0')}`;
   return 'Serie';
 }
 
@@ -40,7 +40,7 @@ function batchSummary(batch) {
   if (batch.needs_range) parts.push(countLabel(batch.needs_range, 'sin temporada', 'sin temporada'));
   if (batch.unknown) parts.push(countLabel(batch.unknown, 'sin identificar', 'sin identificar'));
   if (batch.errors) parts.push(countLabel(batch.errors, 'con error', 'con error'));
-  return parts.join(' · ') || 'Sin líneas';
+  return parts.join(', ') || 'Sin líneas';
 }
 
 function batchState(batch) {
@@ -140,17 +140,19 @@ function renderSearch(items) {
   }
   const rows = items.map((item, index) => {
     const kind = item.kind === 'series' ? 'Serie' : 'Película';
-    const meta = `${item.year || '—'} · ${kind}${item.already ? ' · En TOD' : ''}`;
+    const meta = `${item.year || '—'}, ${kind}${item.already ? ', En TOD' : ''}`;
     const posterHtml = `<span class="add-result-poster">${poster(item.poster_path, item.title, { size: 'w92' })}</span>`;
     const main = `<span class="add-result-main"><strong>${esc(item.title || '—')}</strong><small>${esc(meta)}</small></span>`;
     if (item.already) {
       const href = item.kind === 'series' ? `#/series/${item.tmdb}` : `#/title/${item.asset_id}`;
       return `<div class="add-result">${posterHtml}${main}<a class="btn btn-sm btn-ghost" href="${href}">Abrir</a></div>`;
     }
-    return `<button class="add-result" type="button" data-action="add-result" data-index="${index}">
+    return `<div class="add-result">
       ${posterHtml}${main}
-      <span class="add-result-action">${icon('plus', 'sm')} Añadir</span>
-    </button>`;
+      <button class="btn btn-sm btn-ghost" type="button" data-action="add-result" data-index="${index}">
+        <span class="add-result-action">${icon('plus', 'sm')} Añadir</span>
+      </button>
+    </div>`;
   }).join('');
   target.innerHTML = `
     <div class="section-head"><h2>Resultados</h2><span>Elige qué añadir</span></div>
@@ -180,7 +182,7 @@ function recentInner(data) {
       <span class="badge mono">${esc(originLabel(batch.source))}</span>
       <span class="add-recent-main">
         <strong>${esc(batch.label || 'Añadido')}</strong>
-        <small>${esc(fmtRelative(batch.created_at))} · ${esc(batchSummary(batch))}</small>
+        <small>${esc(fmtRelative(batch.created_at))}, ${esc(batchSummary(batch))}</small>
       </span>
       ${batchState(batch)}
     </a>`).join('')}</div>`;
@@ -209,7 +211,7 @@ function syncSubmitLabel() {
   const button = $('#addSubmit');
   if (!button || button.disabled) return;
   const text = String($('#addText')?.value || '').trim();
-  button.textContent = text && !looksLikeList(text) ? 'Buscar' : 'Añadir';
+  button.textContent = !text || !looksLikeList(text) ? 'Buscar' : 'Añadir';
 }
 
 async function searchTitles(text) {
@@ -371,7 +373,7 @@ export async function uploadTorrent(file) {
       target.innerHTML = `<div class="add-torrent-result">
         <div>
           <strong>${esc(result.name || file.name)}</strong>
-          <small>${esc((result.info_hash || '').slice(0, 12))} · ${esc(result.save_path || '')}</small>
+          <small>${esc((result.info_hash || '').slice(0, 12))}, ${esc(result.save_path || '')}</small>
         </div>
         <a class="btn btn-sm" href="#/downloads">Ver descargas</a>
       </div>`;
@@ -425,48 +427,54 @@ export async function renderAdd({ query, params, signal }) {
   const recent = await api('/api/intake?flows=0', { signal }).catch(() => ({ batches: [] }));
   const initial = query.get('q') || '';
   $('#view').innerHTML = `
-    <div class="add-layout">
-      <form class="panel" data-form="add-submit">
-        <div class="panel-head">
-          <h2>Añadir a TOD</h2>
-          <span class="right tiny faint">título, lista de TMDB o .torrent</span>
-        </div>
-        <div class="panel-body">
-          <label class="field">
-            <span>Qué quieres añadir</span>
-            <textarea id="addText" name="text" rows="4" spellcheck="false"
-              placeholder="Matrix, Breaking Bad, un enlace de TMDB o una lista, una por línea"
-              aria-describedby="addHelp">${esc(initial)}</textarea>
-          </label>
-          <div class="add-controls">
-            <label class="inline check" title="Si ahora no hay fuente, TOD la buscará y añadirá el título a Jellyfin cuando aparezca">
-              <input type="checkbox" id="addFollow" checked> Seguir buscando fuente
-            </label>
-            <div class="row">
-              <button type="button" class="btn btn-ghost" data-action="torrent-pick">
-                ${icon('upload', 'sm')} Subir .torrent
-              </button>
-              <button type="submit" class="btn btn-primary" id="addSubmit">Añadir</button>
-            </div>
-          </div>
-          <input type="file" id="torrentFile" accept=".torrent,application/x-bittorrent" class="hidden">
-          <p class="tiny faint add-help" id="addHelp">
-            Un título se busca en TMDB. Un enlace o una lista se añade directamente.
-            El .torrent se envía a qBittorrent.
-          </p>
-        </div>
-      </form>
-
-      <div class="panel">
-        <div class="panel-head"><h2>Últimas entradas</h2></div>
-        <div class="panel-body flush" id="addRecent">${recentInner(recent)}</div>
+    <form class="panel pad add-search" data-form="add-submit">
+      <div class="add-search-main">
+        <label class="add-search-field">
+          ${icon('search')}
+          <textarea id="addText" name="text" rows="2" spellcheck="false"
+            placeholder="Busca un título, o pega un enlace de TMDB o una lista"
+            aria-describedby="addHelp">${esc(initial)}</textarea>
+        </label>
+        <button type="submit" class="btn btn-primary" id="addSubmit">Buscar</button>
       </div>
-    </div>
+      <div class="add-search-options">
+        <label class="inline check" title="Si ahora no hay fuente, TOD la buscará y añadirá el título a Jellyfin cuando aparezca">
+          <input type="checkbox" id="addFollow" checked> Seguir buscando fuente
+        </label>
+        <div class="row">
+          <button type="button" class="btn btn-sm btn-ghost" data-action="torrent-pick">
+            ${icon('upload', 'sm')} Subir .torrent
+          </button>
+        </div>
+      </div>
+      <input type="file" id="torrentFile" accept=".torrent,application/x-bittorrent" class="hidden">
+      <p class="tiny faint add-help" id="addHelp">
+        Enter busca. Mayús+Enter añade una línea. Un enlace o una lista de TMDB se añade directamente; el .torrent se envía a qBittorrent.
+      </p>
+    </form>
 
-    <div id="addResult" class="add-result-host" aria-live="polite"></div>
+    <div class="add-layout">
+      <div class="add-main">
+        <div id="addResult" class="add-result-host" aria-live="polite">
+          <div class="panel pad">${empty('Busca un título', 'Escribe el nombre, o pega un enlace de TMDB. Los resultados aparecen aquí.')}</div>
+        </div>
+      </div>
+      <aside class="add-aside" aria-label="Últimas entradas">
+        <div class="panel">
+          <div class="panel-head"><h2>Últimas entradas</h2></div>
+          <div class="panel-body flush" id="addRecent">${recentInner(recent)}</div>
+        </div>
+      </aside>
+    </div>
   `;
   const textarea = $('#addText');
   textarea?.addEventListener('input', syncSubmitLabel);
+  textarea?.addEventListener('keydown', (event) => {
+    if (event.key === 'Enter' && !event.shiftKey) {
+      event.preventDefault();
+      textarea.form?.requestSubmit();
+    }
+  });
   syncSubmitLabel();
   if (initial) {
     if (looksLikeList(initial)) await importList(initial);

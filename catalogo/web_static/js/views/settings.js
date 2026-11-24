@@ -167,14 +167,14 @@ function diskLine(item, key) {
     const state = item.is_dir
       ? (item.writable ? 'Directorio, escribible' : 'Directorio, sin escritura')
       : 'No es un directorio';
-    return `<span class="tiny ${item.writable ? 'ok-text' : 'warn-text'}">${esc(state)} · ${fmtBytes(item.free)} libres</span>`;
+    return `<span class="tiny ${item.writable ? 'ok-text' : 'warn-text'}">${esc(state)}, ${fmtBytes(item.free)} libres</span>`;
   }
   const parent = item.checked_parent || '—';
   if (!item.writable) {
     return `<span class="tiny warn-text">No existe y la carpeta padre ${esc(parent)} no permite escribir.</span>`;
   }
   if (CREATABLE_PATHS.has(key)) {
-    return `<span class="tiny warn-text">No existe; se creará dentro de ${esc(parent)} · ${fmtBytes(item.free || 0)} libres.</span>`;
+    return `<span class="tiny warn-text">No existe; se creará dentro de ${esc(parent)}, ${fmtBytes(item.free || 0)} libres.</span>`;
   }
   return `<span class="tiny warn-text">No existe. La carpeta padre ${esc(parent)} existe (${fmtBytes(item.free || 0)} libres), pero esta ruta no. Créala o corrige la ruta.</span>`;
 }
@@ -267,7 +267,7 @@ export async function renderSettings({ signal, query } = {}) {
         : known.releases ? `${fmtInt(known.releases)} versiones` : '',
       stats.alive !== undefined ? `${fmtInt(stats.alive)} vivos` : '',
       stats.blocked ? `${fmtInt(stats.blocked)} bloqueados` : '',
-    ].filter(Boolean).join(' · ');
+    ].filter(Boolean).join(', ');
     return `<tr>
       <td data-label="Tracker"><strong>${esc(tracker)}</strong>
         <div class="tiny faint">${esc(detail)}</div>

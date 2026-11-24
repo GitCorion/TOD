@@ -496,13 +496,19 @@ def catalog(
             if item["kind"] == "series" and item.get("library_added")
         )
 
-    facet_source = [
-        item
-        for item in entries
-        if (not kind or item["kind"] == kind)
-        and (not publication or item.get("publication") == publication)
-    ]
-    facet_data = _facets(facet_source) if facets else None
+    # Las facetas cuentan sobre el catálogo ya agrupado, antes de aplicar
+    # los filtros: así el mismo concepto muestra el mismo número en el menú,
+    # la tarjeta y el filtro (DESIGN.md). `q` y el tipo sí acotan el universo;
+    # el estado elegido no borra los demás estados.
+    facet_data = None
+    if facets:
+        all_facets = _facets(entries)
+        scoped = [
+            item for item in entries
+            if not kind or item["kind"] == kind
+        ]
+        facet_data = _facets(scoped)
+        facet_data["kind"] = all_facets["kind"]
 
     def keep(item: dict[str, Any]) -> bool:
         if origin and item.get("origin") != origin:
@@ -712,6 +718,11 @@ def _group_series(items) -> list[dict[str, Any]]:
                     (str(row.get("origin_at") or "") for row in rows),
                     default="",
                 ),
+                "recent_at": first.get("recent_at"),
+                "library_added_at": max(
+                    (str(row.get("library_added_at") or "") for row in rows),
+                    default="",
+                ) or None,
             }
         )
     return output

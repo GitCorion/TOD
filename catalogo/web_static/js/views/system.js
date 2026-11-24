@@ -196,7 +196,7 @@ export async function renderSystem({ signal }) {
         <div class="panel-head"><h2>Integraciones y base</h2></div>
         <div class="panel-body" style="padding-top:6px;padding-bottom:8px">
           ${integrations}
-          <div class="kv"><span>Trackers</span><span>${(system.trackers || []).filter((item) => item.enabled !== 0).length} activos · ${(system.trackers || []).filter((item) => item.enabled === 0).length} bloqueados · <a class="tiny" href="#/settings?section=siembra">Gestionar</a></span></div>
+          <div class="kv"><span>Trackers</span><span>${(system.trackers || []).filter((item) => item.enabled !== 0).length} activos, ${(system.trackers || []).filter((item) => item.enabled === 0).length} bloqueados, <a class="tiny" href="#/settings?section=siembra">Gestionar</a></span></div>
           <div class="kv"><span>qBittorrent</span><span>${system.qbit?.ok ? `${esc(system.qbit.version)}, ${fmtInt(system.qbit.torrents)} torrents` : `<span class="error">${esc(system.qbit?.error || 'sin conexión')}</span>`}</span></div>
           <div class="kv"><span>Base de datos</span><span class="mono tiny">${esc(system.db?.path || '—')}, ${fmtBytes(system.db?.size || 0)}</span></div>
           <div class="kv"><span>Títulos / versiones</span><span>${fmtInt(system.db?.media_items || 0)} / ${fmtInt(system.db?.releases || 0)}</span></div>
@@ -221,7 +221,7 @@ export async function renderSystem({ signal }) {
         </div>
       </div>
       <div class="panel">
-        <div class="panel-head"><h2>Indexers</h2><span class="right tiny faint">${health?.indexers?.length || 0} con actividad · <a href="#/settings?section=indexers">Configurar</a></span></div>
+        <div class="panel-head"><h2>Indexers</h2><span class="right tiny faint">${health?.indexers?.length || 0} con actividad, <a href="#/settings?section=indexers">Configurar</a></span></div>
         <div class="panel-body" style="padding-top:6px;padding-bottom:8px">
           ${health?.prowlarr_error ? `<div class="notice">${esc(health.prowlarr_error)}</div>` : indexerRows(health?.indexers || [])}
         </div>

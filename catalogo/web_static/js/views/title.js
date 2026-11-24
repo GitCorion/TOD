@@ -1,11 +1,10 @@
 import { api } from '../api.js';
 import { esc, episodeTag, fmtBytes, fmtDate, fmtInt, pct } from '../format.js';
 import { eventLabel, healthStatus, originLabel, WATCH } from '../labels.js';
-import { updateQuery } from '../router.js';
 import { state } from '../store.js';
 import { $, badge, bar, empty, icon, poster, setHeader, status } from '../ui.js';
 
-function releaseRow(release) {
+function releaseRow(release, showProgress = false) {
   const health = healthStatus(release.health);
   const trackerHref = release.info_url || release.source === 'prowlarr'
     ? `/api/releases/${release.id}/tracker`
@@ -14,13 +13,12 @@ function releaseRow(release) {
     ? `<div class="progress-cell">${bar(release.torrent_progress)}<span>${pct(release.torrent_progress)}%</span></div>`
     : '<span class="faint">—</span>';
   return `<tr>
-    <td data-label="Versión"><div class="cell-title"><strong>${esc(release.title || '—')}</strong><small>${esc(release.tracker || '')}, #${release.id}</small></div></td>
+    <td data-label="Versión"><div class="cell-title"><strong title="${esc(release.title || '')}">${esc(release.title || '—')}</strong><small>${esc(release.tracker || '')}, #${release.id} <span class="badge">${release.privacy === 'public' ? 'público' : 'privado'}</span></small></div></td>
     <td data-label="Calidad">${esc(release.quality || '—')}<div class="tiny faint">${esc(release.audio || '')}</div></td>
     <td data-label="Tamaño" class="num">${fmtBytes(release.size_bytes)}</td>
-    <td data-label="Semillas" class="num">${fmtInt(release.seeders)} / ${fmtInt(release.peers)}</td>
+    <td data-label="Seeds" class="num">${fmtInt(release.seeders)} / ${fmtInt(release.peers)}</td>
     <td data-label="Salud">${status(health.label, health.tone)}</td>
-    <td data-label="Privacidad">${badge(release.privacy === 'public' ? 'público' : 'privado', 'mono')}</td>
-    <td data-label="Progreso">${progress}</td>
+    ${showProgress ? `<td data-label="Progreso">${progress}</td>` : ''}
     <td class="actions" data-label="">
       ${trackerHref ? `<a class="btn btn-sm btn-ghost" href="${trackerHref}" target="_blank" rel="noopener noreferrer" aria-label="Abrir ficha de ${esc(release.title || 'esta versión')} en el tracker">${icon('external', 'sm')} Ficha</a>` : ''}
       <button class="btn btn-sm btn-ghost" data-action="release-target" data-release="${release.id}">Fijar</button>
@@ -28,6 +26,39 @@ function releaseRow(release) {
       <button class="btn btn-sm" data-action="release-prepare" data-release="${release.id}">Preparar</button>
     </td>
   </tr>`;
+}
+
+
+function previewRelease(release) {
+  const health = healthStatus(release.health);
+  const quality = release.quality || 'Calidad sin identificar';
+  return `<div class="title-preview-row">
+    <div class="title-preview-main">
+      <span class="title-preview-quality">${esc(quality)}</span>
+      <small>${esc(release.tracker || 'Origen sin identificar')}${release.audio ? `, ${esc(release.audio)}` : ''}</small>
+    </div>
+    <span class="tiny nowrap">${fmtInt(release.seeders)} seeds</span>
+    ${status(health.label, health.tone)}
+    <span class="tiny faint nowrap">${fmtBytes(release.size_bytes)}</span>
+  </div>`;
+}
+
+function previewFile(file) {
+  const path = file.rel_path || file.library_path || file.local_path || file.path || '—';
+  const where = file.storage_location === 'LOCAL_DISK'
+    ? 'local'
+    : file.storage_location === '1FICHIER'
+      ? 'archivo'
+      : file.source || 'externo';
+  return `<div class="title-preview-row files">
+    <span class="mono tiny" title="${esc(path)}">${esc(path)}</span>
+    <span class="tiny faint nowrap">${fmtBytes(file.size_bytes)}</span>
+    <span class="badge">${esc(where)}</span>
+  </div>`;
+}
+
+function countLabel(count, singular, plural) {
+  return `${fmtInt(count)} ${count === 1 ? singular : plural}`;
 }
 
 export async function renderTitle({ params, query, signal }) {
@@ -42,12 +73,13 @@ export async function renderTitle({ params, query, signal }) {
     : od.publication === 'pendiente'
       ? WATCH.pending
       : item.monitored ? WATCH.monitoring : WATCH.unavailable;
-  const secondary = [
-    od.library_added ? 'En Radarr/Sonarr' : '',
-    od.downloaded ? 'Descargada' : '',
-  ].filter(Boolean).join(' · ');
+  const secondaryBadges = [
+    od.library_added ? badge('En Radarr/Sonarr') : '',
+    od.downloaded ? badge('Descargada') : '',
+  ].filter(Boolean).join('');
   state.titleDetail = data;
   const tab = query.get('tab') || 'resumen';
+  const showAside = tab === 'resumen';
   const tag = episodeTag(item);
   const episodeName = item.kind === 'series' ? (item.episode_title || '') : '';
   const heading = episodeName || item.title || '—';
@@ -62,27 +94,75 @@ export async function renderTitle({ params, query, signal }) {
     ? `<a href="#/series/${item.tmdb}">${esc(item.title || 'Serie')}</a>${icon('chevron')}`
     : '';
   const alive = data.releases.filter((release) => release.health === 'alive').length;
-  const unverified = data.releases.some((release) => ['unknown', 'stale'].includes(release.health));
-  const liveState = statusData.stream_ready
-    ? status('Reproducible', 'ok')
-    : alive
-      ? status(`${alive} fuentes vivas`, 'info')
-      : data.releases.length
-        ? unverified
-          ? status('Candidatos sin verificar', 'warn')
-          : status('Sin fuentes vivas', 'bad')
-        : status('Sin fuente', 'muted');
+  const showProgress = data.releases.some((release) => release.torrent_progress !== null && release.torrent_progress !== undefined);
 
-  const summary = `
+  const libraryFiles = data.library || [];
+  const fileCount = data.files.length + libraryFiles.length;
+  const aliveReleases = (data.releases || []).filter(
+    (release) => release.health === 'alive',
+  ).length;
+  const previewReleases = [...(data.releases || [])]
+    .sort((a, b) => (Number(b.health === 'alive') - Number(a.health === 'alive'))
+      || ((b.seeders || 0) - (a.seeders || 0)))
+    .slice(0, 3);
+  const previewFiles = [...(data.files || []), ...libraryFiles].slice(0, 2);
+
+  const strip = `
+    <div class="record-line section">
+      <span><b>${fmtInt(alive)}</b> ${alive === 1 ? 'fuente viva' : 'fuentes vivas'}</span>
+      <span><b>${fmtInt(data.releases.length)}</b> ${data.releases.length === 1 ? 'versión' : 'versiones'}</span>
+      <span><b>${fmtInt(fileCount)}</b> ${fileCount === 1 ? 'fichero' : 'ficheros'}</span>
+      ${statusData.quality ? `<span><b>${esc(statusData.quality)}</b> calidad</span>` : ''}
+      <span><b>${fmtInt(data.commitments.length)}</b> ${data.commitments.length === 1 ? 'compromiso' : 'compromisos'}</span>
+      <span><b>${fmtInt(data.events.length)}</b> ${data.events.length === 1 ? 'evento' : 'eventos'}</span>
+    </div>
+  `;
+
+  const aside = `
     <div class="panel">
-      <div class="panel-head"><h2>Detalles</h2>${liveState}</div>
+      <div class="panel-head"><h2>Detalles</h2></div>
       <div class="panel-body" style="padding-top:6px;padding-bottom:8px">
         ${statusData.quality ? `<div class="kv"><span>Calidad</span><span>${esc(statusData.quality)}</span></div>` : ''}
         ${statusData.audio ? `<div class="kv"><span>Audio</span><span>${esc(statusData.audio)}</span></div>` : ''}
-        <div class="kv"><span>Procedencia</span><span>${esc(originLabel(item.origin))}${item.origin_detail ? `<span class="tiny faint"> · ${esc(item.origin_detail)}</span>` : ''}</span></div>
+        <div class="kv"><span>Procedencia</span><span>${esc(originLabel(item.origin))}${item.origin_detail ? `<span class="tiny faint">, ${esc(item.origin_detail)}</span>` : ''}</span></div>
         <div class="kv"><span>Ubicación</span><span>${od.has_file ? 'Radarr/Sonarr' : od.downloaded ? 'Descarga' : '—'}</span></div>
+        <div class="kv"><span>Fuentes</span><span>${countLabel(alive, 'viva', 'vivas')} de ${countLabel(data.releases.length, 'versión', 'versiones')}</span></div>
         ${od.download === 'descargando' || od.download === 'pausado' || od.download === 'error' ? `<div class="kv"><span>Descarga</span><span>${od.download === 'descargando' ? status('Descargando', 'info') : od.download === 'pausado' ? status('Pausado', 'warn') : status('Error', 'bad')}</span></div>` : ''}
       </div>
+    </div>
+  `;
+
+  const overview = `
+    <div class="panel flush">
+      <div class="panel-head">
+        <h2>Versiones</h2>
+        <div class="right row" style="gap:8px">
+          <button class="btn btn-sm btn-ghost" data-action="detail-tab" data-tab="fuentes">Ver todas</button>
+        </div>
+      </div>
+      ${previewReleases.length
+        ? `<div class="title-preview">${previewReleases.map(previewRelease).join('')}</div>`
+        : empty('Sin versiones', 'Busca fuentes para capturar candidatos.', `<button class="btn btn-sm" data-action="manual-search" data-id="${id}" data-title="${esc(item.title || '')}">Buscar manualmente</button>`)}
+    </div>
+    <div class="panel flush section">
+      <div class="panel-head">
+        <h2>Ficheros</h2>
+        <div class="right row" style="gap:8px">
+          <span class="tiny faint">${countLabel(fileCount, 'fichero', 'ficheros')}</span>
+          <button class="btn btn-sm btn-ghost" data-action="detail-tab" data-tab="ficheros">Ver todos</button>
+        </div>
+      </div>
+      ${previewFiles.length
+        ? `<div class="title-preview">${previewFiles.map(previewFile).join('')}</div>`
+        : empty(
+          'Sin ficheros',
+          aliveReleases
+            ? `Hay ${countLabel(aliveReleases, 'fuente viva', 'fuentes vivas')} sin descargar. Abre Fuentes y pulsa Preparar.`
+            : 'No hay copias locales ni de archivo indexadas.',
+          aliveReleases
+            ? '<button class="btn btn-sm" data-action="detail-tab" data-tab="fuentes">Ver fuentes</button>'
+            : '',
+        )}
     </div>
   `;
 
@@ -91,21 +171,17 @@ export async function renderTitle({ params, query, signal }) {
       <div class="panel-head">
         <h2>Versiones disponibles</h2>
         <div class="right row" style="gap:8px">
-          <span class="tiny faint">${data.releases.length} versiones</span>
           <button class="btn btn-sm" data-action="manual-search" data-id="${id}" data-title="${esc(item.title || '')}">Buscar manualmente</button>
         </div>
       </div>
-      ${data.releases.length ? `<div class="table-wrap"><table class="table--stack">
-        <thead><tr><th>Versión</th><th>Calidad</th><th>Tamaño</th><th>Seeds</th><th>Salud</th><th>Privacidad</th><th>Progreso</th><th></th></tr></thead>
-        <tbody>${data.releases.map(releaseRow).join('')}</tbody>
+      ${data.releases.length ? `<div class="table-wrap"><table class="table--stack releases-table">
+        <colgroup><col style="width:${showProgress ? 32 : 40}%"><col style="width:9%"><col style="width:8%"><col style="width:7%"><col style="width:9%">${showProgress ? '<col style="width:8%">' : ''}<col></colgroup>
+        <thead><tr><th>Versión</th><th>Calidad</th><th>Tamaño</th><th>Seeds</th><th>Salud</th>${showProgress ? '<th>Progreso</th>' : ''}<th></th></tr></thead>
+        <tbody>${data.releases.map((release) => releaseRow(release, showProgress)).join('')}</tbody>
       </table></div>` : empty('Sin versiones', 'Busca fuentes para capturar candidatos.', `<button class="btn btn-sm" data-action="manual-search" data-id="${id}" data-title="${esc(item.title || '')}">Buscar manualmente</button>`)}
     </div>
   `;
 
-  const libraryFiles = data.library || [];
-  const aliveReleases = (data.releases || []).filter(
-    (release) => release.health === 'alive',
-  ).length;
   const files = `
     <div class="grid grid-2">
       <div class="panel flush">
@@ -168,7 +244,7 @@ export async function renderTitle({ params, query, signal }) {
   $('#view').innerHTML = `
     <div class="breadcrumb"><a href="#/catalog">Biblioteca</a>${icon('chevron')}${seriesLink}<span>${esc(tag || item.title || 'Ficha')}</span></div>
 
-    <div class="panel pad">
+    <div class="panel pad detail-card">
       <div class="detail-hero">
         <div class="poster">${poster(data.poster_path, item.title)}</div>
         <div class="info">
@@ -178,8 +254,8 @@ export async function renderTitle({ params, query, signal }) {
             ${tag ? badge(tag, 'mono') : ''}
             ${status(watch.label, watch.tone)}
             ${od.download === 'descargando' ? status(`Descargando ${pct(od.progress || 0)}%`, 'info') : ''}
+            ${secondaryBadges}
           </div>
-          ${secondary ? `<p class="tiny muted" style="margin:6px 0 0">${esc(secondary)}</p>` : ''}
           ${synopsis ? `<p class="overview">${esc(synopsis)}</p>` : ''}
           ${data.collection ? `<a class="collection-link" href="#/collection/${data.collection.id}">
             <span class="tiny">Colección</span>
@@ -200,13 +276,20 @@ export async function renderTitle({ params, query, signal }) {
       </div>
     </div>
 
-    <div class="tabs" role="tablist">
-      <button class="${tab === 'resumen' ? 'active' : ''}" data-action="detail-tab" data-tab="resumen" role="tab" aria-selected="${tab === 'resumen'}">Resumen</button>
-      <button class="${tab === 'fuentes' ? 'active' : ''}" data-action="detail-tab" data-tab="fuentes" role="tab" aria-selected="${tab === 'fuentes'}">Fuentes <b>${data.releases.length}</b></button>
-      <button class="${tab === 'ficheros' ? 'active' : ''}" data-action="detail-tab" data-tab="ficheros" role="tab" aria-selected="${tab === 'ficheros'}">Ficheros <b>${data.files.length + libraryFiles.length}</b></button>
-      <button class="${tab === 'historial' ? 'active' : ''}" data-action="detail-tab" data-tab="historial" role="tab" aria-selected="${tab === 'historial'}">Historial <b>${data.events.length}</b></button>
-    </div>
+    ${strip}
 
-    ${tab === 'fuentes' ? releases : tab === 'ficheros' ? files : tab === 'historial' ? history : summary}
+    <div class="title-layout ${showAside ? '' : 'title-layout-full'}">
+      <div class="title-main">
+        <div class="tabs" role="tablist">
+          <button class="${tab === 'resumen' ? 'active' : ''}" data-action="detail-tab" data-tab="resumen" role="tab" aria-selected="${tab === 'resumen'}">Resumen</button>
+          <button class="${tab === 'fuentes' ? 'active' : ''}" data-action="detail-tab" data-tab="fuentes" role="tab" aria-selected="${tab === 'fuentes'}">Fuentes <b>${data.releases.length}</b></button>
+          <button class="${tab === 'ficheros' ? 'active' : ''}" data-action="detail-tab" data-tab="ficheros" role="tab" aria-selected="${tab === 'ficheros'}">Ficheros <b>${fileCount}</b></button>
+          <button class="${tab === 'historial' ? 'active' : ''}" data-action="detail-tab" data-tab="historial" role="tab" aria-selected="${tab === 'historial'}">Historial <b>${data.events.length}</b></button>
+        </div>
+
+        ${tab === 'fuentes' ? releases : tab === 'ficheros' ? files : tab === 'historial' ? history : overview}
+      </div>
+      ${showAside ? `<aside class="title-aside" aria-label="Detalles del título">${aside}</aside>` : ''}
+    </div>
   `;
 }

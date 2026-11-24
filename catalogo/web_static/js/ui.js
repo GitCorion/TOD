@@ -67,12 +67,18 @@ export function barPercent(value, tone = '') {
   return `<div class="bar ${tone}"><i style="width:${width}%"></i></div>`;
 }
 
-export function poster(path, title, { size = 'w342', cls = '' } = {}) {
+function tmdbImage(path, size) {
+  if (/^https?:\/\/image\.tmdb\.org\/t\/p\//i.test(path)) {
+    return path.replace(/(\/t\/p\/)[^/]+(\/)/, `$1${size}$2`);
+  }
+  if (/^https?:\/\//i.test(path)) return path;
+  return `https://image.tmdb.org/t/p/${size}${path}`;
+}
+
+export function poster(path, title, { size = 'w342', cls = '', priority = false } = {}) {
   if (path) {
-    const url = /^https?:\/\//i.test(path)
-      ? path
-      : `https://image.tmdb.org/t/p/${size}${path}`;
-    return `<img src="${esc(url)}" alt="" loading="lazy" decoding="async">`;
+    const load = priority ? 'loading="eager" fetchpriority="high"' : 'loading="lazy"';
+    return `<img src="${esc(tmdbImage(path, size))}" alt="" ${load} decoding="async">`;
   }
   const letter = String(title || '?').trim().slice(0, 1).toUpperCase();
   return `<span class="noimg" aria-hidden="true">${esc(letter)}</span>`;
@@ -80,10 +86,7 @@ export function poster(path, title, { size = 'w342', cls = '' } = {}) {
 
 export function thumb(path, title) {
   if (path) {
-    const url = /^https?:\/\//i.test(path)
-      ? path
-      : `https://image.tmdb.org/t/p/w92${path}`;
-    return `<img class="thumb" src="${esc(url)}" alt="" loading="lazy">`;
+    return `<img class="thumb" src="${esc(tmdbImage(path, 'w92'))}" alt="" loading="lazy">`;
   }
   return `<span class="thumb placeholder">${esc(String(title || '?').trim().slice(0, 1).toUpperCase())}</span>`;
 }

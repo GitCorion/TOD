@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="color-scheme" content="dark light">
   <meta name="theme-color" content="#0f1114">
+  <meta name="description" content="TOD, catálogo bajo demanda para qBittorrent y Jellyfin: biblioteca, fuentes, descargas y reproducción en un solo servicio.">
   <title>TOD</title>
   <link rel="icon" href="/static/tod-mark.svg" type="image/svg+xml">
   <link rel="apple-touch-icon" href="/static/tod-mark.png">
@@ -59,11 +60,11 @@
       </a>
 
       <nav class="nav" id="nav">
-        <a href="#/dashboard" data-route="dashboard"><svg class="icon"><use href="#i-home"/></svg><span>Inicio</span></a>
-        <a href="#/catalog" data-route="catalog"><svg class="icon"><use href="#i-grid"/></svg><span>Biblioteca</span></a>
-        <a href="#/add" data-route="add"><svg class="icon"><use href="#i-plus"/></svg><span>Añadir</span></a>
-        <a href="#/downloads" data-route="downloads"><svg class="icon"><use href="#i-download"/></svg><span>Actividad</span><em class="nav-count" id="navJobs"></em></a>
-        <a href="#/system" data-route="system"><svg class="icon"><use href="#i-server"/></svg><span>Sistema</span><em class="nav-count attention hidden" id="navAttention" aria-live="polite"></em></a>
+        <a href="#/dashboard" data-route="dashboard"><svg class="icon" aria-hidden="true"><use href="#i-home"/></svg><span>Inicio</span></a>
+        <a href="#/catalog" data-route="catalog"><svg class="icon" aria-hidden="true"><use href="#i-grid"/></svg><span>Biblioteca</span><em class="nav-count" id="navLibrary"></em></a>
+        <a href="#/add" data-route="add"><svg class="icon" aria-hidden="true"><use href="#i-plus"/></svg><span>Añadir</span></a>
+        <a href="#/downloads" data-route="downloads"><svg class="icon" aria-hidden="true"><use href="#i-download"/></svg><span>Actividad</span><em class="nav-count" id="navJobs"></em></a>
+        <a href="#/system" data-route="system"><svg class="icon" aria-hidden="true"><use href="#i-server"/></svg><span>Sistema</span><em class="nav-count attention hidden" id="navAttention" aria-live="polite"></em></a>
       </nav>
 
       <div class="sidebar-foot">
@@ -77,17 +78,17 @@
     <main class="main" id="main">
       <header class="topbar">
         <button class="btn btn-icon only-mobile" data-action="menu" aria-label="Abrir menú">
-          <svg class="icon"><use href="#i-menu"/></svg>
+          <svg class="icon" aria-hidden="true"><use href="#i-menu"/></svg>
         </button>
         <div class="page-head">
           <h1 id="pageTitle" tabindex="-1">Inicio</h1>
         </div>
         <button class="search-trigger" id="searchTrigger" data-action="palette-open" aria-label="Buscar en la biblioteca (Ctrl K)">
-          <svg class="icon"><use href="#i-search"/></svg>
+          <svg class="icon" aria-hidden="true"><use href="#i-search"/></svg>
           <span>Buscar en la biblioteca…</span>
           <kbd>Ctrl K</kbd>
         </button>
-        <a class="btn btn-primary top-add" href="#/add"><svg class="icon"><use href="#i-plus"/></svg> Añadir</a>
+        <a class="btn btn-primary top-add" href="#/add"><svg class="icon" aria-hidden="true"><use href="#i-plus"/></svg> Añadir</a>
         <div class="top-actions">
           <button class="btn btn-icon" id="themeToggle" data-action="theme" aria-label="Cambiar a tema claro" title="Cambiar tema">
             <svg class="icon" id="themeIcon"><use href="#i-sun"/></svg>
@@ -101,11 +102,11 @@
     </main>
 
     <nav class="mobile-nav" id="mobileNav" aria-label="Navegación rápida">
-      <a href="#/dashboard" data-route="dashboard"><svg class="icon"><use href="#i-home"/></svg><span>Inicio</span></a>
-      <a href="#/catalog" data-route="catalog"><svg class="icon"><use href="#i-grid"/></svg><span>Biblioteca</span></a>
-      <a href="#/add" data-route="add"><svg class="icon"><use href="#i-plus"/></svg><span>Añadir</span></a>
-      <a href="#/downloads" data-route="downloads"><svg class="icon"><use href="#i-download"/></svg><span>Actividad</span></a>
-      <button data-action="menu"><svg class="icon"><use href="#i-menu"/></svg><span>Más</span></button>
+      <a href="#/dashboard" data-route="dashboard"><svg class="icon" aria-hidden="true"><use href="#i-home"/></svg><span>Inicio</span></a>
+      <a href="#/catalog" data-route="catalog"><svg class="icon" aria-hidden="true"><use href="#i-grid"/></svg><span>Biblioteca</span></a>
+      <a href="#/add" data-route="add"><svg class="icon" aria-hidden="true"><use href="#i-plus"/></svg><span>Añadir</span></a>
+      <a href="#/downloads" data-route="downloads"><svg class="icon" aria-hidden="true"><use href="#i-download"/></svg><span>Actividad</span></a>
+      <button data-action="menu"><svg class="icon" aria-hidden="true"><use href="#i-menu"/></svg><span>Más</span></button>
     </nav>
   </div>
 
@@ -117,7 +118,7 @@
       <header class="modal-head">
         <h2 id="modalTitle">Detalle</h2>
         <button class="btn btn-icon" data-action="modal-close" aria-label="Cerrar">
-          <svg class="icon"><use href="#i-close"/></svg>
+          <svg class="icon" aria-hidden="true"><use href="#i-close"/></svg>
         </button>
       </header>
       <div id="modalBody" class="modal-body"></div>
@@ -128,7 +129,7 @@
   <div id="palette" class="palette hidden" role="dialog" aria-modal="true" aria-label="Buscar en la biblioteca">
     <div class="palette-card">
       <form class="palette-search" id="paletteForm" autocomplete="off">
-        <svg class="icon"><use href="#i-search"/></svg>
+        <svg class="icon" aria-hidden="true"><use href="#i-search"/></svg>
         <input id="paletteInput" name="q" placeholder="Buscar en la biblioteca o ir a…" aria-label="Buscar en la biblioteca o ir a una página" autocomplete="off">
         <kbd>Esc</kbd>
       </form>

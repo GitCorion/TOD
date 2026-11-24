@@ -15,7 +15,7 @@ const STEPS = [
     title: 'Fuentes',
     help: 'Prowlarr o Jackett descubren las versiones. Basta con uno de los dos.',
     required: true,
-    docker: 'En Docker: Prowlarr http://prowlarr:9696 · Jackett http://jackett:9117',
+    docker: 'En Docker: Prowlarr http://prowlarr:9696, Jackett http://jackett:9117',
   },
   {
     key: 'directories',
@@ -136,7 +136,7 @@ export async function renderSetup({ signal }) {
       ${!state.finished && state.data.runtime === 'docker' ? '<div class="notice">Docker detectado: se proponen las URLs y rutas internas de Compose. Puedes cambiarlas antes de validar.</div>' : ''}
       ${state.finished ? finishView() : `<div class="panel setup-card">
         <div class="panel-head">
-          <h2>Paso ${state.step + 1} de ${STEPS.length} · ${esc(active.title)}</h2>
+          <h2>Paso ${state.step + 1} de ${STEPS.length}, ${esc(active.title)}</h2>
           ${stepBadge(info)}
         </div>
         <div class="panel-body">

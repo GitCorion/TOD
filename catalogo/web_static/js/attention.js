@@ -65,7 +65,7 @@ export function attentionCard(data, { compact = true, id = 'attentionPanel' } = 
   if (!items.length) {
     return `<div class="attention-card ok" id="${id}">
       <span class="attention-mark">${icon('check')}</span>
-      <div class="attention-copy"><strong>Todo en orden</strong><span class="tiny faint">Sin avisos pendientes${data?.generated_at ? ` · comprobado ${fmtRelative(data.generated_at)}` : ''}.</span></div>
+      <div class="attention-copy"><strong>Todo en orden</strong><span class="tiny faint">Sin avisos pendientes${data?.generated_at ? `, comprobado ${fmtRelative(data.generated_at)}` : ''}.</span></div>
       <button class="btn btn-sm btn-ghost" data-action="attention-check">${icon('refresh', 'sm')} Comprobar ahora</button>
     </div>`;
   }
@@ -75,7 +75,7 @@ export function attentionCard(data, { compact = true, id = 'attentionPanel' } = 
   return `<section class="panel attention-panel ${fails ? 'fail' : 'warn'}" id="${id}" aria-label="${title}">
     <div class="panel-head attention-head">
       <h2>${title}</h2>
-      <span class="right tiny faint">${counts.total} aviso${counts.total === 1 ? '' : 's'}${data.generated_at ? ` · ${fmtRelative(data.generated_at)}` : ''}</span>
+      <span class="right tiny faint">${counts.total} aviso${counts.total === 1 ? '' : 's'}${data.generated_at ? `, ${fmtRelative(data.generated_at)}` : ''}</span>
       <button class="btn btn-sm btn-ghost" data-action="attention-check">${icon('refresh', 'sm')} Comprobar</button>
     </div>
     <div class="attention-list">${shown.map(attentionItem).join('')}</div>

@@ -81,7 +81,7 @@ async function boot() {
 function clearCatalogSelectionUI() {
   state.selection.clear();
   $$('[data-action="catalog-select"]').forEach((input) => { input.checked = false; });
-  $$('.media-card.selected, .media-row.selected, .catalog-table tr.selected').forEach((node) => node.classList.remove('selected'));
+  $$('.media-card.selected, .media-row.selected, .catalog-card.selected, .catalog-table tr.selected').forEach((node) => node.classList.remove('selected'));
   renderSelectionBar();
 }
 
@@ -805,7 +805,7 @@ async function syncAddSources(season = null) {
       keys: episodes.map((episode) => episode.key),
     });
     closeModal();
-    toast(`Búsqueda de fuentes en cola (#${result.job_id}) · ${episodes.length} episodios`, 'ok',
+    toast(`Búsqueda de fuentes en cola (#${result.job_id}), ${episodes.length} episodios`, 'ok',
       `<a class="btn btn-sm btn-ghost" href="#/series/${detail.series.tmdb}">Ver serie</a>
        <button class="btn btn-sm btn-ghost" data-action="job-detail" data-id="${result.job_id}">Ver tarea</button>`);
     refreshActivity();
@@ -1049,7 +1049,7 @@ document.addEventListener('click', async (event) => {
         if (allSelected) state.selection.delete(key);
         else state.selection.add(key);
         box.checked = !allSelected;
-        box.closest('.media-card, .media-row, .catalog-table tr')?.classList.toggle('selected', !allSelected);
+        box.closest('.media-card, .media-row, .catalog-card, .catalog-table tr')?.classList.toggle('selected', !allSelected);
       }
       renderSelectionBar();
       return;
@@ -1208,8 +1208,8 @@ document.addEventListener('click', async (event) => {
         const target = $(`[data-integration-result="${CSS.escape(name)}"]`);
         if (target) {
           target.textContent = result.ok
-            ? `Correcto · ${result.detail || ''} (${result.latency_ms || 0} ms)`
-            : `Error · ${result.hint || result.error || 'sin detalle'}`;
+            ? `Correcto, ${result.detail || ''} (${result.latency_ms || 0} ms)`
+            : `Error, ${result.hint || result.error || 'sin detalle'}`;
           target.className = `tiny ${result.ok ? 'ok-text' : 'warn-text'}`;
         }
         toast(
@@ -1236,11 +1236,11 @@ document.addEventListener('click', async (event) => {
           const state = result.is_dir
             ? (result.writable ? 'Directorio, escribible' : 'Directorio, sin escritura')
             : 'No es un directorio';
-          target.textContent = `${state} · ${fmtBytes(result.free)} libres`;
+          target.textContent = `${state}, ${fmtBytes(result.free)} libres`;
         } else if (!result.writable) {
           target.textContent = `No existe y la carpeta padre ${parent} no permite escribir.`;
         } else if (creatable) {
-          target.textContent = `No existe; se creará dentro de ${parent} · ${fmtBytes(result.free || 0)} libres.`;
+          target.textContent = `No existe; se creará dentro de ${parent}, ${fmtBytes(result.free || 0)} libres.`;
         } else {
           target.textContent = `No existe. La carpeta padre ${parent} existe (${fmtBytes(result.free || 0)} libres), pero esta ruta no. Créala o corrige la ruta.`;
         }
@@ -1279,7 +1279,7 @@ document.addEventListener('click', async (event) => {
     }
     if (action === 'catalog-select') {
       const selected = toggleSelection(element.dataset.key);
-      const card = element.closest('.media-card, .media-row, .catalog-table tr');
+      const card = element.closest('.media-card, .media-row, .catalog-card, .catalog-table tr');
       if (card) card.classList.toggle('selected', selected);
       renderSelectionBar();
       return;
@@ -1436,7 +1436,7 @@ document.addEventListener('click', async (event) => {
         const result = await apiPost(`/api/titles/${element.dataset.id}/monitor`, { monitored: true });
         toast(
           result.job_id
-            ? `En seguimiento · búsqueda en cola (#${result.job_id})`
+            ? `En seguimiento, búsqueda en cola (#${result.job_id})`
             : 'En seguimiento hasta encontrar fuente',
           'ok',
           result.job_id
@@ -1633,7 +1633,7 @@ document.addEventListener('click', async (event) => {
            ${episodes.map((episode) => {
              const tag = `T${String(episode.season || 0).padStart(2, '0')}E${String(episode.episode || 0).padStart(2, '0')}`;
              const name = episode.name || `Episodio ${episode.episode}`;
-             return `<button class="btn btn-sm" data-action="manual-search" data-id="${episode.id}" data-title="${esc(name)}">${tag} · ${esc(name)}</button>`;
+             return `<button class="btn btn-sm" data-action="manual-search" data-id="${episode.id}" data-title="${esc(name)}">${tag}, ${esc(name)}</button>`;
            }).join('')}
          </div>`,
         `<button class="btn btn-ghost" data-action="modal-close">Cerrar</button>`,
@@ -1816,7 +1816,7 @@ document.addEventListener('click', async (event) => {
       });
       const removed = Number(result.strm?.total || 0);
       toast(
-        `${tracker}: ${result.releases} releases bloqueados${removed ? ` · ${removed} .strm ${removed === 1 ? 'eliminado' : 'eliminados'}` : ''}`,
+        `${tracker}: ${result.releases} releases bloqueados${removed ? `, ${removed} .strm ${removed === 1 ? 'eliminado' : 'eliminados'}` : ''}`,
         'ok',
       );
       await route({ preserveScroll: true });

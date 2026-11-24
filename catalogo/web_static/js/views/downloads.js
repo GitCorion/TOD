@@ -96,7 +96,7 @@ function torrentRow(item, canDelete = false) {
   const display = linked ? (item.release_title || item.name || item.title) : prettyName(item.name);
   const source = item.tracker
     || (item.category && item.category !== 'ondemand' ? item.category : 'Bajo demanda');
-  const meta = [source, fmtBytes(item.size)].filter(Boolean).join(' · ');
+  const meta = [source, fmtBytes(item.size)].filter(Boolean).join(', ');
   return `<div class="dl-torrent">
     <input type="checkbox" data-action="torrent-select" data-hash="${esc(item.info_hash)}" ${selected ? 'checked' : ''} aria-label="Seleccionar torrent">
     <div class="name">
