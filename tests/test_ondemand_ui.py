@@ -323,6 +323,7 @@ def test_series_detail_merges_tmdb_episodes(tmp_path):
         "published": 0,
         "library": 0,
         "monitored": 0,
+        "monitored_aired": 0,
         "covered": 0,
         "downloaded": 0,
         "downloading": 0,

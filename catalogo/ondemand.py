@@ -1108,6 +1108,10 @@ def series_detail(
         "published": sum(1 for episode in all_episodes if episode.get("published")),
         "library": sum(1 for episode in all_episodes if episode.get("library_added")),
         "monitored": sum(1 for episode in all_episodes if episode.get("monitored")),
+        "monitored_aired": sum(
+            1 for episode in all_episodes
+            if episode.get("monitored") and episode.get("available") is not False
+        ),
         "covered": sum(
             1 for episode in all_episodes
             if episode.get("in_catalog")

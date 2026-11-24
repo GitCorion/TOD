@@ -82,7 +82,7 @@ export async function renderSeries({ params, query, signal }) {
   const notAdded = Math.max(0, aired - (totals.catalog_aired || 0));
   const seriesSummary = [
     totals.library ? `${fmtInt(totals.library)} en Radarr/Sonarr` : '',
-    totals.monitored ? `${fmtInt(totals.monitored)} en seguimiento` : '',
+    totals.monitored_aired ? `${fmtInt(totals.monitored_aired)} en seguimiento` : '',
     totals.incomplete ? `${fmtInt(totals.incomplete)} sin fuente` : '',
     notAdded ? `${fmtInt(notAdded)} sin catalogar` : '',
     totals.upcoming ? `${fmtInt(totals.upcoming)} sin estrenar` : '',
@@ -179,7 +179,7 @@ export async function renderSeries({ params, query, signal }) {
     <div class="record-line section">
       <span><b>${fmtInt(totals.episodes || 0)}</b> episodios</span>
       <span><b>${fmtInt(totals.library || 0)}</b> en Radarr/Sonarr</span>
-      <span><b>${fmtInt(totals.monitored || 0)}</b> en seguimiento</span>
+      <span><b>${fmtInt(totals.monitored_aired || 0)}</b> en seguimiento</span>
       <span><b>${fmtInt(totals.incomplete || 0)}</b> sin fuente</span>
       <span><b>${fmtInt(notAdded)}</b> sin catalogar</span>
       ${totals.upcoming ? `<span><b>${fmtInt(totals.upcoming)}</b> sin estrenar</span>` : ''}
