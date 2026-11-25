@@ -128,6 +128,14 @@ def _rich_nfo_tags(asset: dict) -> list[str]:
     return tags
 
 
+def _safe_write_strm(path: Path, content: str, *, root: Path) -> bool:
+    try:
+        write_strm(path, content, root=root)
+        return True
+    except OSError:
+        return False
+
+
 def _nfo_path_for(
     default_strm: Path, kind: str, *, use_season_folders: bool = True
 ) -> Path:
@@ -557,7 +565,7 @@ def export_strm(
             expected.add(default)
             content = play_url(asset["key"], base_url) + "\n"
             if not default.exists() or default.read_text(encoding="utf-8") != content:
-                write_strm(default, content, root=out)
+                _safe_write_strm(default, content, root=out)
                 written += 1
                 written_paths.append(str(default))
             else:
@@ -578,7 +586,7 @@ def export_strm(
         expected.add(default)
         content = play_url(asset["key"], base_url) + "\n"
         if not default.exists() or default.read_text(encoding="utf-8") != content:
-            write_strm(default, content, root=out)
+            _safe_write_strm(default, content, root=out)
             written += 1
             written_paths.append(str(default))
         else:

@@ -60,8 +60,8 @@ function stateInfo(item) {
     }
     return { label: 'Sin fuente', tone: 'warn', hint: 'El .strm existe, sin fuente viva' };
   }
-  if (item.publication === 'pendiente' || item.downloaded || item.alive) {
-    return { label: 'Sin publicar', tone: 'info', hint: 'Tiene fuente válida lista para publicar .strm' };
+  if (item.downloaded) {
+    return { label: 'Descargado', tone: 'info', hint: 'Fichero descargado listo para reproducir' };
   }
   const watch = watchState(item);
   return { label: watch.label, tone: watch.tone };
@@ -236,9 +236,8 @@ export async function renderCatalog({ query, signal }) {
   ];
   const publicationChips = [
     { label: 'Todos', value: '', count: publicationTotal || kindTotal, hint: 'Muestra todo' },
-    { label: 'Disponible', value: 'publicado', count: facets.publication?.publicado || 0, hint: 'Ya tiene acceso .strm en Jellyfin' },
-    { label: 'Sin publicar', value: 'pendiente', count: facets.publication?.pendiente || 0, hint: 'Tiene fuente válida lista para publicar .strm' },
-    { label: 'Sin fuente', value: 'sin_fuente', count: facets.publication?.sin_fuente || 0, hint: 'Sin release vivo o válido actualmente' },
+    { label: 'Disponibles', value: 'publicado', count: facets.publication?.publicado || 0, hint: 'Listo para reproducir en Jellyfin' },
+    { label: 'Sin fuente', value: 'sin_fuente', count: facets.publication?.sin_fuente || 0, hint: 'Sin fuente viva compatible actualmente' },
   ];
   const downloadChips = [
     { label: 'Todas', value: '', count: null },
@@ -249,7 +248,7 @@ export async function renderCatalog({ query, signal }) {
     { label: 'Sin descarga', value: 'sin_descarga', count: facets.download?.sin_descarga || 0 },
   ];
 
-  const bulkPublication = ['pendiente', 'sin_fuente'].includes(filters.publication);
+  const bulkPublication = filters.publication === 'sin_fuente';
   const bulkCopy = filters.publication === 'sin_fuente'
     ? {
         title: `${fmtInt(data.total || 0)} títulos sin fuente viva`,
