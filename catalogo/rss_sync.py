@@ -180,6 +180,13 @@ def sync_rss(
         prowlarr, GENERAL_TRACKERS, indexers=indexer_payload
     )
     spanish_trackers = spanish_trackers_from_indexers(indexer_payload)
+    privacy_by_name = {
+        str(item.get("name") or ""): (
+            "public" if str(item.get("privacy") or "").lower() == "public" else "private"
+        )
+        for item in indexer_payload
+        if item.get("name")
+    }
     indexer_ids = [indexer_id for _, indexer_id in found]
     results: list[dict] = []
     for kind in ("movie", "series"):
@@ -219,12 +226,21 @@ def sync_rss(
     movie_cache: dict[int, dict | None] = {}
     series_cache: dict[int, dict | None] = {}
     with closing(connect(db_path)) as conn:
+        blocked_trackers = {
+            str(r["tracker"])
+            for r in conn.execute(
+                "SELECT tracker FROM tracker_policies WHERE enabled = 0"
+            ).fetchall()
+        }
         conn.isolation_level = None
         conn.commit()
         for result in results:
             if len(seen) >= limit:
                 break
             tracker = str(result.get("indexer") or "")
+            if tracker in blocked_trackers:
+                report["skipped"].append({"title": result.get("title"), "reason": "tracker_bloqueado"})
+                continue
             guid = _release_guid(tracker, result)
             key_seen = (tracker, guid)
             if key_seen in seen:
@@ -415,6 +431,14 @@ def sync_rss(
                     {"title": result.get("title"), "reason": "sin_activo"}
                 )
                 continue
+            rel_source = str(result.get("source") or "prowlarr")
+            rel_privacy = privacy_by_name.get(tracker)
+            if rel_privacy is None or rel_source == "jackett":
+                rel_privacy = (
+                    "public"
+                    if str(result.get("privacy") or "").lower() == "public"
+                    else "private"
+                )
             outcome = _upsert_release(
                 conn,
                 int(key_row["id"]),
@@ -422,6 +446,8 @@ def sync_rss(
                 result,
                 checked_at,
                 spanish_trackers=spanish_trackers,
+                privacy=rel_privacy,
+                source=rel_source,
             )
             report[outcome] += 1
         if not dry_run:
