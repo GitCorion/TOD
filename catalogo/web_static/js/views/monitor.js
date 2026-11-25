@@ -37,7 +37,7 @@ export async function renderMonitor({ query, signal }) {
     kind: query.get('kind') || '',
     page: Math.max(1, Number(query.get('page')) || 1),
   };
-  setHeader('Pendientes (Wanted)');
+  setHeader('Seguimiento (Wanted)');
 
   if (tab === 'cutoff') {
     const params = new URLSearchParams({ kind: filters.kind, limit: '200' });
@@ -70,7 +70,7 @@ export async function renderMonitor({ query, signal }) {
     }).join('');
 
     $('#view').innerHTML = `
-      <div class="breadcrumb"><a href="#/catalog">Biblioteca</a>${icon('chevron')}<span>Pendientes (Wanted)</span></div>
+      <div class="breadcrumb"><a href="#/catalog">Biblioteca</a>${icon('chevron')}<span>Seguimiento</span></div>
       <div class="tabs section" role="tablist">
         <button class="" data-action="catalog-filter" data-key="tab" data-value="missing" role="tab">Faltantes</button>
         <button class="active" data-action="catalog-filter" data-key="tab" data-value="cutoff" role="tab">Mejorables (Cutoff Unmet) <b>${fmtInt(items.length)}</b></button>
@@ -155,7 +155,7 @@ export async function renderMonitor({ query, signal }) {
   }).join('');
 
   $('#view').innerHTML = `
-    <div class="breadcrumb"><a href="#/catalog">Biblioteca</a>${icon('chevron')}<span>Pendientes (Wanted)</span></div>
+    <div class="breadcrumb"><a href="#/catalog">Biblioteca</a>${icon('chevron')}<span>Seguimiento</span></div>
 
     <div class="tabs section" role="tablist">
       <button class="${tab === 'missing' ? 'active' : ''}" data-action="catalog-filter" data-key="tab" data-value="missing" role="tab">Faltantes <b>${fmtInt(summary.missing || 0)}</b></button>

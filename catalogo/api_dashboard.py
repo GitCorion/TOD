@@ -71,18 +71,22 @@ def handle(
             None,
         )
         with closing(connect(db)) as conn:
-            keys = [
-                row["key"]
-                for row in conn.execute(
-                    "SELECT key FROM media_items WHERE monitored = 1"
-                ).fetchall()
-            ]
-        # El menú cuenta lo mismo que la página de Seguimiento: títulos
-        # monitorizados que aún no están en Jellyfin.
+            rows = conn.execute(
+                """
+                SELECT key, kind, COALESCE(tmdb, id) AS grp
+                FROM media_items
+                WHERE monitored = 1 AND library_added = 0
+                """
+            ).fetchall()
         published = strm_inventory.inventory(
             app.config.catalog_library
         )["keys"]
-        monitored = sum(1 for key in keys if key not in published)
+        monitored_groups = {
+            (r["kind"], int(r["grp"]))
+            for r in rows
+            if r["key"] not in published
+        }
+        monitored = len(monitored_groups)
         return 200, {
                 "active": active,
                 "running": next(

@@ -105,7 +105,8 @@ export async function route({ preserveScroll = false } = {}) {
   }
   if (parsed.view !== 'settings') state.settingsDirty = false;
   const definition = ROUTES[parsed.view] || ROUTES.dashboard;
-  if (parsed.view !== previousView) {
+  const sameView = parsed.view === previousView;
+  if (!sameView) {
     clearSelection();
     window.scrollTo({ top: 0, behavior: 'instant' });
   }
@@ -116,15 +117,21 @@ export async function route({ preserveScroll = false } = {}) {
   setActiveNav(parsed.view);
   setHeader(definition.title);
   renderSectionTabs(parsed.view);
-  $('#view').innerHTML = `<div class="view-loading" aria-busy="true" aria-label="Cargando">
-    <div class="skeleton" style="height:34px;width:100%"></div>
-    <div class="skeleton" style="height:28px;width:44%;margin-top:4px"></div>
-    ${Array.from({ length: 7 }, () => '<div class="skeleton" style="height:38px;width:100%"></div>').join('')}
-  </div>`;
+  const viewEl = $('#view');
+  if (!sameView) {
+    viewEl.innerHTML = `<div class="view-loading" aria-busy="true" aria-label="Cargando">
+      <div class="skeleton" style="height:34px;width:100%"></div>
+      <div class="skeleton" style="height:28px;width:44%;margin-top:4px"></div>
+      ${Array.from({ length: 7 }, () => '<div class="skeleton" style="height:38px;width:100%"></div>').join('')}
+    </div>`;
+  } else {
+    viewEl.classList.add('is-updating');
+  }
   const signal = beginRequest();
   const previousFocus = focusKey();
   try {
     await definition.render({ ...parsed, signal });
+    viewEl.classList.remove('is-updating');
     document.querySelector('#sidebar')?.classList.remove('open');
     document.querySelector('#scrim')?.classList.remove('open');
     if (keepScroll) {
@@ -133,6 +140,7 @@ export async function route({ preserveScroll = false } = {}) {
     if (!restoreFocus(previousFocus)) focusTitle();
     window.dispatchEvent(new CustomEvent('route:rendered'));
   } catch (error) {
+    viewEl.classList.remove('is-updating');
     if (error.name === 'AbortError') return;
     $('#view').innerHTML = pageError(error);
   }

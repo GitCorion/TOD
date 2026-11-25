@@ -1113,7 +1113,14 @@ document.addEventListener('click', async (event) => {
       $('#torrentFile')?.click();
       return;
     }
+    if (action === 'settings-tab') {
+      updateQuery({ section: element.dataset.section || 'general', focus: '' }, { resetPage: false });
+      return;
+    }
     if (action === 'settings-jump') {
+      const secMap = { 'settings-integrations': 'integraciones', 'settings-indexers': 'integraciones', 'settings-directories': 'general', 'settings-playback': 'general', 'settings-security': 'general', 'settings-language': 'general', 'settings-seed': 'siembra', 'settings-profiles': 'perfiles', 'settings-formats': 'perfiles', 'settings-media': 'medios', 'settings-lists': 'listas', 'settings-scheduler': 'tareas' };
+      const sec = secMap[element.dataset.target];
+      if (sec) updateQuery({ section: sec }, { resetPage: false });
       const target = document.getElementById(element.dataset.target);
       if (target) {
         const smooth = !window.matchMedia('(prefers-reduced-motion: reduce)').matches;

@@ -269,7 +269,7 @@ const SECTION_FOR_VIEW = {
 const SECTION_TABS = {
   catalog: [
     { label: 'Catálogo', href: '#/catalog', views: ['catalog', 'title', 'series', 'collection'] },
-    { label: 'Pendientes', href: '#/monitor', views: ['monitor'], count: 'pending' },
+    { label: 'Seguimiento', href: '#/monitor', views: ['monitor'], count: 'pending' },
     { label: 'Calendario', href: '#/calendar', views: ['calendar'] },
   ],
   activity: [

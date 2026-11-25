@@ -17,8 +17,27 @@ export const state = {
   filtersOpen: false,
   settingsDirty: false,
   downloadsExpanded: new Set(),
-  filters: { q: '', kind: '', publication: 'publicado', download: '', sort: 'popularity', view: 'grid', page: 1 },
+  filters: { q: '', kind: '', publication: '', download: '', sort: 'popularity', view: 'grid', page: 1 },
+  metaCache: new Map(),
 };
+
+export async function cachedApi(key, fetcher, ttlMs = 30000) {
+  const hit = state.metaCache.get(key);
+  if (hit && Date.now() - hit.ts < ttlMs) return hit.data;
+  const data = await fetcher();
+  state.metaCache.set(key, { ts: Date.now(), data });
+  return data;
+}
+
+export function invalidateMetaCache(prefix = '') {
+  if (!prefix) {
+    state.metaCache.clear();
+    return;
+  }
+  for (const k of state.metaCache.keys()) {
+    if (k.startsWith(prefix)) state.metaCache.delete(k);
+  }
+}
 
 export function beginRequest() {
   if (state.controller) state.controller.abort();

@@ -28,8 +28,24 @@ def _now() -> str:
 
 
 def _asset_ids_with_releases(db_path) -> set[int]:
+    """Releases válidos (no bloqueados, no muertos ni en stream_failures)."""
     with closing(connect(db_path)) as conn:
-        rows = conn.execute("SELECT DISTINCT asset_id FROM releases").fetchall()
+        rows = conn.execute(
+            """
+            SELECT DISTINCT r.asset_id
+            FROM releases r
+            WHERE r.health IN ('alive', 'unknown', 'stale')
+              AND NOT EXISTS (
+                  SELECT 1 FROM tracker_policies tp
+                  WHERE tp.tracker = r.tracker AND tp.enabled = 0
+              )
+              AND NOT EXISTS (
+                  SELECT 1 FROM stream_failures sf
+                  WHERE sf.release_id = r.id
+                    AND sf.until > strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+              )
+            """
+        ).fetchall()
     return {int(row["asset_id"]) for row in rows}
 
 
@@ -318,7 +334,7 @@ def _table_exists(conn, name: str) -> bool:
     ).fetchone() is not None
 
 
-def _norm_quality_label(q: str | None) -> str:
+def _norm_quality_label(q: str | None) -> str | None:
     txt = str(q or "").strip().lower()
     if txt in ("4k", "uhd", "2160p"):
         return "2160p"
@@ -328,6 +344,8 @@ def _norm_quality_label(q: str | None) -> str:
         return "720p"
     if txt in ("480p", "sd", "dvdrip"):
         return "480p"
+    if txt in ("", "unknown", "none"):
+        return None
     return txt
 
 
@@ -433,10 +451,23 @@ def _catalog_base(db_path, config) -> list[dict[str, Any]]:
                    m.quality_profile_id, m.root_folder_id, m.genres,
                    m.series_status, m.series_type, m.is_anime,
                    COALESCE(m.popularity,0) AS popularity,
-                   (SELECT COUNT(*) FROM releases r WHERE r.asset_id=m.id)
-                       AS releases,
                    (SELECT COUNT(*) FROM releases r WHERE r.asset_id=m.id
-                       AND r.health='alive') AS alive
+                       AND r.health <> 'blocked'
+                       AND NOT EXISTS (
+                           SELECT 1 FROM tracker_policies tp
+                           WHERE tp.tracker=r.tracker AND tp.enabled=0
+                       )) AS releases,
+                   (SELECT COUNT(*) FROM releases r WHERE r.asset_id=m.id
+                       AND r.health='alive'
+                       AND NOT EXISTS (
+                           SELECT 1 FROM tracker_policies tp
+                           WHERE tp.tracker=r.tracker AND tp.enabled=0
+                       )
+                       AND NOT EXISTS (
+                           SELECT 1 FROM stream_failures sf
+                           WHERE sf.release_id=r.id
+                             AND sf.until > strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+                       )) AS alive
             FROM media_items m
             """
         ).fetchall()
@@ -629,16 +660,22 @@ def catalog(
             if text in (item.get("title") or "").lower()
             or text in (item.get("key") or "").lower()
         ]
-    if kind in ("movie", "series"):
-        base = [item for item in base if item["kind"] == kind]
-
     if group == "series":
         grouped = _group_series(base)
         grouped.sort(key=lambda item: (
             -(float(item.get("popularity") or 0)),
             (item.get("title") or "").lower(),
         ))
-        entries = grouped
+        all_entries = grouped
+    else:
+        all_entries = base
+
+    if kind in ("movie", "series"):
+        entries = [item for item in all_entries if item["kind"] == kind]
+    else:
+        entries = all_entries
+
+    if group == "series":
         episodes_total = sum(
             int(item.get("episodes") or 0)
             for item in entries
@@ -655,7 +692,6 @@ def catalog(
             if item["kind"] == "series"
         )
     else:
-        entries = base
         episodes_total = sum(
             1 for item in entries if item["kind"] == "series"
         )
@@ -668,18 +704,10 @@ def catalog(
             if item["kind"] == "series" and item.get("library_added")
         )
 
-    # Las facetas cuentan sobre el catálogo ya agrupado, antes de aplicar
-    # los filtros: así el mismo concepto muestra el mismo número en el menú,
-    # la tarjeta y el filtro (DESIGN.md). `q` y el tipo sí acotan el universo;
-    # el estado elegido no borra los demás estados.
     facet_data = None
     if facets:
-        all_facets = _facets(entries)
-        scoped = [
-            item for item in entries
-            if not kind or item["kind"] == kind
-        ]
-        facet_data = _facets(scoped)
+        all_facets = _facets(all_entries)
+        facet_data = _facets(entries)
         facet_data["kind"] = all_facets["kind"]
 
     def keep(item: dict[str, Any]) -> bool:

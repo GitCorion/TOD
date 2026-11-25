@@ -1,6 +1,7 @@
 import { api, apiPost } from '../api.js';
 import { esc, fmtInt } from '../format.js';
 import { route } from '../router.js';
+import { invalidateMetaCache } from '../store.js';
 import { $, badge, closeModal, confirmModal, empty, icon, openModal, status, toast } from '../ui.js';
 
 const PRESET_LABELS = {
@@ -393,7 +394,7 @@ async function saveProfileFromModal(id) {
   const endpoint = id ? `/api/profiles/${id}` : '/api/profiles';
   await apiPost(endpoint, payload);
   closeModal();
-  toast('Perfil guardado', 'ok');
+  invalidateMetaCache(); toast('Perfil guardado', 'ok');
   await route({ preserveScroll: true });
 }
 
@@ -525,7 +526,7 @@ export async function handleSettingsArrAction(action, element) {
     const ok = await confirmModal({ title: 'Borrar perfil', message: '¿Seguro que deseas borrar este perfil?', confirm: 'Borrar', danger: true });
     if (!ok) return true;
     await apiPost(`/api/profiles/${element.dataset.id}`, { _delete: true });
-    toast('Perfil eliminado', 'ok');
+    invalidateMetaCache(); toast('Perfil eliminado', 'ok');
     await route({ preserveScroll: true });
     return true;
   }
@@ -590,13 +591,13 @@ export async function handleSettingsArrAction(action, element) {
       is_default: form.querySelector('[name="is_default"]').checked,
     });
     closeModal();
-    toast('Carpeta raíz añadida', 'ok');
+    invalidateMetaCache(); toast('Carpeta raíz añadida', 'ok');
     await route({ preserveScroll: true });
     return true;
   }
   if (action === 'arr-rf-delete') {
     await apiPost(`/api/root-folders/${element.dataset.id}`, { _delete: true });
-    toast('Carpeta eliminada', 'ok');
+    invalidateMetaCache(); toast('Carpeta eliminada', 'ok');
     await route({ preserveScroll: true });
     return true;
   }
@@ -647,13 +648,13 @@ export async function handleSettingsArrAction(action, element) {
     const color = $('#newTagColor')?.value || '#eab64b';
     if (!name) { toast('Escribe un nombre para la etiqueta', 'warn'); return true; }
     await apiPost('/api/tags', { name, color });
-    toast('Etiqueta creada', 'ok');
+    invalidateMetaCache(); toast('Etiqueta creada', 'ok');
     await route({ preserveScroll: true });
     return true;
   }
   if (action === 'arr-tag-delete') {
     await apiPost(`/api/tags/${element.dataset.id}`, { _delete: true });
-    toast('Etiqueta eliminada', 'ok');
+    invalidateMetaCache(); toast('Etiqueta eliminada', 'ok');
     await route({ preserveScroll: true });
     return true;
   }
@@ -699,4 +700,29 @@ export async function handleSettingsArrAction(action, element) {
 function stateDirtyClear() {
   const dirty = $('#settingsDirty');
   if (dirty) dirty.classList.add('hidden');
+}
+
+
+export function renderArrSection(sectionKey, data) {
+  const full = renderArrSettingsSections(data);
+  const wrap = {
+    perfiles: ['settings-profiles', 'settings-media'],
+    medios: ['settings-media', 'settings-lists'],
+    listas: ['settings-lists', '__END__'],
+  };
+  if (sectionKey === 'perfiles') {
+    const start = full.indexOf('<div class="panel section" id="settings-profiles">');
+    const end = full.indexOf('<div class="panel section" id="settings-media">');
+    return start >= 0 && end > start ? full.slice(start, end) : '';
+  }
+  if (sectionKey === 'medios') {
+    const start = full.indexOf('<div class="panel section" id="settings-media">');
+    const end = full.indexOf('<div class="panel section" id="settings-lists">');
+    return start >= 0 && end > start ? full.slice(start, end) : '';
+  }
+  if (sectionKey === 'listas') {
+    const start = full.indexOf('<div class="panel section" id="settings-lists">');
+    return start >= 0 ? full.slice(start) : '';
+  }
+  return '';
 }

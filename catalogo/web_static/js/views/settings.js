@@ -3,7 +3,7 @@ import { attentionSummary, paintAttention } from '../attention.js';
 import { esc, fmtBytes, fmtDate, fmtInt } from '../format.js';
 import { state } from '../store.js';
 import { $, badge, empty, icon, setHeader, status } from '../ui.js';
-import { fetchArrSettingsData, renderArrSettingsSections } from './settings_arr.js';
+import { fetchArrSettingsData, renderArrSection } from './settings_arr.js';
 
 const INTEGRATIONS = [
   { name: 'prowlarr', label: 'Prowlarr', prefix: 'prowlarr' },
@@ -323,37 +323,35 @@ export async function renderSettings({ signal, query } = {}) {
     </tr>`;
   }).join('');
 
-  $('#view').innerHTML = `
-    <div class="panel pad section">
-      <div class="row between" style="align-items:flex-start">
-        <div style="flex:1;min-width:280px">
-          <strong>Ajustes de TOD</strong>
-          <p class="muted tiny" style="margin:4px 0 0">Integraciones, fuentes, directorios, reproducción, seguridad, idioma, siembra y tareas. Los cambios se aplican al guardar; la URL de reproducción requiere reinicio.</p>
-        </div>
-        <div class="row">
-          <a href="#/system" title="Ver avisos en Estado" style="text-decoration:none">${attentionSummary(attention)}</a>
-          <span id="settingsDirty" class="status warn ${state.settingsDirty ? '' : 'hidden'}">Cambios sin guardar</span>
-          <button class="btn btn-primary" data-action="settings-save">${icon('check', 'sm')} Guardar configuración</button>
-        </div>
-      </div>
-      ${data.restart_required?.length ? `<div class="notice">Requieren reinicio: ${data.restart_required.map((key) => esc(items.find((item) => item.key === key)?.label || key)).join(', ')}</div>` : ''}
-      <nav class="settings-nav" aria-label="Secciones de configuración">
-        <button class="settings-tab" data-action="settings-jump" data-target="settings-integrations">Integraciones</button>
-        <button class="settings-tab" data-action="settings-jump" data-target="settings-indexers">Indexers</button>
-        <button class="settings-tab" data-action="settings-jump" data-target="settings-directories">Directorios</button>
-        <button class="settings-tab" data-action="settings-jump" data-target="settings-playback">Reproducción</button>
-        <button class="settings-tab" data-action="settings-jump" data-target="settings-security">Seguridad</button>
-        <button class="settings-tab" data-action="settings-jump" data-target="settings-language">Idioma</button>
-        <button class="settings-tab" data-action="settings-jump" data-target="settings-seed">Trackers y siembra</button>
-        <button class="settings-tab" data-action="settings-jump" data-target="settings-profiles">Perfiles</button>
-        <button class="settings-tab" data-action="settings-jump" data-target="settings-formats">Formatos</button>
-        <button class="settings-tab" data-action="settings-jump" data-target="settings-media">Medios / Naming</button>
-        <button class="settings-tab" data-action="settings-jump" data-target="settings-lists">Tags / Listas</button>
-        <button class="settings-tab" data-action="settings-jump" data-target="settings-scheduler">Tareas</button>
-      </nav>
-    </div>
+  const rawSection = query?.get('section') || 'general';
+  const sectionMap = {
+    general: 'general',
+    directorios: 'general',
+    reproduccion: 'general',
+    seguridad: 'general',
+    idioma: 'general',
+    integraciones: 'integraciones',
+    indexers: 'integraciones',
+    perfiles: 'perfiles',
+    formatos: 'perfiles',
+    medios: 'medios',
+    listas: 'listas',
+    siembra: 'siembra',
+    tareas: 'tareas',
+  };
+  const activeTab = sectionMap[rawSection] || 'general';
+  const tabs = [
+    ['general', 'General y Directorios'],
+    ['integraciones', 'Integraciones e Indexers'],
+    ['perfiles', 'Perfiles y Formatos'],
+    ['medios', 'Medios y Naming .strm'],
+    ['listas', 'Etiquetas e Import Lists'],
+    ['siembra', 'Trackers y Siembra'],
+    ['tareas', 'Tareas'],
+  ];
+  const showGlobalSave = activeTab === 'general' || activeTab === 'integraciones';
 
-    ${setupDone < setup.length ? `<div class="panel section" id="settings-setup">
+  const setupHtml = setupDone < setup.length ? `<div class="panel section" id="settings-setup">
       <div class="panel-head">
         <h2>Primeros pasos</h2>
         <span class="right tiny faint">${setupDone} de ${setup.length} listos</span>
@@ -373,7 +371,30 @@ export async function renderSettings({ signal, query } = {}) {
           </div>`).join('')}
         </div>
       </div>
-    </div>` : ''}
+    </div>` : '';
+
+  $('#view').innerHTML = `
+    <div class="panel pad section">
+      <div class="row between" style="align-items:flex-start">
+        <div style="flex:1;min-width:280px">
+          <strong>Configuración de TOD</strong>
+          <p class="muted tiny" style="margin:4px 0 0">Navega por categorías sin listas largas. Los cambios se aplican al guardar.</p>
+        </div>
+        <div class="row">
+          <a href="#/system" title="Ver avisos en Estado" style="text-decoration:none">${attentionSummary(attention)}</a>
+          <span id="settingsDirty" class="status warn ${state.settingsDirty ? '' : 'hidden'}">Cambios sin guardar</span>
+          ${showGlobalSave ? `<button class="btn btn-primary" data-action="settings-save">${icon('check', 'sm')} Guardar configuración</button>` : ''}
+        </div>
+      </div>
+      ${data.restart_required?.length ? `<div class="notice">Requieren reinicio: ${data.restart_required.map((key) => esc(items.find((item) => item.key === key)?.label || key)).join(', ')}</div>` : ''}
+      <nav class="settings-nav" role="tablist" aria-label="Secciones de configuración">
+        ${tabs.map(([id, label]) => `<button class="settings-tab ${activeTab === id ? 'active' : ''}" data-action="settings-tab" data-section="${id}" role="tab" aria-selected="${activeTab === id}">${esc(label)}</button>`).join('')}
+      </nav>
+    </div>
+    ${activeTab === 'general' ? setupHtml : ''}
+    ${activeTab === 'integraciones' ? `
+
+
 
     <div class="section" id="settings-integrations">
       <div class="panel-head"><h2>${sectionDot(attention, 'integraciones')}Integraciones</h2><span class="right tiny faint settings-hint">Prowlarr, Jackett, qBittorrent, Jellyfin, Radarr/Sonarr</span></div>
@@ -399,6 +420,8 @@ export async function renderSettings({ signal, query } = {}) {
       </div>
     </div>
 
+` : ''}
+    ${activeTab === 'general' ? `
     <div class="panel section" id="settings-directories">
       <div class="panel-head"><h2>${sectionDot(attention, 'directorios')}Directorios</h2>
         <button class="btn btn-sm btn-ghost" data-action="settings-test" data-name="directories">Comprobar todo</button>
@@ -455,6 +478,8 @@ export async function renderSettings({ signal, query } = {}) {
       </div>
     </div>
 
+` : ''}
+    ${activeTab === 'siembra' ? `
     <div class="panel section" id="settings-seed">
       <div class="panel-head">
         <h2>Trackers y siembra</h2>
@@ -514,7 +539,9 @@ export async function renderSettings({ signal, query } = {}) {
       </div>
     </div>
 
-    ${renderArrSettingsSections(arrData)}
+` : ''}
+    ${['perfiles', 'medios', 'listas'].includes(activeTab) ? renderArrSection(activeTab, arrData) : ''}
+    ${activeTab === 'tareas' ? `
 
     <div class="panel flush section" id="settings-scheduler">
       <div class="panel-head"><h2>${sectionDot(attention, 'tareas')}Tareas programadas</h2><span class="right tiny faint">${schedule.items?.length || 0} tareas</span></div>
@@ -526,6 +553,7 @@ export async function renderSettings({ signal, query } = {}) {
       </div>
     </div>
 
+` : ''}
     <div class="row between section settings-footer">
       <span class="tiny faint">Los cambios se guardan en la configuración local de TOD.</span>
     </div>
@@ -542,32 +570,9 @@ export async function renderSettings({ signal, query } = {}) {
     document.addEventListener('change', state.settingsDirtyHandler);
   }
 
-  const sections = {
-    integraciones: 'settings-integrations',
-    indexers: 'settings-indexers',
-    directorios: 'settings-directories',
-    reproduccion: 'settings-playback',
-    seguridad: 'settings-security',
-    idioma: 'settings-language',
-    siembra: 'settings-seed',
-    perfiles: 'settings-profiles',
-    formatos: 'settings-formats',
-    medios: 'settings-media',
-    listas: 'settings-lists',
-    tareas: 'settings-scheduler',
-  };
-  const target = sections[query?.get('section')];
-  if (target) {
+  const focus = query?.get('focus');
+  if (focus) {
     requestAnimationFrame(() => {
-      document.getElementById(target)?.scrollIntoView({
-        behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth',
-        block: 'start',
-      });
-      document.querySelectorAll('.settings-tab').forEach((tab) => {
-        tab.classList.toggle('active', tab.dataset.target === target);
-      });
-      const focus = query.get('focus');
-      if (!focus) return;
       const input = document.querySelector(`input[data-setting="${CSS.escape(focus)}"], select[data-setting="${CSS.escape(focus)}"]`);
       if (!input) return;
       input.closest('.settings-item')?.classList.add('attention-focus');

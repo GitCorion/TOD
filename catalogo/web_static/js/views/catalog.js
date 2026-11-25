@@ -1,7 +1,7 @@
 import { api } from '../api.js';
 import { esc, fmtBytes, fmtInt, fmtShortDate } from '../format.js';
 import { originLabel, WATCH, watchState } from '../labels.js';
-import { state } from '../store.js';
+import { cachedApi, state } from '../store.js';
 import { $, badge, barPercent, empty, icon, poster, setHeader, status, thumb } from '../ui.js';
 
 const ALL_COLS = [
@@ -61,7 +61,7 @@ function stateInfo(item) {
     return { label: 'Sin fuente', tone: 'warn', hint: 'El .strm existe, sin fuente viva' };
   }
   if (item.publication === 'pendiente' || item.downloaded || item.alive) {
-    return { label: WATCH.pending.label, tone: WATCH.pending.tone };
+    return { label: 'Sin publicar', tone: 'info', hint: 'Tiene fuente válida lista para publicar .strm' };
   }
   const watch = watchState(item);
   return { label: watch.label, tone: watch.tone };
@@ -80,9 +80,11 @@ function card(item, selected, priority) {
   const info = stateInfo(item);
   const sources = Number(item.alive || 0);
   const meta = isSeries
-    ? `${fmtInt(item.regular_episodes ?? item.episodes)} ep.`
+    ? `${fmtInt(item.regular_episodes ?? item.episodes)} ${Number(item.regular_episodes ?? item.episodes) === 1 ? 'episodio' : 'episodios'}`
     : 'Película';
-  const qBadge = item.best_quality ? ` · ${item.best_quality}` : '';
+  const qBadge = sources && item.best_quality && item.best_quality !== 'unknown'
+    ? ` · ${item.best_quality}`
+    : '';
   const sourceLabel = `${fmtInt(sources)} ${sources === 1 ? 'fuente' : 'fuentes'}`;
   const rail = coverage(item);
   return `<article class="catalog-card ${selected ? 'selected' : ''}">
@@ -114,7 +116,10 @@ function row(item, selected, cols) {
   const epRatio = isSeries
     ? `${fmtInt(item.published_aired || item.published_episodes || 0)}/${fmtInt(item.aired_episodes || item.episodes || 0)}`
     : (item.published ? '1/1' : '0/1');
-  const qText = [item.best_quality, item.best_audio].filter(Boolean).join(' · ');
+  const qText = [
+    item.best_quality && item.best_quality !== 'unknown' ? item.best_quality : '',
+    item.best_audio && item.best_audio !== 'unknown' ? item.best_audio : '',
+  ].filter(Boolean).join(' · ');
   const tagsHtml = (item.tags || []).map((t) => `<span class="tag-pill tiny" style="--tag-color:${esc(t.color || '#6b7280')}"><i aria-hidden="true"></i>${esc(t.name)}</span>`).join(' ');
 
   return `<tr class="${selected ? 'selected' : ''}" data-href="${href}">
@@ -173,7 +178,7 @@ export async function renderCatalog({ query, signal }) {
     monitored: query.get('monitored') || '',
     cutoff_unmet: query.get('cutoff_unmet') === '1',
     sort: query.get('sort') || 'popularity',
-    view: query.get('view') || 'grid',
+    view: ['table', 'list'].includes(query.get('view')) ? 'table' : 'grid',
     page: Math.max(1, Number(query.get('page')) || 1),
   };
   state.filters = filters;
@@ -204,10 +209,10 @@ export async function renderCatalog({ query, signal }) {
   });
   const [data, cfData, profData, rfData, tagData] = await Promise.all([
     api(`/api/ondemand/catalog?${params}`, { signal }),
-    api('/api/custom-filters?target=catalog', { signal }).catch(() => ({ items: [] })),
-    api('/api/profiles', { signal }).catch(() => ({ items: [] })),
-    api('/api/root-folders', { signal }).catch(() => ({ items: [] })),
-    api('/api/tags', { signal }).catch(() => ({ items: [] })),
+    cachedApi('custom-filters', () => api('/api/custom-filters?target=catalog', { signal }).catch(() => ({ items: [] }))),
+    cachedApi('profiles', () => api('/api/profiles', { signal }).catch(() => ({ items: [] }))),
+    cachedApi('root-folders', () => api('/api/root-folders', { signal }).catch(() => ({ items: [] }))),
+    cachedApi('tags', () => api('/api/tags', { signal }).catch(() => ({ items: [] }))),
   ]);
 
   const facets = data.facets || { publication: {}, download: {}, kind: {}, origin: {} };
@@ -230,10 +235,10 @@ export async function renderCatalog({ query, signal }) {
     { label: 'Series', value: 'series', count: facets.kind?.series || 0 },
   ];
   const publicationChips = [
-    { label: 'Todos', value: '', count: publicationTotal || kindTotal },
-    { label: 'Disponible', value: 'publicado', count: facets.publication?.publicado || 0 },
-    { label: 'Pendiente', value: 'pendiente', count: facets.publication?.pendiente || 0 },
-    { label: 'Sin fuente', value: 'sin_fuente', count: facets.publication?.sin_fuente || 0 },
+    { label: 'Todos', value: '', count: publicationTotal || kindTotal, hint: 'Muestra todo' },
+    { label: 'Disponible', value: 'publicado', count: facets.publication?.publicado || 0, hint: 'Ya tiene acceso .strm en Jellyfin' },
+    { label: 'Sin publicar', value: 'pendiente', count: facets.publication?.pendiente || 0, hint: 'Tiene fuente válida lista para publicar .strm' },
+    { label: 'Sin fuente', value: 'sin_fuente', count: facets.publication?.sin_fuente || 0, hint: 'Sin release vivo o válido actualmente' },
   ];
   const downloadChips = [
     { label: 'Todas', value: '', count: null },
@@ -247,14 +252,14 @@ export async function renderCatalog({ query, signal }) {
   const bulkPublication = ['pendiente', 'sin_fuente'].includes(filters.publication);
   const bulkCopy = filters.publication === 'sin_fuente'
     ? {
-        title: `${fmtInt(data.total || 0)} títulos sin fuente`,
-        text: 'TOD buscará un release para cada película y episodio.',
-        button: `Buscar fuentes en los ${fmtInt(data.total || 0)}`,
+        title: `${fmtInt(data.total || 0)} títulos sin fuente viva`,
+        text: 'TOD buscará candidatos en Prowlarr y Jackett para cada película y episodio.',
+        button: `Buscar fuentes (${fmtInt(data.total || 0)})`,
       }
     : {
-        title: `${fmtInt(data.total || 0)} títulos con fuente, pendientes`,
-        text: 'TOD comprobará las fuentes y creará su acceso.',
-        button: `Preparar los ${fmtInt(data.total || 0)}`,
+        title: `${fmtInt(data.total || 0)} títulos con fuente listos para publicar`,
+        text: 'Tienen fuente válida o fichero local pero aún no tienen .strm en Jellyfin.',
+        button: `Publicar los ${fmtInt(data.total || 0)}`,
       };
 
   const originChips = Object.entries(facets.origin || {})
@@ -264,6 +269,23 @@ export async function renderCatalog({ query, signal }) {
   const advKeys = ['download', 'origin', 'profile_id', 'quality', 'audio', 'privacy', 'tracker', 'tag', 'genre', 'root_folder', 'monitored'];
   const advancedCount = advKeys.filter((k) => Boolean(filters[k])).length + (filters.incomplete ? 1 : 0) + (filters.cutoff_unmet ? 1 : 0);
 
+  const activeChips = [
+    filters.download ? { label: (downloadChips.find((c) => c.value === filters.download) || {}).label || filters.download, key: 'download' } : null,
+    filters.origin ? { label: originLabel(filters.origin), key: 'origin' } : null,
+    filters.profile_id ? { label: `Perfil: ${(profData.items || []).find((p) => String(p.id) === String(filters.profile_id))?.name || filters.profile_id}`, key: 'profile_id' } : null,
+    filters.quality ? { label: `Calidad: ${filters.quality}`, key: 'quality' } : null,
+    filters.audio ? { label: `Audio: ${filters.audio}`, key: 'audio' } : null,
+    filters.privacy ? { label: filters.privacy === 'private' ? 'Solo privados' : 'Solo públicos', key: 'privacy' } : null,
+    filters.tracker ? { label: `Tracker: ${filters.tracker}`, key: 'tracker' } : null,
+    filters.tag ? { label: `Tag: ${filters.tag}`, key: 'tag' } : null,
+    filters.genre ? { label: `Género: ${filters.genre}`, key: 'genre' } : null,
+    filters.root_folder ? { label: `Carpeta: ${(rfData.items || []).find((r) => String(r.id) === String(filters.root_folder))?.name || filters.root_folder}`, key: 'root_folder' } : null,
+    filters.monitored === '1' ? { label: 'En seguimiento', key: 'monitored' } : null,
+    filters.monitored === '0' ? { label: 'Sin seguimiento', key: 'monitored' } : null,
+    filters.incomplete ? { label: 'Solo incompletos', action: 'catalog-incomplete' } : null,
+    filters.cutoff_unmet ? { label: 'Cutoff Unmet', key: 'cutoff_unmet' } : null,
+  ].filter(Boolean);
+
   const hasAnyFilter = Boolean(filters.q || filters.kind || filters.publication || advancedCount);
   const clearButton = hasAnyFilter
     ? `<button class="btn btn-sm btn-ghost" data-action="catalog-clear">${icon('close', 'sm')} Limpiar filtros</button>`
@@ -271,43 +293,59 @@ export async function renderCatalog({ query, signal }) {
   const tmdbButton = filters.q
     ? `<a class="btn btn-sm" href="#/add?q=${encodeURIComponent(filters.q)}">${icon('plus', 'sm')} Añadir «${esc(filters.q)}»</a>`
     : '';
-  const resultLabel = `${fmtInt(totalGroups)} ${totalGroups === 1 ? 'título' : 'títulos'}`;
+  const noun = filters.kind === 'movie'
+    ? (totalGroups === 1 ? 'película' : 'películas')
+    : filters.kind === 'series' ? 'series' : (totalGroups === 1 ? 'título' : 'títulos');
+  const resultLabel = !totalGroups
+    ? 'Sin resultados'
+    : hasAnyFilter
+      ? `${fmtInt(totalGroups)} de ${fmtInt(filters.kind ? kindTotal : publicationTotal)} ${noun}`
+      : `${fmtInt(totalGroups)} ${noun}`;
   const customFilters = cfData.items || [];
 
   $('#view').innerHTML = `
-    <div class="library-shell">
-      <div class="library-bar">
-        <div class="library-top">
-          <div class="seg" role="tablist" aria-label="Tipo">
-            ${kindChips.map((chip) => filterChip({ label: chip.label, count: chip.count, active: filters.kind === chip.value, action: 'catalog-filter', key: 'kind', value: chip.value })).join('')}
-          </div>
+    <div class="library">
+      <div class="library-head">
+        <div class="library-bar">
           <label class="library-search">
-            <span class="sr-only">Buscar en biblioteca</span>
-            ${icon('search', 'sm')}
-            <input data-input="catalog-q" value="${esc(filters.q)}" placeholder="Buscar por título o clave" autocomplete="off">
+            ${icon('search')}
+            <input data-input="catalog-q" value="${esc(filters.q)}" placeholder="Buscar por título, serie o año" autocomplete="off" aria-label="Buscar en la biblioteca">
           </label>
-          <div class="seg seg-icons" role="tablist" aria-label="Vista">
-            <button class="seg-item ${filters.view === 'grid' ? 'active' : ''}" data-action="catalog-view" data-view="grid" aria-label="Posters" title="Vista de pósters">${icon('grid', 'sm')}</button>
-            <button class="seg-item ${filters.view === 'table' ? 'active' : ''}" data-action="catalog-view" data-view="table" aria-label="Tabla" title="Vista de tabla configurable">${icon('list', 'sm')}</button>
+          <div class="seg-group">
+            <span class="seg-label">Tipo</span>
+            <div class="seg" role="group" aria-label="Tipo de contenido">
+              ${kindChips.map((chip) => filterChip({
+                label: chip.label,
+                count: chip.count,
+                active: filters.kind === chip.value,
+                action: 'catalog-filter',
+                key: 'kind',
+                value: chip.value,
+              })).join('')}
+            </div>
+          </div>
+          <div class="view-toggle" role="group" aria-label="Vista de la biblioteca">
+            <button class="btn btn-icon ${filters.view === 'grid' ? 'active' : ''}" data-action="catalog-view" data-view="grid" aria-label="Vista de carteles" aria-pressed="${filters.view === 'grid'}" title="Carteles">${icon('grid')}</button>
+            <button class="btn btn-icon ${filters.view === 'table' ? 'active' : ''}" data-action="catalog-view" data-view="table" aria-label="Vista de tabla" aria-pressed="${filters.view === 'table'}" title="Tabla">${icon('list')}</button>
           </div>
         </div>
 
-        ${customFilters.length || hasAnyFilter ? `<div class="row" style="gap:6px;flex-wrap:wrap;padding:2px 0">
-          ${customFilters.map((cf) => `<span class="chip">
-            <button class="chip-btn" data-action="custom-filter-apply" data-filters="${esc(JSON.stringify(cf.filters))}">${esc(cf.name)}</button>
-            <button class="chip-del" data-action="custom-filter-delete" data-id="${cf.id}" title="Borrar filtro">${icon('close', 'sm')}</button>
-          </span>`).join('')}
-          ${hasAnyFilter ? `<button class="btn btn-sm btn-ghost" data-action="custom-filter-save">${icon('plus', 'sm')} Guardar filtro</button>` : ''}
-        </div>` : ''}
-
-        <div class="library-filters">
-          <div class="filter-line filter-availability">
-            <span class="filter-name">Disponibilidad</span>
-            <div class="seg seg-quiet">
-              ${publicationChips.map((chip) => filterChip({ label: chip.label, count: chip.count, active: filters.publication === chip.value, action: 'catalog-filter', key: 'publication', value: chip.value })).join('')}
+        <div class="library-subbar">
+          <div class="seg-group">
+            <span class="seg-label">Estado</span>
+            <div class="seg seg-quiet" role="group" aria-label="Disponibilidad">
+              ${publicationChips.map((chip) => filterChip({
+                label: chip.label,
+                count: chip.count,
+                active: filters.publication === chip.value,
+                action: 'catalog-filter',
+                key: 'publication',
+                value: chip.value,
+                hint: chip.hint,
+              })).join('')}
             </div>
           </div>
-
+          ${activeChips.map((chip) => `<button class="chip chip-clear" ${chip.action ? `data-action="${chip.action}"` : `data-action="catalog-filter" data-key="${chip.key}" data-value=""`}>${esc(chip.label)} ${icon('close', 'sm')}</button>`).join('')}
           <label class="library-sort">
             <span class="sr-only">Orden</span>
             <select data-change="catalog-sort" aria-label="Ordenar biblioteca">
@@ -318,10 +356,9 @@ export async function renderCatalog({ query, signal }) {
             </select>
           </label>
           <span class="library-total">${resultLabel}</span>
-
           ${filters.view === 'table' ? `<details class="library-more">
             <summary class="btn btn-sm btn-ghost">Columnas (${cols.size})</summary>
-            <div class="library-more-body" style="min-width:220px">
+            <div class="library-more-body" style="width:220px">
               <div class="stack" style="gap:6px">
                 ${ALL_COLS.map((c) => `<label class="inline check tiny">
                   <input type="checkbox" data-change="catalog-col" value="${c.id}" ${cols.has(c.id) ? 'checked' : ''}>
@@ -330,18 +367,17 @@ export async function renderCatalog({ query, signal }) {
               </div>
             </div>
           </details>` : ''}
-
           <details class="library-more">
             <summary class="btn btn-sm btn-ghost">${icon('filter', 'sm')} Más filtros${advancedCount ? ` (${advancedCount})` : ''}</summary>
-            <div class="library-more-body" style="min-width:min(540px, 90vw)">
+            <div class="library-more-body" style="width:min(540px, 92vw)">
               <div class="form-grid" style="margin-bottom:10px">
-                <label class="field"><span>Perfil de Calidad</span>
+                <label class="field"><span>Perfil</span>
                   <select class="input input-sm" data-change="catalog-adv" data-filter-key="profile_id">
                     <option value="">Todos</option>
                     ${(profData.items || []).map((p) => `<option value="${p.id}" ${String(filters.profile_id) === String(p.id) ? 'selected' : ''}>${esc(p.name)}</option>`).join('')}
                   </select>
                 </label>
-                <label class="field"><span>Mejor Calidad</span>
+                <label class="field"><span>Calidad</span>
                   <select class="input input-sm" data-change="catalog-adv" data-filter-key="quality">
                     <option value="">Todas</option>
                     ${['2160p', '1080p', '720p', '480p'].map((q) => `<option value="${q}" ${filters.quality === q ? 'selected' : ''}>${q}</option>`).join('')}
@@ -353,7 +389,7 @@ export async function renderCatalog({ query, signal }) {
                     ${['castellano', 'vose', 'latino', 'unknown'].map((a) => `<option value="${a}" ${filters.audio === a ? 'selected' : ''}>${a}</option>`).join('')}
                   </select>
                 </label>
-                <label class="field"><span>Privacidad Tracker</span>
+                <label class="field"><span>Privacidad</span>
                   <select class="input input-sm" data-change="catalog-adv" data-filter-key="privacy">
                     <option value="">Todas</option>
                     <option value="private" ${filters.privacy === 'private' ? 'selected' : ''}>Solo privados</option>
@@ -366,7 +402,7 @@ export async function renderCatalog({ query, signal }) {
                     ${Object.keys(facets.trackers || {}).map((tr) => `<option value="${esc(tr)}" ${filters.tracker === tr ? 'selected' : ''}>${esc(tr)} (${facets.trackers[tr]})</option>`).join('')}
                   </select>
                 </label>
-                <label class="field"><span>Etiqueta (Tag)</span>
+                <label class="field"><span>Etiqueta</span>
                   <select class="input input-sm" data-change="catalog-adv" data-filter-key="tag">
                     <option value="">Todas</option>
                     ${(tagData.items || []).map((t) => `<option value="${esc(t.name)}" ${filters.tag === t.name ? 'selected' : ''}>${esc(t.name)}</option>`).join('')}
@@ -384,13 +420,6 @@ export async function renderCatalog({ query, signal }) {
                     ${(rfData.items || []).map((rf) => `<option value="${rf.id}" ${String(filters.root_folder) === String(rf.id) ? 'selected' : ''}>${esc(rf.name)}</option>`).join('')}
                   </select>
                 </label>
-                <label class="field"><span>Seguimiento</span>
-                  <select class="input input-sm" data-change="catalog-adv" data-filter-key="monitored">
-                    <option value="">Todos</option>
-                    <option value="1" ${filters.monitored === '1' ? 'selected' : ''}>En seguimiento</option>
-                    <option value="0" ${filters.monitored === '0' ? 'selected' : ''}>Sin seguimiento</option>
-                  </select>
-                </label>
               </div>
               <div class="filter-line">
                 <span class="filter-name">Descargas</span>
@@ -404,17 +433,32 @@ export async function renderCatalog({ query, signal }) {
                   ${originChips.map((chip) => filterChip({ label: chip.label, count: chip.count, active: filters.origin === chip.value, action: 'catalog-filter', key: 'origin', value: chip.value })).join('')}
                 </div>
               </div>` : ''}
-              <div class="row" style="gap:12px;margin-top:8px;flex-wrap:wrap">
-                <button class="seg-item ${filters.incomplete ? 'active' : ''}" data-action="catalog-incomplete">Solo incompletos <b>${fmtInt(facets.incomplete || 0)}</b></button>
-                <button class="seg-item ${filters.cutoff_unmet ? 'active' : ''}" data-action="catalog-filter" data-key="cutoff_unmet" data-value="${filters.cutoff_unmet ? '' : '1'}">Solo Cutoff Unmet <b>${fmtInt(facets.cutoff_unmet || 0)}</b></button>
+              <div class="filter-line">
+                <span class="filter-name">Estado *Arr</span>
+                <div class="seg seg-quiet">
+                  <button class="seg-item ${filters.incomplete ? 'active' : ''}" data-action="catalog-incomplete">Incompletos <b>${fmtInt(facets.incomplete || 0)}</b></button>
+                  <button class="seg-item ${filters.cutoff_unmet ? 'active' : ''}" data-action="catalog-filter" data-key="cutoff_unmet" data-value="${filters.cutoff_unmet ? '' : '1'}">Cutoff Unmet <b>${fmtInt(facets.cutoff_unmet || 0)}</b></button>
+                  <button class="seg-item ${filters.monitored === '1' ? 'active' : ''}" data-action="catalog-filter" data-key="monitored" data-value="${filters.monitored === '1' ? '' : '1'}">En seguimiento</button>
+                </div>
               </div>
               <div class="filter-foot">
                 ${clearButton}
-                <button class="btn btn-sm btn-ghost" data-action="catalog-select-all">${icon('check', 'sm')} Seleccionar todo</button>
+                <div class="row" style="gap:6px;margin-left:auto">
+                  ${hasAnyFilter ? `<button class="btn btn-sm btn-ghost" data-action="custom-filter-save">${icon('plus', 'sm')} Guardar filtro</button>` : ''}
+                  <button class="btn btn-sm btn-ghost" data-action="catalog-select-all">${icon('check', 'sm')} Seleccionar todo</button>
+                </div>
               </div>
             </div>
           </details>
         </div>
+
+        ${customFilters.length ? `<div class="row" style="gap:6px;flex-wrap:wrap;margin-top:8px">
+          <span class="tiny faint">Filtros guardados:</span>
+          ${customFilters.map((cf) => `<span class="chip">
+            <button class="chip-btn" data-action="custom-filter-apply" data-filters="${esc(JSON.stringify(cf.filters))}">${esc(cf.name)}</button>
+            <button class="chip-del" data-action="custom-filter-delete" data-id="${cf.id}" title="Borrar filtro">${icon('close', 'sm')}</button>
+          </span>`).join('')}
+        </div>` : ''}
       </div>
 
       ${bulkPublication && data.total ? `<div class="bulk-bar">
@@ -425,7 +469,7 @@ export async function renderCatalog({ query, signal }) {
       ${data.items.length
         ? filters.view === 'grid'
           ? `<div class="poster-grid">${cards}</div>`
-          : `<div class="table-wrap"><table class="table--stack catalog-table">
+          : `<div class="table-wrap" style="margin-top:14px"><table class="table--stack catalog-table">
               <thead><tr>
                 <th class="pick"></th>
                 <th>Título</th>
@@ -444,7 +488,7 @@ export async function renderCatalog({ query, signal }) {
               </tr></thead>
               <tbody>${rows}</tbody>
             </table></div>`
-        : `<div class="panel">${empty('Sin resultados', 'Prueba otro filtro o busca el título en TMDB.', `<div class="row">${clearButton}${tmdbButton}</div>`)}</div>`}
+        : `<div class="panel" style="margin-top:16px">${empty('Sin resultados', 'Prueba otro filtro o busca el título en TMDB.', `<div class="row">${clearButton}${tmdbButton}</div>`)}</div>`}
 
       <div class="library-foot">
         <span class="tiny faint">Página ${data.page} de ${data.pages}. ${fmtInt(totalGroups)} resultados, 60 por página.</span>
