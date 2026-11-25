@@ -757,7 +757,7 @@ class Handler(PlaybackHandler):
                 return self._json(status_code, payload, head=head)
             raise WebError(404, "no encontrado")
 
-        if parts and parts[0] == "downloads":
+        if parts and parts[0] in ("downloads", "blocklist"):
             result = api_downloads.handle(
                 app, parts, params, body, mutate=mutate
             )
@@ -766,7 +766,7 @@ class Handler(PlaybackHandler):
                 return self._json(status_code, payload, head=head)
             raise WebError(404, "no encontrado")
 
-        if parts and parts[0] in ("language", "seed", "profiles", "custom-formats", "restrictions", "naming", "root-folders"):
+        if parts and parts[0] in ("language", "seed", "profiles", "custom-formats", "restrictions", "naming", "root-folders", "tags", "media-tags", "custom-filters", "import-lists"):
             result = api_preferences.handle(
                 app,
                 parts,

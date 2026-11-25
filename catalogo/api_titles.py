@@ -103,6 +103,14 @@ def handle(
                 )
             except Exception:
                 detail["collection"] = None
+        from . import lists as lists_mod, naming as naming_mod, profiles as profiles_mod
+        detail["profiles"] = profiles_mod.list_profiles(db)
+        detail["root_folders"] = naming_mod.list_root_folders(db)
+        detail["all_tags"] = lists_mod.list_tags(db)
+        if item.get("tmdb"):
+            detail["tags"] = lists_mod.get_media_tags(db, item["kind"], int(item["tmdb"]))
+        else:
+            detail["tags"] = []
         return 200, detail
 
     if len(parts) == 3 and parts[2] == "status" and not mutate:
@@ -263,4 +271,50 @@ def handle(
             payload={"job_id": job_id, "keys": len(keys)},
         )
         return 202, {"job_id": job_id, "job": jobs.get_job(db, job_id)}
+
+    if len(parts) == 3 and parts[2] == "settings":
+        if not mutate:
+            raise WebError(405, "usa POST")
+        from . import lists as lists_mod
+        with closing(connect(db)) as conn:
+            row = conn.execute(
+                "SELECT id, key, kind, tmdb FROM media_items WHERE id=?", (asset_id,)
+            ).fetchone()
+            if row is None:
+                raise WebError(404, "título no encontrado")
+            qp_id = (
+                int(body["quality_profile_id"])
+                if body.get("quality_profile_id") not in (None, "", 0, "0")
+                else None
+            )
+            rf_id = (
+                int(body["root_folder_id"])
+                if body.get("root_folder_id") not in (None, "", 0, "0")
+                else None
+            )
+            min_avail = str(body.get("minimum_availability") or "released")
+            if min_avail not in ("announced", "in_cinemas", "released"):
+                min_avail = "released"
+            conn.execute(
+                """
+                UPDATE media_items SET
+                    quality_profile_id = ?,
+                    root_folder_id = ?,
+                    minimum_availability = ?,
+                    updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+                WHERE id = ?
+                """,
+                (qp_id, rf_id, min_avail, asset_id),
+            )
+            conn.commit()
+        if "tag_ids" in body and row["tmdb"] and isinstance(body["tag_ids"], list):
+            lists_mod.set_media_tags(db, row["kind"], int(row["tmdb"]), body["tag_ids"])
+        ondemand.invalidate_caches()
+        return 200, {
+            "id": asset_id,
+            "quality_profile_id": qp_id,
+            "root_folder_id": rf_id,
+            "minimum_availability": min_avail,
+        }
+
     return None

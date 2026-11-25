@@ -56,6 +56,20 @@ def handle(
                 library=params.get("library") or "",
                 origin=params.get("origin") or "",
                 incomplete=params.get("incomplete") == "1",
+                profile_id=_int(params.get("profile_id"), 0) or None,
+                quality=params.get("quality") or "",
+                audio=params.get("audio") or "",
+                monitored=params.get("monitored") or "",
+                tracker=params.get("tracker") or "",
+                privacy=params.get("privacy") or "",
+                tag=params.get("tag") or "",
+                genre=params.get("genre") or "",
+                series_status=params.get("series_status") or "",
+                root_folder=params.get("root_folder") or "",
+                year_min=_int(params.get("year_min"), 0) or None,
+                year_max=_int(params.get("year_max"), 0) or None,
+                cutoff_unmet=params.get("cutoff_unmet") == "1",
+                custom_filter_id=_int(params.get("custom_filter_id"), 0) or None,
                 page=_int(params.get("page"), 1),
                 per_page=_int(params.get("per_page"), 25),
                 group=params.get("group") or "episode",
@@ -222,4 +236,56 @@ def handle(
             },
         )
         return 202, result
+
+    if parts == ["ondemand", "mass-edit"]:
+        if not mutate:
+            raise WebError(405, "usa POST")
+        from . import jellyfin, lists as lists_mod, strm_inventory
+        keys = body.get("keys") or []
+        if not isinstance(keys, list) or not keys:
+            raise WebError(400, "faltan keys")
+        try:
+            kwargs: dict[str, Any] = {
+                "monitored": body["monitored"] if "monitored" in body and body["monitored"] is not None else None,
+                "monitor_mode": body.get("monitor_mode") or None,
+                "add_tag_ids": body.get("add_tag_ids") or [],
+                "remove_tag_ids": body.get("remove_tag_ids") or [],
+                "out_dir": app.config.catalog_library,
+                "reorganize": bool(body.get("reorganize")),
+            }
+            if "quality_profile_id" in body:
+                val = body.get("quality_profile_id")
+                kwargs["quality_profile_id"] = int(val) if val not in (None, "", 0, "0") else None
+            if "root_folder_id" in body:
+                val = body.get("root_folder_id")
+                kwargs["root_folder_id"] = int(val) if val not in (None, "", 0, "0") else None
+            res = lists_mod.mass_edit_media(db, keys, **kwargs)
+        except ValueError as exc:
+            raise WebError(400, str(exc))
+        ondemand.invalidate_caches()
+        reorg = res.get("reorganized") or {}
+        if reorg.get("moved"):
+            strm_inventory.invalidate(app.config.catalog_library)
+            jellyfin.notify_updated(app.config, (reorg.get("affected_paths") or [])[:500])
+        app.audit("web.mass_edit", payload={"keys": len(keys), "movies": res["movies"], "series": res["series"]})
+        return 200, res
+
+    if parts == ["ondemand", "cutoff-unmet"] and not mutate:
+        from . import lists as lists_mod
+        return 200, lists_mod.list_cutoff_unmet(
+            db,
+            limit=_int(params.get("limit"), 200),
+            kind=params.get("kind") or "",
+        )
+
+    if parts == ["ondemand", "upgrade-cutoff"]:
+        if not mutate:
+            raise WebError(405, "usa POST")
+        from . import lists as lists_mod
+        keys = body.get("keys") or None
+        res = lists_mod.upgrade_cutoff_pointers(db, keys=keys)
+        ondemand.invalidate_caches()
+        app.audit("web.upgrade_cutoff", payload={"upgraded": res.get("upgraded", 0)})
+        return 200, res
+
     return None

@@ -95,6 +95,12 @@ DEFAULT_TASKS: tuple[TaskSpec, ...] = (
         params={"limit": 250, "delay": 8},
     ),
     TaskSpec(
+        "import-list-sync", "Listas de importación", "import-list-sync",
+        "Sincroniza listas automáticas (TMDB Colecciones, Populares, URL).",
+        interval=6 * 3600,
+        enabled=False,
+    ),
+    TaskSpec(
         "metadata", "Metadatos TMDB", "metadata",
         "Rellena póster, sinopsis y nota de títulos sin metadatos.",
         schedule="weekly", weekday=0, at="05:00",

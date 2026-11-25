@@ -2230,6 +2230,15 @@ def job_restore_strm(ctx: JobContext) -> dict[str, Any]:
     return report
 
 
+def job_import_lists(ctx: JobContext) -> dict[str, Any]:
+    from . import lists as lists_mod, ondemand
+    ctx.report("sincronizando Import Lists", progress=0.1)
+    report = lists_mod.run_enabled_import_lists(ctx.config.db_path, ctx.config)
+    ondemand.invalidate_caches()
+    ctx.report("Import Lists actualizadas", progress=0.95)
+    return report
+
+
 def job_attention(ctx: JobContext) -> dict[str, Any]:
     ctx.report("comprobando integraciones", progress=0.1)
     report = attention_run_checks(str(ctx.config.db_path), ctx.config)
@@ -2260,4 +2269,5 @@ JOB_HANDLERS = {
     "worker-cycle": job_worker_cycle,
     "bridge": job_bridge,
     "restore-strm": job_restore_strm,
+    "import-list-sync": job_import_lists,
 }

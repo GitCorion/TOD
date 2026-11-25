@@ -150,4 +150,22 @@ def handle(
                 "name": result.get("name"),
                 "enabled": bool(result.get("enable", enabled)),
             }
+
+    if parts == ["monitor", "cutoff"] and not mutate:
+        from . import lists as lists_mod
+        return 200, lists_mod.list_cutoff_unmet(
+            db,
+            limit=_int(params.get("limit"), 200),
+            kind=params.get("kind") or "",
+        )
+
+    if parts == ["monitor", "upgrade-cutoff"]:
+        if not mutate:
+            raise WebError(405, "usa POST")
+        from . import lists as lists_mod
+        res = lists_mod.upgrade_cutoff_pointers(db, keys=body.get("keys"))
+        ondemand.invalidate_caches()
+        app.audit("web.upgrade_cutoff", payload={"upgraded": res.get("upgraded", 0)})
+        return 200, res
+
     return None

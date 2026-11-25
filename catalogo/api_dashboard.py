@@ -42,9 +42,20 @@ def handle(
 
     if parts == ["calendar"] and not mutate:
         days = _int(params.get("days"), 90)
+        items = queries.calendar(
+            db,
+            days=days,
+            start=params.get("start") or None,
+            end=params.get("end") or None,
+            monitored_only=params.get("monitored") == "1",
+            kind=params.get("kind") or "",
+        )
+        inv = strm_inventory.inventory(app.config.catalog_library)["keys"]
+        for it in items:
+            it["published"] = it["key"] in inv
         return 200, {
                 "days": days,
-                "items": queries.calendar(db, days=days),
+                "items": items,
             }
 
     if parts == ["activity"] and not mutate:

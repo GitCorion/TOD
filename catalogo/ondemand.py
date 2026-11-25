@@ -311,6 +311,96 @@ def recent_published(
     return {"items": items}
 
 
+
+def _table_exists(conn, name: str) -> bool:
+    return conn.execute(
+        "SELECT 1 FROM sqlite_master WHERE type='table' AND name=?", (name,)
+    ).fetchone() is not None
+
+
+def _norm_quality_label(q: str | None) -> str:
+    txt = str(q or "").strip().lower()
+    if txt in ("4k", "uhd", "2160p"):
+        return "2160p"
+    if txt in ("1080p", "1080", "fullhd"):
+        return "1080p"
+    if txt in ("720p", "720", "hd"):
+        return "720p"
+    if txt in ("480p", "sd", "dvdrip"):
+        return "480p"
+    return txt
+
+
+def _catalog_extra_maps(db_path) -> dict[str, Any]:
+    from . import lists as lists_mod, naming as naming_mod, profiles as profiles_mod
+
+    prof_list = profiles_mod.list_profiles(db_path)
+    prof_by_id = {int(p["id"]): p for p in prof_list}
+    default_prof = next((p for p in prof_list if p.get("is_default")), prof_list[0] if prof_list else None)
+    rf_list = naming_mod.list_root_folders(db_path)
+    rf_by_id = {int(r["id"]): r for r in rf_list}
+    tags_map = lists_mod.media_tags_map(db_path)
+
+    best_rel: dict[int, dict[str, Any]] = {}
+    asset_trackers: dict[int, set[str]] = {}
+    asset_privacies: dict[int, set[str]] = {}
+    disk_bytes: dict[int, int] = {}
+    ss_map: dict[int, dict[str, Any]] = {}
+
+    with closing(connect(db_path)) as conn:
+        for row in conn.execute(
+            """
+            SELECT r.asset_id, r.quality, r.audio, r.tracker, r.privacy,
+                   r.source_type, r.size_bytes, r.seeders
+            FROM releases r
+            WHERE r.health = 'alive'
+              AND NOT EXISTS (
+                  SELECT 1 FROM tracker_policies tp
+                  WHERE tp.tracker = r.tracker AND tp.enabled = 0
+              )
+              AND NOT EXISTS (
+                  SELECT 1 FROM stream_failures sf
+                  WHERE sf.release_id = r.id
+                    AND sf.until > strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+              )
+            ORDER BY COALESCE(r.size_bytes, 999999999999) ASC, COALESCE(r.seeders, 0) DESC
+            """
+        ).fetchall():
+            aid = int(row["asset_id"])
+            if row["tracker"]:
+                asset_trackers.setdefault(aid, set()).add(str(row["tracker"]))
+            if row["privacy"]:
+                asset_privacies.setdefault(aid, set()).add(str(row["privacy"]))
+            if aid not in best_rel:
+                best_rel[aid] = dict(row)
+        for row in conn.execute(
+            """
+            SELECT asset_id, COALESCE(SUM(size_bytes), 0) AS total_bytes
+            FROM torrent_files
+            WHERE asset_id IS NOT NULL
+              AND storage_location = 'LOCAL_DISK'
+              AND state IN ('ready', 'seeding', 'complete')
+            GROUP BY asset_id
+            """
+        ).fetchall():
+            disk_bytes[int(row["asset_id"])] = int(row["total_bytes"] or 0)
+        if _table_exists(conn, "series_settings"):
+            for row in conn.execute("SELECT * FROM series_settings").fetchall():
+                ss_map[int(row["tmdb"])] = dict(row)
+
+    return {
+        "prof_by_id": prof_by_id,
+        "default_prof": default_prof,
+        "rf_by_id": rf_by_id,
+        "tags_map": tags_map,
+        "best_rel": best_rel,
+        "asset_trackers": asset_trackers,
+        "asset_privacies": asset_privacies,
+        "disk_bytes": disk_bytes,
+        "ss_map": ss_map,
+    }
+
+
 def _catalog_base(db_path, config) -> list[dict[str, Any]]:
     """Estado calculado de todo el catálogo, sin filtros de texto ni tipo."""
     inventory = strm_inventory.inventory(config.catalog_library)
@@ -321,6 +411,16 @@ def _catalog_base(db_path, config) -> list[dict[str, Any]]:
     # La lista usa el último estado sincronizado de qBittorrent: no bloquea
     # la lectura del catálogo con una llamada de red.
     torrents = _ondemand_torrents(db_path)
+    extra = _catalog_extra_maps(db_path)
+    prof_by_id = extra["prof_by_id"]
+    default_prof = extra["default_prof"]
+    rf_by_id = extra["rf_by_id"]
+    tags_map = extra["tags_map"]
+    best_rel_map = extra["best_rel"]
+    asset_trackers = extra["asset_trackers"]
+    asset_privacies = extra["asset_privacies"]
+    disk_bytes_map = extra["disk_bytes"]
+    ss_map = extra["ss_map"]
 
     with closing(connect(db_path)) as conn:
         rows = conn.execute(
@@ -330,6 +430,8 @@ def _catalog_base(db_path, config) -> list[dict[str, Any]]:
                    m.library_added_at, m.poster_path, m.overview,
                    m.vote_average, m.library_added, m.release_date, m.air_date,
                    m.monitored, m.origin, m.origin_detail, m.origin_at,
+                   m.quality_profile_id, m.root_folder_id, m.genres,
+                   m.series_status, m.series_type, m.is_anime,
                    COALESCE(m.popularity,0) AS popularity,
                    (SELECT COUNT(*) FROM releases r WHERE r.asset_id=m.id)
                        AS releases,
@@ -375,8 +477,39 @@ def _catalog_base(db_path, config) -> list[dict[str, Any]]:
             and available
             and not is_special
         )
+        aid = int(item["id"])
+        ss = ss_map.get(int(item["tmdb"])) if item.get("kind") == "series" and item.get("tmdb") else None
+        eff_qp_id = item.get("quality_profile_id") or (ss.get("quality_profile_id") if ss else None)
+        eff_prof = prof_by_id.get(int(eff_qp_id)) if eff_qp_id and int(eff_qp_id) in prof_by_id else default_prof
+        eff_rf_id = item.get("root_folder_id") or (ss.get("root_folder_id") if ss else None)
+        eff_rf = rf_by_id.get(int(eff_rf_id)) if eff_rf_id and int(eff_rf_id) in rf_by_id else None
+        best_r = best_rel_map.get(aid)
+        best_q = _norm_quality_label(best_r.get("quality")) if best_r else None
+        best_a = str(best_r.get("audio") or "").lower() if best_r else None
+        cutoff_unmet = False
+        if best_r and eff_prof and eff_prof.get("cutoff_quality") and not has_file:
+            order = eff_prof.get("quality_order") or []
+            norm_order = [_norm_quality_label(x) for x in order]
+            cq = _norm_quality_label(eff_prof["cutoff_quality"])
+            if cq in norm_order and best_q in norm_order:
+                cutoff_unmet = norm_order.index(best_q) > norm_order.index(cq)
+        t_key = (item.get("kind"), int(item["tmdb"])) if item.get("tmdb") else None
+        item_tags = tags_map.get(t_key, []) if t_key else []
+
         item.update(
             {
+                "profile_id": eff_prof.get("id") if eff_prof else None,
+                "profile_name": eff_prof.get("name") if eff_prof else None,
+                "root_folder_id": eff_rf.get("id") if eff_rf else None,
+                "root_folder_name": eff_rf.get("name") if eff_rf else None,
+                "tags": item_tags,
+                "best_quality": best_q,
+                "best_audio": best_a,
+                "best_source_type": best_r.get("source_type") if best_r else None,
+                "trackers": sorted(asset_trackers.get(aid, set())),
+                "privacies": sorted(asset_privacies.get(aid, set())),
+                "disk_bytes": disk_bytes_map.get(aid, 0),
+                "cutoff_unmet": cutoff_unmet,
                 "publication": pub_state,
                 "published": published,
                 "library_added": library_added,
@@ -434,6 +567,20 @@ def catalog(
     library: str = "",
     origin: str = "",
     incomplete: bool = False,
+    profile_id: int | None = None,
+    quality: str = "",
+    audio: str = "",
+    monitored: str = "",
+    tracker: str = "",
+    privacy: str = "",
+    tag: str = "",
+    genre: str = "",
+    series_status: str = "",
+    root_folder: str = "",
+    year_min: int | None = None,
+    year_max: int | None = None,
+    cutoff_unmet: bool = False,
+    custom_filter_id: int | None = None,
     page: int = 1,
     per_page: int = PAGE_SIZE,
     group: str = "episode",
@@ -450,6 +597,29 @@ def catalog(
     group = "series" if group == "series" else "episode"
     # La lista se calcula desde la base local y se cachea 30 s; `qbit` y
     # `arr` se mantienen en la firma por compatibilidad con las rutas.
+    if custom_filter_id:
+        from . import lists as lists_mod
+        cf = next((f for f in lists_mod.list_custom_filters(db_path) if f["id"] == int(custom_filter_id)), None)
+        if cf and isinstance(cf.get("filters"), dict):
+            flt = cf["filters"]
+            q = q or str(flt.get("q") or "")
+            kind = kind or str(flt.get("kind") or "")
+            publication = publication or str(flt.get("publication") or "")
+            download = download or str(flt.get("download") or "")
+            library = library or str(flt.get("library") or "")
+            origin = origin or str(flt.get("origin") or "")
+            incomplete = incomplete or bool(flt.get("incomplete"))
+            profile_id = profile_id or (int(flt["profile_id"]) if flt.get("profile_id") else None)
+            quality = quality or str(flt.get("quality") or "")
+            audio = audio or str(flt.get("audio") or "")
+            monitored = monitored or str(flt.get("monitored") or "")
+            tracker = tracker or str(flt.get("tracker") or "")
+            privacy = privacy or str(flt.get("privacy") or "")
+            tag = tag or str(flt.get("tag") or "")
+            genre = genre or str(flt.get("genre") or "")
+            series_status = series_status or str(flt.get("series_status") or "")
+            root_folder = root_folder or str(flt.get("root_folder") or "")
+            cutoff_unmet = cutoff_unmet or bool(flt.get("cutoff_unmet"))
     base = _catalog_base_cached(db_path, config)
     text = (q or "").strip().lower()
     if text:
@@ -547,6 +717,42 @@ def catalog(
         if library == "no" and item.get("in_library"):
             return False
         if incomplete and not item.get("incomplete"):
+            return False
+        if profile_id and int(item.get("profile_id") or 0) != int(profile_id):
+            return False
+        if quality:
+            qnorm = _norm_quality_label(quality)
+            if _norm_quality_label(item.get("best_quality")) != qnorm:
+                return False
+        if audio and str(item.get("best_audio") or "").lower() != audio.lower():
+            return False
+        if monitored in ("1", "true", "yes") and not item.get("monitored"):
+            return False
+        if monitored in ("0", "false", "no") and item.get("monitored"):
+            return False
+        if tracker and tracker not in (item.get("trackers") or []):
+            return False
+        if privacy and privacy not in (item.get("privacies") or []):
+            return False
+        if tag:
+            t_low = tag.lower()
+            tags_list = item.get("tags") or []
+            if not any(str(t.get("name", "")).lower() == t_low or str(t.get("id")) == tag for t in tags_list):
+                return False
+        if genre:
+            if genre.lower() not in str(item.get("genres") or "").lower():
+                return False
+        if series_status:
+            if series_status.lower() not in str(item.get("series_status") or "").lower():
+                return False
+        if root_folder:
+            if str(item.get("root_folder_id") or "") != str(root_folder) and str(item.get("root_folder_name") or "").lower() != root_folder.lower():
+                return False
+        if year_min and int(item.get("year") or 0) < int(year_min):
+            return False
+        if year_max and int(item.get("year") or 9999) > int(year_max):
+            return False
+        if cutoff_unmet and not item.get("cutoff_unmet"):
             return False
         return True
 
@@ -731,6 +937,29 @@ def _group_series(items) -> list[dict[str, Any]]:
                     first.get("origin")
                     if all(row.get("origin") == first.get("origin") for row in rows)
                     else "mixed"
+                ),
+                "profile_id": first.get("profile_id"),
+                "profile_name": first.get("profile_name"),
+                "root_folder_id": first.get("root_folder_id"),
+                "root_folder_name": first.get("root_folder_name"),
+                "genres": first.get("genres"),
+                "series_status": first.get("series_status"),
+                "series_type": first.get("series_type") or "standard",
+                "tags": first.get("tags") or [],
+                "monitored": any(bool(row.get("monitored")) for row in rows),
+                "best_quality": next((row.get("best_quality") for row in rows if row.get("best_quality")), None),
+                "best_audio": next((row.get("best_audio") for row in rows if row.get("best_audio")), None),
+                "trackers": sorted({t for row in rows for t in (row.get("trackers") or [])}),
+                "privacies": sorted({p for row in rows for p in (row.get("privacies") or [])}),
+                "disk_bytes": sum(int(row.get("disk_bytes") or 0) for row in rows),
+                "cutoff_unmet": any(bool(row.get("cutoff_unmet")) for row in rows),
+                "next_air_date": min(
+                    (
+                        str(row.get("air_date"))[:10]
+                        for row in regular_rows
+                        if row.get("available") is False and row.get("air_date")
+                    ),
+                    default=None,
                 ),
                 "origin_detail": first.get("origin_detail"),
                 "origin_at": max(
@@ -1184,10 +1413,40 @@ def series_detail(
                 conn.commit()
         except Exception:
             pass
+    from . import lists as lists_mod, naming as naming_mod, profiles as profiles_mod
+    s_settings = lists_mod.get_series_settings(db_path, tmdb)
+    extra_best = {}
+    with closing(connect(db_path)) as _c:
+        for br in _c.execute(
+            """
+            SELECT r.asset_id, r.quality, r.audio, r.source_type, r.tracker, r.is_pack
+            FROM releases r
+            JOIN media_items m ON m.id = r.asset_id
+            WHERE m.kind = 'series' AND m.tmdb = ? AND r.health = 'alive'
+            ORDER BY COALESCE(r.size_bytes, 999999999999) ASC
+            """,
+            (tmdb,),
+        ).fetchall():
+            aid = int(br["asset_id"])
+            if aid not in extra_best:
+                extra_best[aid] = dict(br)
+    for season in seasons_out:
+        for ep in season["episodes"]:
+            eid = ep.get("id")
+            if eid and int(eid) in extra_best:
+                b = extra_best[int(eid)]
+                ep["best_quality"] = b.get("quality")
+                ep["best_audio"] = b.get("audio")
+                ep["best_source_type"] = b.get("source_type")
+                ep["best_tracker"] = b.get("tracker")
     return {
         "series": series,
         "totals": totals,
         "seasons": seasons_out,
+        "settings": s_settings,
+        "profiles": profiles_mod.list_profiles(db_path),
+        "root_folders": naming_mod.list_root_folders(db_path),
+        "tags": lists_mod.list_tags(db_path),
         "tmdb_ok": bool(tmdb_data),
         "tmdb_errors": (tmdb_data or {}).get("errors") or [],
         "tmdb_url": f"https://www.themoviedb.org/tv/{tmdb}",

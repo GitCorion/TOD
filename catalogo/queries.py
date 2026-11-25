@@ -838,25 +838,51 @@ def list_events(db_path: str | Path, *, limit: int = 100) -> list[dict[str, Any]
 
 
 def calendar(
-    db_path: str | Path, *, days: int = 90, limit: int = 200
+    db_path: str | Path,
+    *,
+    days: int = 90,
+    limit: int = 500,
+    start: str | None = None,
+    end: str | None = None,
+    monitored_only: bool = False,
+    kind: str = "",
 ) -> list[dict[str, Any]]:
-    """Próximos estrenos y emisiones ya fechados en TMDB."""
+    """Estrenos y emisiones fechados en TMDB, con soporte de rango o ventana."""
     days = max(1, min(int(days), 365))
+    clauses = ["COALESCE(m.release_date, m.air_date) IS NOT NULL"]
+    params: list[Any] = []
+    if start and end:
+        clauses.append("date(COALESCE(m.release_date, m.air_date)) >= date(?)")
+        clauses.append("date(COALESCE(m.release_date, m.air_date)) <= date(?)")
+        params.extend([start[:10], end[:10]])
+    else:
+        clauses.append("date(COALESCE(m.release_date, m.air_date)) >= date('now', '-7 day')")
+        clauses.append("date(COALESCE(m.release_date, m.air_date)) <= date('now', ?)")
+        params.append(f"+{days} days")
+    if monitored_only:
+        clauses.append("m.monitored = 1")
+    if kind in ("movie", "series"):
+        clauses.append("m.kind = ?")
+        params.append(kind)
+    params.append(max(1, min(int(limit), 1000)))
     with closing(connect(db_path)) as conn:
         rows = conn.execute(
-            """
-            SELECT id, key, title, kind, tmdb, season, episode, poster_path,
-                   release_date, air_date, monitored, library_added
-            FROM media_items
-            WHERE COALESCE(release_date, air_date) IS NOT NULL
-              AND date(COALESCE(release_date, air_date)) >= date('now', '-1 day')
-              AND date(COALESCE(release_date, air_date)) <= date('now', ?)
-            ORDER BY date(COALESCE(release_date, air_date)), title
+            f"""
+            SELECT m.id, m.key, m.title, m.episode_title, m.kind, m.tmdb,
+                   m.season, m.episode, m.poster_path, m.release_date, m.air_date,
+                   m.monitored, m.library_added,
+                   EXISTS (
+                       SELECT 1 FROM releases r
+                       WHERE r.asset_id = m.id AND r.health = 'alive'
+                   ) AS has_alive
+            FROM media_items m
+            WHERE {' AND '.join(clauses)}
+            ORDER BY date(COALESCE(m.release_date, m.air_date)), m.title, m.season, m.episode
             LIMIT ?
             """,
-            (f"+{days} days", max(1, min(int(limit), 500))),
+            params,
         ).fetchall()
-    return [dict(row) for row in rows]
+    return [{**dict(row), "has_alive": bool(row["has_alive"])} for row in rows]
 
 
 def list_trackers(db_path: str | Path) -> list[dict[str, Any]]:

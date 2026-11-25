@@ -130,6 +130,93 @@ def handle(
         raise WebError(404, "no encontrado")
 
     if parts and parts[0] == "series":
+
+        if len(parts) == 3 and parts[2] == "settings":
+            from . import lists as lists_mod
+            tmdb = _int(parts[1], 0)
+            if tmdb <= 0:
+                raise WebError(400, "tmdb inválido")
+            if not mutate:
+                return 200, lists_mod.get_series_settings(db, tmdb)
+            try:
+                saved = lists_mod.save_series_settings(db, tmdb, body)
+            except ValueError as exc:
+                raise WebError(400, str(exc))
+            ondemand.invalidate_caches()
+            app.audit("web.series_settings", payload={"tmdb": tmdb, "profile": saved.get("quality_profile_id")})
+            return 200, saved
+
+        if len(parts) == 3 and parts[2] == "preset":
+            if not mutate:
+                raise WebError(405, "usa POST")
+            from . import lists as lists_mod
+            tmdb = _int(parts[1], 0)
+            preset = str(body.get("preset") or "")
+            try:
+                res = lists_mod.apply_series_monitor_preset(db, tmdb, preset)
+            except ValueError as exc:
+                raise WebError(400, str(exc))
+            ondemand.invalidate_caches()
+            app.audit("web.series_preset", payload=res)
+            return 200, res
+
+        if len(parts) == 5 and parts[2] == "season" and parts[4] == "manual-search":
+            if not mutate:
+                raise WebError(405, "usa POST")
+            tmdb = _int(parts[1], 0)
+            season = _int(parts[3], -1)
+            if tmdb <= 0 or season < 0:
+                raise WebError(400, "serie o temporada inválida")
+            with closing(connect(db)) as conn:
+                ep_rows = conn.execute(
+                    """
+                    SELECT id, key, title FROM media_items
+                    WHERE kind = 'series' AND tmdb = ? AND season = ?
+                    ORDER BY episode ASC
+                    """,
+                    (tmdb, season),
+                ).fetchall()
+                series_title = (ep_rows[0]["title"] if ep_rows else "") or f"TMDB {tmdb}"
+                anchor = ep_rows[0] if ep_rows else None
+                asset_ids = [int(r["id"]) for r in ep_rows]
+            custom_q = str(body.get("query") or "").strip() or f"{series_title} S{season:02d}"
+            sync_summary = {}
+            if anchor is not None:
+                try:
+                    sync_summary = admin.manual_search(
+                        app.config,
+                        anchor["key"],
+                        min_seeders=_int(body.get("min_seeders"), 0),
+                        no_jackett=bool(body.get("no_jackett")),
+                        query=custom_q,
+                    ).get("summary") or {}
+                except Exception as exc:
+                    sync_summary = {"errors": [str(exc)[:180]]}
+            with closing(connect(db)) as conn:
+                releases: list[dict[str, Any]] = []
+                seen_ids: set[int] = set()
+                for aid in asset_ids:
+                    for rel in queries._release_rows(conn, aid):
+                        rid = int(rel["id"])
+                        if rid in seen_ids:
+                            continue
+                        seen_ids.add(rid)
+                        releases.append(rel)
+            releases.sort(key=lambda r: (
+                0 if r.get("is_pack") else 1,
+                0 if r.get("allowed", True) else 1,
+                -(int(r.get("cf_score") or 0)),
+                -(int(r.get("seeders") or 0)),
+            ))
+            return 200, {
+                "tmdb": tmdb,
+                "season": season,
+                "title": series_title,
+                "query": custom_q,
+                "summary": sync_summary,
+                "releases": releases[:200],
+            }
+
         if len(parts) == 3 and parts[2] == "monitor":
             if not mutate:
                 raise WebError(405, "usa POST")

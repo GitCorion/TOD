@@ -302,4 +302,122 @@ def handle(
             raise WebError(400, str(exc))
         return 200, {"root_folder": saved}
 
+
+    # --- Tags ---
+    if parts == ["tags"]:
+        from . import lists as lists_mod
+        if not mutate:
+            return 200, {"items": lists_mod.list_tags(db)}
+        try:
+            saved = lists_mod.save_tag(
+                db,
+                str(body.get("name") or ""),
+                str(body.get("color") or "#6b7280"),
+            )
+        except ValueError as exc:
+            raise WebError(400, str(exc))
+        from . import ondemand
+        ondemand.invalidate_catalog()
+        return 201, {"tag": saved}
+
+    if len(parts) == 2 and parts[0] == "tags":
+        from . import lists as lists_mod, ondemand
+        tid = _int(parts[1], 0)
+        if tid <= 0:
+            raise WebError(400, "tag inválido")
+        if mutate and body.get("_delete"):
+            deleted = lists_mod.delete_tag(db, tid)
+            ondemand.invalidate_catalog()
+            return 200, {"deleted": deleted, "id": tid}
+        if mutate:
+            try:
+                saved = lists_mod.save_tag(
+                    db,
+                    str(body.get("name") or ""),
+                    str(body.get("color") or "#6b7280"),
+                    tag_id=tid,
+                )
+            except ValueError as exc:
+                raise WebError(400, str(exc))
+            ondemand.invalidate_catalog()
+            return 200, {"tag": saved}
+
+    if parts == ["media-tags"]:
+        from . import lists as lists_mod, ondemand
+        if not mutate:
+            mk = str(params.get("kind") or "movie")
+            tmdb = _int(params.get("tmdb"), 0)
+            return 200, {"items": lists_mod.get_media_tags(db, mk, tmdb)}
+        mk = str(body.get("kind") or "movie")
+        tmdb = _int(body.get("tmdb"), 0)
+        if tmdb <= 0:
+            raise WebError(400, "tmdb inválido")
+        try:
+            tags = lists_mod.set_media_tags(db, mk, tmdb, body.get("tag_ids") or [])
+        except ValueError as exc:
+            raise WebError(400, str(exc))
+        ondemand.invalidate_catalog()
+        return 200, {"items": tags}
+
+    # --- Custom Filters ---
+    if parts == ["custom-filters"]:
+        from . import lists as lists_mod
+        if not mutate:
+            return 200, {"items": lists_mod.list_custom_filters(db, target=params.get("target"))}
+        try:
+            saved = lists_mod.save_custom_filter(db, body)
+        except ValueError as exc:
+            raise WebError(400, str(exc))
+        return 201, {"filter": saved}
+
+    if len(parts) == 2 and parts[0] == "custom-filters":
+        from . import lists as lists_mod
+        fid = _int(parts[1], 0)
+        if fid <= 0:
+            raise WebError(400, "filtro inválido")
+        if mutate and body.get("_delete"):
+            return 200, {"deleted": lists_mod.delete_custom_filter(db, fid), "id": fid}
+        if mutate:
+            try:
+                return 200, {"filter": lists_mod.save_custom_filter(db, body, filter_id=fid)}
+            except ValueError as exc:
+                raise WebError(400, str(exc))
+
+    # --- Import Lists ---
+    if parts == ["import-lists"]:
+        from . import lists as lists_mod
+        if not mutate:
+            return 200, {"items": lists_mod.list_import_lists(db)}
+        try:
+            saved = lists_mod.save_import_list(db, body)
+        except ValueError as exc:
+            raise WebError(400, str(exc))
+        return 201, {"list": saved}
+
+    if len(parts) == 2 and parts[0] == "import-lists":
+        from . import lists as lists_mod
+        lid = _int(parts[1], 0)
+        if lid <= 0:
+            raise WebError(400, "lista inválida")
+        if mutate and body.get("_delete"):
+            return 200, {"deleted": lists_mod.delete_import_list(db, lid), "id": lid}
+        if mutate:
+            try:
+                return 200, {"list": lists_mod.save_import_list(db, body, list_id=lid)}
+            except ValueError as exc:
+                raise WebError(400, str(exc))
+
+    if len(parts) == 3 and parts[0] == "import-lists" and parts[2] == "run":
+        if not mutate:
+            raise WebError(405, "usa POST")
+        from . import lists as lists_mod, ondemand
+        lid = _int(parts[1], 0)
+        try:
+            res = lists_mod.run_import_list(db, app.config, lid)
+        except Exception as exc:
+            raise WebError(400, str(exc))
+        ondemand.invalidate_caches()
+        app.audit("web.import_list_run", payload={"list_id": lid, "inserted_movies": res.get("inserted_movies")})
+        return 200, res
+
     return None

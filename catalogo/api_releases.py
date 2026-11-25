@@ -122,4 +122,19 @@ def handle(
             },
         )
         return 202, result
+
+    if len(parts) == 3 and parts[2] == "blocklist":
+        if not mutate:
+            raise WebError(405, "usa POST")
+        from . import lists as lists_mod, ondemand
+        reason = str(body.get("reason") or "manual")
+        days = _int(body.get("days"), 3650)
+        try:
+            res = lists_mod.block_release(db, release_id, reason=reason, days=days)
+        except ValueError as exc:
+            raise WebError(404, str(exc))
+        ondemand.invalidate_caches()
+        app.audit("web.release_blocklist", asset_id=row["asset_id"], payload=res)
+        return 200, res
+
     return None
