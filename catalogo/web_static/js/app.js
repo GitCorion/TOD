@@ -1820,7 +1820,7 @@ document.addEventListener('click', async (event) => {
           'Bloquear tracker',
           `<p class="muted" style="margin-top:0">Se marcarán todos los releases de <strong>${esc(tracker)}</strong> como bloqueados y se deshabilitará su política. No se tocan las descargas activas.</p>
            <label class="inline check" style="margin-top:10px">
-             <input type="checkbox" id="trackerDeleteStrm">
+             <input type="checkbox" id="trackerDeleteStrm" checked>
              Eliminar también los .strm de este tracker
            </label>
            <p class="tiny faint" style="margin:6px 0 0">Se borrarán las versiones que apuntan a sus releases. El .strm principal solo se elimina si el título se queda sin otra fuente ni fichero local.</p>`,

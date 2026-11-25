@@ -219,6 +219,26 @@ def _at_time(day, state: dict[str, Any], tzinfo) -> datetime:
     return datetime.combine(day, time(hour, minute), tzinfo=tzinfo)
 
 
+def _last_due_slot(
+    spec: TaskSpec, state: dict[str, Any], now: datetime
+) -> datetime | None:
+    if spec.schedule == "daily":
+        slot = _at_time(now.date(), state, now.tzinfo)
+        if slot > now:
+            slot -= timedelta(days=1)
+        return slot
+    if spec.schedule == "weekly":
+        target = int(state.get("weekday") or 0)
+        days_since = (now.weekday() - target) % 7
+        slot = _at_time(
+            now.date() - timedelta(days=days_since), state, now.tzinfo
+        )
+        if slot > now:
+            slot -= timedelta(days=7)
+        return slot
+    return None
+
+
 def compute_next(
     spec: TaskSpec,
     state: dict[str, Any],
@@ -352,12 +372,17 @@ class Scheduler:
                 continue
             job = _last_job(self.db_path, spec.kind)
             last = _last_dt(job)
-            if last is None and spec.name in self._initial_due:
-                nxt: datetime | None = self._initial_due[spec.name]
+            if spec.schedule in ("daily", "weekly"):
+                slot = _last_due_slot(spec, state, current)
+                if slot is None or (last is not None and last >= slot):
+                    continue
             else:
-                nxt = compute_next(spec, state, last, current)
-            if nxt is None or current < nxt:
-                continue
+                if last is None and spec.name in self._initial_due:
+                    nxt: datetime | None = self._initial_due[spec.name]
+                else:
+                    nxt = compute_next(spec, state, last, current)
+                if nxt is None or current < nxt:
+                    continue
             if self._cooldown.get(spec.name, 0) > current.timestamp():
                 continue
             try:

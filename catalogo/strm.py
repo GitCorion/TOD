@@ -136,6 +136,27 @@ def _audio(value: str | None) -> str:
     }.get(text, text)
 
 
+UNBLOCKED_RELEASE_SQL = (
+    "r.health <> 'blocked' "
+    "AND NOT EXISTS ("
+    "SELECT 1 FROM tracker_policies tp "
+    "WHERE tp.tracker = r.tracker AND tp.enabled = 0"
+    ")"
+)
+
+
+def _remove_empty_parents(parent: Path, root: Path) -> None:
+    stop = {root / "movies", root / "series"}
+    while (
+        parent != root
+        and parent not in stop
+        and parent.is_dir()
+        and not any(parent.iterdir())
+    ):
+        parent.rmdir()
+        parent = parent.parent
+
+
 def _available_release_ids(conn) -> set[int]:
     """Releases con un fichero local/archivo presente según qBittorrent.
 
@@ -287,8 +308,8 @@ def export_strm(
     skipped_reasons: dict[str, int] = {}
     library = build_library_index(radarr, sonarr) if skip_library else None
     conditions = [
-        """(
-            EXISTS (SELECT 1 FROM releases r WHERE r.asset_id = a.id)
+        f"""(
+            EXISTS (SELECT 1 FROM releases r WHERE r.asset_id = a.id AND {UNBLOCKED_RELEASE_SQL})
             OR EXISTS (
                 SELECT 1 FROM torrent_files f
                 WHERE f.asset_id = a.id
@@ -371,14 +392,15 @@ def export_strm(
         for asset in assets:
             asset_id = int(asset["id"])
             all_releases[asset_id] = conn.execute(
-                """
-                SELECT * FROM releases
-                WHERE asset_id = ?
+                f"""
+                SELECT r.* FROM releases r
+                WHERE r.asset_id = ?
+                  AND {UNBLOCKED_RELEASE_SQL}
                 ORDER BY
-                    CASE health WHEN 'alive' THEN 0 WHEN 'unknown' THEN 1 ELSE 2 END,
-                    COALESCE(size_bytes, 999999999999) ASC,
-                    COALESCE(seeders, 0) DESC,
-                    id DESC
+                    CASE r.health WHEN 'alive' THEN 0 WHEN 'unknown' THEN 1 ELSE 2 END,
+                    COALESCE(r.size_bytes, 999999999999) ASC,
+                    COALESCE(r.seeders, 0) DESC,
+                    r.id DESC
                 """,
                 (asset_id,),
             ).fetchall()
@@ -499,10 +521,7 @@ def export_strm(
                 continue
             path.unlink()
             pruned += 1
-            parent = path.parent
-            while parent != out and parent.is_dir() and not any(parent.iterdir()):
-                parent.rmdir()
-                parent = parent.parent
+            _remove_empty_parents(path.parent, out)
 
     return {
         "out": str(out),
@@ -562,4 +581,100 @@ def prune_key(
                 removed.append(str(path))
             except OSError:
                 continue
+    if removed:
+        _remove_empty_parents(default.parent, root)
+    return removed
+
+
+def _has_playable_source(
+    conn, asset: dict, *, available_ids: set[int], min_seeders: int = 1
+) -> bool:
+    asset_id = int(asset["id"])
+    rows = conn.execute(
+        f"""
+        SELECT r.id, r.health, r.seeders FROM releases r
+        WHERE r.asset_id = ? AND {UNBLOCKED_RELEASE_SQL}
+        """,
+        (asset_id,),
+    ).fetchall()
+    for r in rows:
+        if int(r["id"]) in available_ids or (
+            r["health"] == "alive" and int(r["seeders"] or 0) >= min_seeders
+        ):
+            return True
+    if conn.execute(
+        """
+        SELECT 1 FROM torrent_files
+        WHERE asset_id = ?
+          AND state IN ('ready', 'archived', 'seeding', 'complete')
+          AND (local_path IS NOT NULL OR library_path IS NOT NULL)
+        LIMIT 1
+        """,
+        (asset_id,),
+    ).fetchone():
+        return True
+    if conn.execute(
+        """
+        SELECT 1 FROM torrent_files f
+        JOIN torrents t ON t.id = f.torrent_id
+        WHERE f.asset_id = ?
+          AND t.category IN ('radarr', 'tv-sonarr')
+          AND t.state <> 'removed'
+          AND f.state NOT IN ('evicted', 'missing')
+        LIMIT 1
+        """,
+        (asset_id,),
+    ).fetchone():
+        return True
+    return bool(
+        conn.execute(
+            """
+            SELECT 1 FROM library_files lf
+            WHERE lf.kind = ? AND lf.tmdb = ?
+              AND (
+                  ? = 'movie'
+                  OR (lf.season = ? AND lf.episode = ?)
+              )
+            LIMIT 1
+            """,
+            (
+                asset["kind"],
+                asset["tmdb"],
+                asset["kind"],
+                int(asset["season"] or 0),
+                int(asset["episode"] or 0),
+            ),
+        ).fetchone()
+    )
+
+
+def prune_unplayable_keys(
+    db_path: Path | str,
+    out_dir: Path | str,
+    keys,
+    *,
+    min_seeders: int = 1,
+) -> list[str]:
+    """Borra los `.strm` de las claves que se quedaron sin ninguna fuente reproducible."""
+    unique_keys = list(dict.fromkeys(str(k) for k in keys if k))
+    root = Path(out_dir)
+    if not unique_keys or not root.is_dir():
+        return []
+    to_prune: list[str] = []
+    with closing(connect(db_path)) as conn:
+        available_ids = _available_release_ids(conn)
+        for key in unique_keys:
+            asset = conn.execute(
+                "SELECT * FROM media_items WHERE key = ? OR media_id = ? LIMIT 1",
+                (key, key),
+            ).fetchone()
+            if asset is None:
+                continue
+            if not _has_playable_source(
+                conn, dict(asset), available_ids=available_ids, min_seeders=min_seeders
+            ):
+                to_prune.append(key)
+    removed: list[str] = []
+    for key in to_prune:
+        removed.extend(prune_key(db_path, root, key))
     return removed

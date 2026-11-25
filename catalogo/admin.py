@@ -1424,17 +1424,26 @@ def job_sync_sources(ctx: JobContext) -> dict[str, Any]:
 
 def job_health(ctx: JobContext) -> dict[str, Any]:
     params = ctx.params
+    dry_run = _bool(params.get("dry_run"), False)
     ctx.report("consultando Prowlarr", progress=0.05)
     report = health_run(
         str(ctx.config.db_path),
         _prowlarr(ctx.config),
         limit=_int(params.get("limit"), 25),
         delay=max(0.0, _float(params.get("delay"), 1.0)),
-        dry_run=_bool(params.get("dry_run"), False),
+        dry_run=dry_run,
         tracker=params.get("tracker") or None,
         key=params.get("key") or None,
         ttl_hours=_int(params.get("ttl_hours"), 24),
     )
+    if not dry_run:
+        dead_keys = [
+            item["key"]
+            for item in report.get("items") or []
+            if item.get("health") == "dead" and item.get("key")
+        ]
+        if dead_keys:
+            report["prune_strm"] = _prune_lost_strm(ctx.config, dead_keys)
     ctx.report("salud actualizada", progress=0.95)
     return report
 
@@ -1642,6 +1651,22 @@ def _prune_arr_strm(config: Config, keys: list[str]) -> dict[str, Any]:
     return {"done_keys": len(keys), "removed": len(removed)}
 
 
+def _prune_lost_strm(config: Config, keys: list[str] | set[str]) -> dict[str, Any]:
+    """Poda el .strm si el título se quedó sin ninguna fuente reproducible."""
+    from .strm import prune_unplayable_keys
+    from .strm_inventory import invalidate
+
+    key_list = [str(k) for k in keys if k]
+    if not key_list:
+        return {"checked": 0, "removed": 0}
+    removed = prune_unplayable_keys(
+        str(config.db_path), config.catalog_library, key_list[:500]
+    )
+    if removed:
+        invalidate(config.catalog_library)
+    return {"checked": len(key_list), "removed": len(removed)}
+
+
 def job_qbit_sync(ctx: JobContext) -> dict[str, Any]:
     ctx.report("sincronizando qBittorrent", progress=0.1)
     radarr, sonarr = _arr_clients(ctx.config)
@@ -1657,11 +1682,14 @@ def job_qbit_sync(ctx: JobContext) -> dict[str, Any]:
     summary = report.public()
     keys = summary.pop("arr_keys", [])
     done = summary.pop("arr_done_keys", [])
+    lost = summary.pop("lost_keys", [])
     if not summary.get("dry_run"):
         if keys:
             summary["strm"] = _publish_arr_strm(ctx.config, keys)
         if done:
             summary["prune_strm"] = _prune_arr_strm(ctx.config, done)
+        if lost:
+            summary["prune_lost_strm"] = _prune_lost_strm(ctx.config, lost)
     ctx.report("qBittorrent sincronizado", progress=0.95)
     return summary
 
@@ -1728,7 +1756,8 @@ def job_reseed(ctx: JobContext) -> dict[str, Any]:
 
 def job_evict(ctx: JobContext) -> dict[str, Any]:
     ctx.report("liberando copias locales", progress=0.1)
-    return evict_completed(
+    dry_run = not _bool(ctx.params.get("execute"), False)
+    report = evict_completed(
         str(ctx.config.db_path),
         _qb_write(ctx.config),
         limit=_int(ctx.params.get("limit"), 10),
@@ -1743,8 +1772,17 @@ def job_evict(ctx: JobContext) -> dict[str, Any]:
                 )
             )
         ),
-        dry_run=not _bool(ctx.params.get("execute"), False),
+        dry_run=dry_run,
     )
+    if not dry_run:
+        evicted_keys = [
+            item["key"]
+            for item in report.get("evicted") or []
+            if item.get("key")
+        ]
+        if evicted_keys:
+            report["prune_strm"] = _prune_lost_strm(ctx.config, evicted_keys)
+    return report
 
 
 def job_seeding(ctx: JobContext) -> dict[str, Any]:
@@ -2104,10 +2142,13 @@ def job_worker_cycle(ctx: JobContext) -> dict[str, Any]:
         ).public()
         keys = report.pop("arr_keys", [])
         done = report.pop("arr_done_keys", [])
+        lost = report.pop("lost_keys", [])
         if keys:
             report["strm"] = _publish_arr_strm(config, keys)
         if done:
             report["prune_strm"] = _prune_arr_strm(config, done)
+        if lost:
+            report["prune_lost_strm"] = _prune_lost_strm(config, lost)
         try:
             from .seed_settings import load as load_seed_settings
 

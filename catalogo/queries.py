@@ -55,9 +55,17 @@ def _disk(path: str | Path) -> dict[str, Any]:
     }
 
 
-LIVE_SOURCE_SQL = """(
+UNBLOCKED_RELEASE_SQL = (
+    "r.health <> 'blocked' "
+    "AND NOT EXISTS ("
+    "SELECT 1 FROM tracker_policies tp "
+    "WHERE tp.tracker = r.tracker AND tp.enabled = 0"
+    ")"
+)
+
+LIVE_SOURCE_SQL = f"""(
     EXISTS (SELECT 1 FROM releases r WHERE r.asset_id=m.id
-            AND r.health='alive')
+            AND r.health='alive' AND {UNBLOCKED_RELEASE_SQL})
     OR EXISTS (SELECT 1 FROM torrent_files f WHERE f.asset_id=m.id AND (
         (f.storage_location='LOCAL_DISK' AND f.state IN ('ready','seeding'))
         OR (f.storage_location='1FICHIER' AND f.state='archived')
@@ -306,8 +314,9 @@ def overview(
 
 AVAILABILITY_SQL = {
     "live": LIVE_SOURCE_SQL,
-    "none": """(
-        NOT EXISTS (SELECT 1 FROM releases r WHERE r.asset_id=m.id)
+    "none": f"""(
+        NOT EXISTS (SELECT 1 FROM releases r WHERE r.asset_id=m.id
+                    AND {UNBLOCKED_RELEASE_SQL})
         AND NOT EXISTS (SELECT 1 FROM torrent_files f WHERE f.asset_id=m.id
                         AND f.storage_location IN ('LOCAL_DISK','1FICHIER'))
         AND NOT EXISTS (SELECT 1 FROM library_files lf WHERE lf.kind=m.kind
@@ -327,7 +336,8 @@ AVAILABILITY_SQL = {
         OR EXISTS (SELECT 1 FROM torrents t JOIN releases r ON r.id=t.release_id
                    WHERE r.asset_id=m.id AND t.state='downloading'))""",
     "unverified": f"""(
-        EXISTS (SELECT 1 FROM releases r WHERE r.asset_id=m.id)
+        EXISTS (SELECT 1 FROM releases r WHERE r.asset_id=m.id
+                AND {UNBLOCKED_RELEASE_SQL})
         AND NOT {LIVE_SOURCE_SQL}
     )""",
 }
@@ -373,20 +383,22 @@ def list_titles(
         "popularity": "COALESCE(m.popularity,0) DESC, m.id DESC",
     }.get(sort, "COALESCE(m.popularity,0) DESC, m.id DESC")
 
-    base = """
+    base = f"""
         SELECT m.id, m.key, m.kind, m.tmdb, m.title, m.year, m.season,
                m.episode, m.status, m.updated_at, m.poster_path,
-               (SELECT COUNT(*) FROM releases r WHERE r.asset_id=m.id)
+               (SELECT COUNT(*) FROM releases r WHERE r.asset_id=m.id
+                   AND {UNBLOCKED_RELEASE_SQL})
                    AS releases,
                (SELECT COUNT(*) FROM releases r WHERE r.asset_id=m.id
-                   AND r.health='alive') AS alive,
-               (SELECT MAX(r.seeders) FROM releases r WHERE r.asset_id=m.id)
+                   AND r.health='alive' AND {UNBLOCKED_RELEASE_SQL}) AS alive,
+               (SELECT MAX(r.seeders) FROM releases r WHERE r.asset_id=m.id
+                   AND {UNBLOCKED_RELEASE_SQL})
                    AS seeders,
                (SELECT r.quality FROM releases r WHERE r.asset_id=m.id
-                   AND r.health='alive'
+                   AND r.health='alive' AND {UNBLOCKED_RELEASE_SQL}
                    ORDER BY COALESCE(r.seeders,0) DESC LIMIT 1) AS quality,
                (SELECT r.audio FROM releases r WHERE r.asset_id=m.id
-                   AND r.health='alive'
+                   AND r.health='alive' AND {UNBLOCKED_RELEASE_SQL}
                    ORDER BY COALESCE(r.seeders,0) DESC LIMIT 1) AS audio,
                EXISTS (SELECT 1 FROM torrent_files f WHERE f.asset_id=m.id
                    AND f.storage_location='LOCAL_DISK'
@@ -444,7 +456,7 @@ def list_titles(
 
 def _release_rows(conn, asset_id: int) -> list[dict[str, Any]]:
     rows = conn.execute(
-        """
+        f"""
         SELECT r.id, r.tracker, r.title, r.quality, r.codec, r.audio,
                r.audio_confidence, r.size_bytes, r.seeders, r.peers,
                r.health, r.health_checked_at, r.privacy, r.source,
@@ -459,6 +471,7 @@ def _release_rows(conn, asset_id: int) -> list[dict[str, Any]]:
             ORDER BY id DESC LIMIT 1
         )
         WHERE r.asset_id = ?
+          AND {UNBLOCKED_RELEASE_SQL}
         ORDER BY
             CASE r.health WHEN 'alive' THEN 0 WHEN 'unknown' THEN 1
                  WHEN 'stale' THEN 2 WHEN 'dead' THEN 3 ELSE 4 END,

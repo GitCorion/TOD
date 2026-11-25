@@ -152,3 +152,52 @@ def test_run_now_unknown_task(tmp_path):
     sched = scheduler.Scheduler(db, None)
     with pytest.raises(ValueError):
         sched.run_now("inventada")
+
+
+def test_scheduler_triggers_daily_and_weekly_tasks(tmp_path):
+    db = _db(tmp_path)
+    for task in scheduler.DEFAULT_TASKS:
+        scheduler.save_task(db, task.name, {"enabled": False})
+    scheduler.save_task(db, "restore-strm", {"enabled": True, "at": "04:30"})
+    scheduler.save_task(
+        db, "backfill", {"enabled": True, "weekday": 6, "at": "03:00"}
+    )
+
+    class RecordingRunner:
+        def __init__(self, db_path):
+            self.db_path = db_path
+            self.calls = []
+
+        def submit(self, kind, params=None, *, requested_by=None):
+            from catalogo.db import connect
+
+            self.calls.append((kind, params, requested_by))
+            with connect(self.db_path) as conn:
+                cur = conn.execute(
+                    "INSERT INTO jobs(kind, params, state, created_at, finished_at) "
+                    "VALUES(?, '{}', 'ok', ?, ?)",
+                    (
+                        kind,
+                        self._now.isoformat(),
+                        self._now.isoformat(),
+                    ),
+                )
+                conn.commit()
+                return cur.lastrowid
+
+    runner = RecordingRunner(db)
+    # Domingo 2026-11-22 a las 04:35 UTC: ambos slots (03:00 semanal y 04:30 diario) ya vencieron.
+    runner._now = datetime(2026, 11, 22, 4, 35, tzinfo=timezone.utc)
+    sched = scheduler.Scheduler(db, runner, clock=lambda: runner._now)
+    submitted = sched.tick(runner._now)
+    names = {item["name"] for item in submitted}
+    assert names == {"restore-strm", "backfill"}
+
+    # Cinco minutos después no vuelven a dispararse en el mismo día/semana.
+    runner._now = datetime(2026, 11, 22, 4, 40, tzinfo=timezone.utc)
+    assert sched.tick(runner._now) == []
+
+    # Al día siguiente a las 04:31 solo vuelve a saltar restore-strm (diaria).
+    runner._now = datetime(2026, 11, 23, 4, 31, tzinfo=timezone.utc)
+    submitted_next = sched.tick(runner._now)
+    assert [item["name"] for item in submitted_next] == ["restore-strm"]

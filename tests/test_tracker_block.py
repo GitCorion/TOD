@@ -232,3 +232,35 @@ def test_toggling_policy_enabled_blocks_and_unblocks_releases(tmp_path):
     ).fetchone()
     assert row[0] == "blocked"
     conn.close()
+
+
+def test_prune_unplayable_keys_and_blocked_sources_hidden(tmp_path):
+    from catalogo.queries import list_titles, title_detail
+    from catalogo.strm import export_strm, prune_unplayable_keys
+
+    db, out, main, variant = _strm_setup(tmp_path, other_source=False)
+    conn = sqlite3.connect(db)
+    asset_id = conn.execute("SELECT id FROM media_items").fetchone()[0]
+    conn.execute(
+        "INSERT INTO tracker_policies(tracker, enabled) VALUES('TrackerA', 0)"
+    )
+    conn.commit()
+    conn.close()
+
+    # Con el tracker bloqueado: no debe aparecer en la ficha ni en el listado.
+    detail = title_detail(db, asset_id)
+    assert detail is not None
+    assert detail["releases"] == []
+    listing = list_titles(db)
+    assert listing["items"][0]["releases"] == 0
+    assert listing["items"][0]["availability"] == "none"
+
+    # export_strm no debe publicar .strm de un tracker bloqueado, y prune_unplayable_keys lo borra.
+    removed = prune_unplayable_keys(db, out, ["movie:tmdb:1"])
+    assert len(removed) == 2
+    assert not main.exists()
+    assert not variant.exists()
+
+    report = export_strm(db, out, prune=True)
+    assert report["written"] == 0
+    assert not main.exists()

@@ -46,6 +46,8 @@ class SyncReport:
     arr_keys: set[str] = field(default_factory=set)
     # Títulos del *arr ya completados; su .strm de TOD se puede podar.
     arr_done_keys: set[str] = field(default_factory=set)
+    # Títulos que perdieron copia local/torrent; se poda su .strm si no quedan fuentes.
+    lost_keys: set[str] = field(default_factory=set)
     dry_run: bool = False
 
     def public(self) -> dict[str, Any]:
@@ -62,9 +64,20 @@ class SyncReport:
             "by_category": dict(sorted(self.by_category.items())),
             "arr_keys": sorted(self.arr_keys)[:200],
             "arr_done_keys": sorted(self.arr_done_keys)[:200],
+            "lost_keys": sorted(self.lost_keys)[:200],
             "errors": self.errors[:20],
             "dry_run": self.dry_run,
         }
+
+
+def _record_lost_asset(conn, report: SyncReport, asset_id: int | None) -> None:
+    if asset_id is None:
+        return
+    row = conn.execute(
+        "SELECT key FROM media_items WHERE id = ?", (int(asset_id),)
+    ).fetchone()
+    if row and row["key"]:
+        report.lost_keys.add(str(row["key"]))
 
 
 def _iso_from_epoch(value: Any) -> str | None:
@@ -637,6 +650,7 @@ def _upsert_file(
             state = "archived" if storage == "1FICHIER" else "ready"
         elif file_complete and not exists and check_exists:
             state = "missing"
+            _record_lost_asset(conn, report, asset_id)
         elif progress > 0:
             state = "downloading"
         else:
@@ -983,7 +997,7 @@ def sync(
                     (int(row["id"]),),
                 )
                 files = conn.execute(
-                    "SELECT id, local_path, library_path, storage_location "
+                    "SELECT id, asset_id, local_path, library_path, storage_location "
                     "FROM torrent_files WHERE torrent_id = ?",
                     (int(row["id"]),),
                 ).fetchall()
@@ -1024,6 +1038,7 @@ def sync(
                             "WHERE id = ?",
                             (int(file_row["id"]),),
                         )
+                        _record_lost_asset(conn, report, file_row["asset_id"])
                 commitments = conn.execute(
                     "SELECT * FROM seed_commitments "
                     "WHERE state IN ('approved','active','seeding') "
