@@ -3,8 +3,12 @@ import { esc, episodeTag, fmtBytes, fmtDate, fmtInt, pct } from '../format.js';
 import { eventLabel, healthStatus, originLabel, WATCH } from '../labels.js';
 import { state } from '../store.js';
 import { $, badge, bar, empty, icon, poster, setHeader, status } from '../ui.js';
+import { renderRichReleaseRow } from './arr_actions.js';
 
 function releaseRow(release, showProgress = false) {
+  return renderRichReleaseRow(release, { showProgress, showTrackerLink: true });
+}
+function _unusedOldReleaseRow(release, showProgress = false) {
   const health = healthStatus(release.health);
   const trackerHref = release.info_url || release.source === 'prowlarr'
     ? `/api/releases/${release.id}/tracker`
@@ -130,6 +134,10 @@ export async function renderTitle({ params, query, signal }) {
     </div>
   `;
 
+  const profOpts = (data.profiles || []).map((p) => `<option value="${p.id}" ${Number(item.quality_profile_id) === Number(p.id) ? 'selected' : ''}>${esc(p.name)}</option>`).join('');
+  const rfOpts = (data.root_folders || []).map((r) => `<option value="${r.id}" ${Number(item.root_folder_id) === Number(r.id) ? 'selected' : ''}>${esc(r.name)}</option>`).join('');
+  const curTagId = data.tags?.[0]?.id || '';
+  const tagOpts = (data.all_tags || []).map((t) => `<option value="${t.id}" ${Number(curTagId) === Number(t.id) ? 'selected' : ''}>${esc(t.name)}</option>`).join('');
   const aside = `
     <div class="panel">
       <div class="panel-head"><h2>Detalles</h2></div>
@@ -140,6 +148,28 @@ export async function renderTitle({ params, query, signal }) {
         <div class="kv"><span>Ubicación</span><span>${od.has_file ? 'Radarr/Sonarr' : od.downloaded ? 'Descarga' : '—'}</span></div>
         <div class="kv"><span>Fuentes</span><span>${countLabel(alive, 'viva', 'vivas')} de ${countLabel(data.releases.length, 'versión', 'versiones')}</span></div>
         ${od.download === 'descargando' || od.download === 'pausado' || od.download === 'error' ? `<div class="kv"><span>Descarga</span><span>${od.download === 'descargando' ? status('Descargando', 'info') : od.download === 'pausado' ? status('Pausado', 'warn') : status('Error', 'bad')}</span></div>` : ''}
+      </div>
+    </div>
+    <div class="panel title-settings-box">
+      <div class="panel-head"><h2>Perfil y Ubicación (*Arr)</h2></div>
+      <div class="panel-body stack" style="gap:8px">
+        <label class="field"><span>Perfil de Calidad</span>
+          <select class="input input-sm" data-ts="quality_profile_id"><option value="">Por defecto</option>${profOpts}</select>
+        </label>
+        <label class="field"><span>Root Folder</span>
+          <select class="input input-sm" data-ts="root_folder_id"><option value="">Por defecto</option>${rfOpts}</select>
+        </label>
+        ${item.kind === 'movie' ? `<label class="field"><span>Disponibilidad mínima</span>
+          <select class="input input-sm" data-ts="minimum_availability">
+            <option value="announced" ${item.minimum_availability === 'announced' ? 'selected' : ''}>Anunciada</option>
+            <option value="in_cinemas" ${item.minimum_availability === 'in_cinemas' ? 'selected' : ''}>En cines</option>
+            <option value="released" ${(item.minimum_availability || 'released') === 'released' ? 'selected' : ''}>Estrenada / Digital</option>
+          </select>
+        </label>` : ''}
+        <label class="field"><span>Etiqueta</span>
+          <select class="input input-sm" data-ts="tag_id"><option value="">Ninguna</option>${tagOpts}</select>
+        </label>
+        <button class="btn btn-sm btn-primary" data-action="title-settings-save" data-id="${item.id}">Guardar ajustes</button>
       </div>
     </div>
   `;
@@ -187,8 +217,8 @@ export async function renderTitle({ params, query, signal }) {
         </div>
       </div>
       ${data.releases.length ? `<div class="table-wrap"><table class="table--stack releases-table">
-        <colgroup><col style="width:${showProgress ? 32 : 40}%"><col style="width:9%"><col style="width:8%"><col style="width:7%"><col style="width:9%">${showProgress ? '<col style="width:8%">' : ''}<col></colgroup>
-        <thead><tr><th>Versión</th><th>Calidad</th><th>Tamaño</th><th>Seeds</th><th>Salud</th>${showProgress ? '<th>Progreso</th>' : ''}<th></th></tr></thead>
+        
+        <thead><tr><th>Versión</th><th>Calidad</th><th class="num">Score</th><th class="num">Tamaño</th><th class="num">Seeds</th><th>Salud</th>${showProgress ? '<th>Progreso</th>' : ''}<th></th></tr></thead>
         <tbody>${data.releases.map((release) => releaseRow(release, showProgress)).join('')}</tbody>
       </table></div>` : empty('Sin versiones', 'Busca fuentes para capturar candidatos.', `<button class="btn btn-sm" data-action="manual-search" data-id="${id}" data-title="${esc(item.title || '')}">Buscar manualmente</button>`)}
     </div>

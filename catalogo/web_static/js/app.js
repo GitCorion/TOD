@@ -99,6 +99,7 @@ function renderSelectionBar() {
     bar.innerHTML = `<span><strong>${state.selection.size}</strong> ${state.selection.size === 1 ? 'seleccionado' : 'seleccionados'}</span>
       <button class="btn btn-sm btn-primary" data-action="bulk-publish">${icon('plus', 'sm')} Añadir seleccionados</button>
       <button class="btn btn-sm btn-ghost" data-action="bulk-download">${icon('download', 'sm')} Descargar ahora</button>
+      <button class="btn btn-sm btn-ghost" data-action="mass-edit-open">${icon('wrench', 'sm')} Editar en lote</button>
       <button class="btn btn-sm btn-icon" data-action="bulk-clear" aria-label="Quitar selección">${icon('close')}</button>`;
     return;
   }
@@ -261,6 +262,7 @@ const DESTINATIONS = [
   { label: 'Tareas', href: '#/jobs', hint: 'Actividad' },
   { label: 'Historial', href: '#/history', hint: 'Actividad' },
   { label: 'Siembra', href: '#/seeds', hint: 'Actividad' },
+  { label: 'Blocklist', href: '#/blocklist', hint: 'Actividad' },
   { label: 'Estado', href: '#/system', hint: 'Sistema' },
   { label: 'Configuración', href: '#/settings', hint: 'Sistema' },
   { label: 'Añadir contenido', href: '#/add', hint: 'Acción' },
@@ -680,6 +682,9 @@ async function startLibrarySeries(element) {
 /* --------------------------------------------------- búsqueda manual */
 
 function manualReleaseRow(release) {
+  return renderRichReleaseRow(release, { showProgress: false, showTrackerLink: false });
+}
+function _oldManualReleaseRow(release) {
   const health = healthStatus(release.health);
   return `<tr>
     <td data-label="Versión"><div class="cell-title"><strong>${esc(release.title || '—')}</strong><small>${esc(release.tracker || '')}, #${release.id}</small></div></td>
@@ -732,7 +737,7 @@ async function runManualSearch(id, query) {
       </div>
       ${data.forced ? `<div class="notice" style="margin-bottom:10px">Búsqueda forzada por nombre. Revisa que los resultados correspondan antes de preparar.</div>` : ''}
       ${rows ? `<div class="table-wrap"><table class="table--stack">
-        <thead><tr><th>Versión</th><th>Calidad</th><th>Tamaño</th><th>Seeds</th><th>Salud</th><th>Privacidad</th><th></th></tr></thead>
+        <thead><tr><th>Versión</th><th>Calidad</th><th class="num">Score</th><th class="num">Tamaño</th><th class="num">Seeds</th><th>Salud</th><th></th></tr></thead>
         <tbody>${rows}</tbody>
       </table></div>` : `<div class="empty"><strong>Sin resultados</strong>Prueba otro nombre o busca el título original.</div>`}
       ${summary.errors?.length ? `<p class="notice" style="margin-top:10px">${esc(summary.errors.slice(0, 2).join(' / '))}</p>` : ''}`;
@@ -998,6 +1003,8 @@ document.addEventListener('click', async (event) => {
   const action = element.dataset.action;
 
   try {
+    if (await handleSettingsArrAction(action, element)) return;
+    if (await handleArrViewAction(action, element)) return;
     if (action === 'menu') {
       $('#sidebar').classList.toggle('open');
       $('#scrim').classList.toggle('open', $('#sidebar').classList.contains('open'));
@@ -1638,29 +1645,10 @@ document.addEventListener('click', async (event) => {
       const detail = state.seriesDetail;
       if (!detail) return;
       const seasonNumber = Number(element.dataset.season || 0);
-      const seasonEntry = (detail.seasons || []).find(
-        (entry) => Number(entry.season) === seasonNumber,
-      );
-      const episodes = (seasonEntry?.episodes || []).filter(
-        (episode) => episode.in_catalog,
-      );
-      if (!episodes.length) {
-        toast('No hay episodios añadidos en esta temporada', 'warn');
-        return;
-      }
-      openModal(
-        `Buscar manualmente, temporada ${seasonNumber}`,
-        `<p class="muted" style="margin-top:0">Elige el episodio.</p>
-         <div class="stack">
-           ${episodes.map((episode) => {
-             const tag = `T${String(episode.season || 0).padStart(2, '0')}E${String(episode.episode || 0).padStart(2, '0')}`;
-             const name = episode.name || `Episodio ${episode.episode}`;
-             return `<button class="btn btn-sm" data-action="manual-search" data-id="${episode.id}" data-title="${esc(name)}">${tag}, ${esc(name)}</button>`;
-           }).join('')}
-         </div>`,
-        `<button class="btn btn-ghost" data-action="modal-close">Cerrar</button>`,
-        { wide: true },
-      );
+      const tmdb = detail.series?.tmdb;
+      const title = detail.series?.title || '';
+      if (!tmdb) return;
+      await runSeasonManualSearch(tmdb, seasonNumber, `${title} S${String(seasonNumber).padStart(2, '0')}`);
       return;
     }
     if (action === 'sync-series' || action === 'sync-season') {
@@ -1868,6 +1856,23 @@ document.addEventListener('change', (event) => {
     updateQuery({ kind: target.value }, { resetPage: false });
   } else if (target.dataset.change === 'downloads-sort') {
     updateQuery({ sort: target.value });
+  } else if (target.dataset.change === 'calendar-kind') {
+    updateQuery({ kind: target.value }, { resetPage: false });
+  } else if (target.dataset.change === 'catalog-adv') {
+    updateQuery({ [target.dataset.filterKey]: target.value });
+  } else if (target.dataset.change === 'catalog-col') {
+    const checks = Array.from(document.querySelectorAll('[data-change="catalog-col"]:checked')).map((el) => el.value);
+    localStorage.setItem('tod.catalogCols', JSON.stringify(checks));
+    route({ preserveScroll: true });
+  } else if (target.dataset.change === 'series-preset') {
+    const preset = target.value;
+    const tmdb = target.dataset.tmdb;
+    if (preset && tmdb) {
+      apiPost(`/api/series/${tmdb}/preset`, { preset }).then((res) => {
+        toast(`Preset aplicado (${res.monitored} episodios en seguimiento)`, 'ok');
+        route({ preserveScroll: true });
+      }).catch((err) => toast(err.message, 'error'));
+    }
   }
 });
 
@@ -1905,6 +1910,9 @@ document.addEventListener('submit', async (event) => {
   } else if (form.dataset.form === 'manual-search') {
     const values = formValues(form);
     await runManualSearch(form.dataset.id, values.query || '');
+  } else if (form.dataset.form === 'season-search') {
+    const values = formValues(form);
+    await runSeasonManualSearch(form.dataset.tmdb, form.dataset.season, values.query || '');
   }
 });
 

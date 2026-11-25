@@ -3,6 +3,7 @@ import { attentionSummary, paintAttention } from '../attention.js';
 import { esc, fmtBytes, fmtDate, fmtInt } from '../format.js';
 import { state } from '../store.js';
 import { $, badge, empty, icon, setHeader, status } from '../ui.js';
+import { fetchArrSettingsData, renderArrSettingsSections } from './settings_arr.js';
 
 const INTEGRATIONS = [
   { name: 'prowlarr', label: 'Prowlarr', prefix: 'prowlarr' },
@@ -207,7 +208,7 @@ function diskLine(item, key) {
 }
 
 export async function renderSettings({ signal, query } = {}) {
-  const [data, schedule, attention, seed, language, system, indexers, setupData] = await Promise.all([
+  const [data, schedule, attention, seed, language, system, indexers, setupData, arrData] = await Promise.all([
     api('/api/settings', { signal }),
     api('/api/scheduler', { signal }),
     api('/api/attention', { signal }).catch(() => null),
@@ -216,6 +217,7 @@ export async function renderSettings({ signal, query } = {}) {
     api('/api/system', { signal }).catch(() => null),
     api('/api/indexers', { signal }).catch(() => ({ items: [] })),
     api('/api/setup', { signal }).catch(() => null),
+    fetchArrSettingsData(signal),
   ]);
   state.attention = attention;
   paintAttention(attention);
@@ -343,6 +345,10 @@ export async function renderSettings({ signal, query } = {}) {
         <button class="settings-tab" data-action="settings-jump" data-target="settings-security">Seguridad</button>
         <button class="settings-tab" data-action="settings-jump" data-target="settings-language">Idioma</button>
         <button class="settings-tab" data-action="settings-jump" data-target="settings-seed">Trackers y siembra</button>
+        <button class="settings-tab" data-action="settings-jump" data-target="settings-profiles">Perfiles</button>
+        <button class="settings-tab" data-action="settings-jump" data-target="settings-formats">Formatos</button>
+        <button class="settings-tab" data-action="settings-jump" data-target="settings-media">Medios / Naming</button>
+        <button class="settings-tab" data-action="settings-jump" data-target="settings-lists">Tags / Listas</button>
         <button class="settings-tab" data-action="settings-jump" data-target="settings-scheduler">Tareas</button>
       </nav>
     </div>
@@ -508,6 +514,8 @@ export async function renderSettings({ signal, query } = {}) {
       </div>
     </div>
 
+    ${renderArrSettingsSections(arrData)}
+
     <div class="panel flush section" id="settings-scheduler">
       <div class="panel-head"><h2>${sectionDot(attention, 'tareas')}Tareas programadas</h2><span class="right tiny faint">${schedule.items?.length || 0} tareas</span></div>
       <div class="table-wrap">
@@ -542,6 +550,10 @@ export async function renderSettings({ signal, query } = {}) {
     seguridad: 'settings-security',
     idioma: 'settings-language',
     siembra: 'settings-seed',
+    perfiles: 'settings-profiles',
+    formatos: 'settings-formats',
+    medios: 'settings-media',
+    listas: 'settings-lists',
     tareas: 'settings-scheduler',
   };
   const target = sections[query?.get('section')];

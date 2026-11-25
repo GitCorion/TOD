@@ -129,7 +129,7 @@ export async function renderSeries({ params, query, signal }) {
           </div>
         </a>
       </td>
-      <td data-label="Estado">${episodeStatus(ep)}</td>
+      <td data-label="Estado">${episodeStatus(ep)}${ep.best_quality ? ` <span class="badge mono">${esc(ep.best_quality)}${ep.best_audio ? ` · ${esc(ep.best_audio)}` : ""}</span>` : ""}</td>
       ${showSources ? `<td data-label="Fuentes">${sources}</td>` : ''}
       ${showProgress ? `<td data-label="Progreso">${ep.download === 'descargando' || ep.progress ? `<div class="progress-cell">${bar(ep.progress)}<span>${pct(ep.progress)}%</span></div>` : '<span class="faint">—</span>'}</td>` : ''}
       <td class="actions" data-label="">${actions}</td>
@@ -152,6 +152,43 @@ export async function renderSeries({ params, query, signal }) {
     </button>`;
   }).join('');
 
+  const ss = data.settings || {};
+  const profOpts = (data.profiles || []).map((p) => `<option value="${p.id}" ${Number(ss.quality_profile_id) === Number(p.id) ? 'selected' : ''}>${esc(p.name)}</option>`).join('');
+  const rfOpts = (data.root_folders || []).map((r) => `<option value="${r.id}" ${Number(ss.root_folder_id) === Number(r.id) ? 'selected' : ''}>${esc(r.name)}</option>`).join('');
+  const curTagId = ss.tags?.[0]?.id || '';
+  const tagOpts = (data.tags || []).map((t) => `<option value="${t.id}" ${Number(curTagId) === Number(t.id) ? 'selected' : ''}>${esc(t.name)}</option>`).join('');
+  const settingsBar = `<div class="series-settings-bar">
+    <label class="field"><span>Perfil</span>
+      <select class="input input-sm" data-ss="quality_profile_id"><option value="">Por defecto</option>${profOpts}</select>
+    </label>
+    <label class="field"><span>Root Folder</span>
+      <select class="input input-sm" data-ss="root_folder_id"><option value="">Por defecto</option>${rfOpts}</select>
+    </label>
+    <label class="field"><span>Tipo serie</span>
+      <select class="input input-sm" data-ss="series_type">
+        <option value="standard" ${ss.series_type === 'standard' ? 'selected' : ''}>Estándar</option>
+        <option value="daily" ${ss.series_type === 'daily' ? 'selected' : ''}>Diaria (Daily)</option>
+        <option value="anime" ${ss.series_type === 'anime' ? 'selected' : ''}>Anime</option>
+      </select>
+    </label>
+    <label class="field"><span>Etiqueta</span>
+      <select class="input input-sm" data-ss="tag_id"><option value="">Ninguna</option>${tagOpts}</select>
+    </label>
+    <button class="btn btn-sm btn-primary" data-action="series-settings-save" data-tmdb="${tmdb}" style="align-self:end">Guardar ajustes</button>
+    <label class="field" style="margin-left:auto"><span>Preset seguimiento</span>
+      <select class="input input-sm" data-change="series-preset" data-tmdb="${tmdb}">
+        <option value="">— Aplicar preset —</option>
+        <option value="all">Todos los episodios</option>
+        <option value="future">Solo futuros</option>
+        <option value="missing">Solo faltantes</option>
+        <option value="first_season">Primera temporada</option>
+        <option value="latest_season">Última temporada</option>
+        <option value="pilot">Solo piloto (S01E01)</option>
+        <option value="none">Ninguno</option>
+      </select>
+    </label>
+  </div>`;
+
   $('#view').innerHTML = `
     <div class="breadcrumb"><a href="#/catalog">Biblioteca</a>${icon('chevron')}<span>${esc(series.title || 'Serie')}</span></div>
 
@@ -167,6 +204,7 @@ export async function renderSeries({ params, query, signal }) {
           </div>
           ${seriesSummary ? `<p class="tiny muted" style="margin:6px 0 0">${esc(seriesSummary)}</p>` : ''}
           ${series.overview ? `<p class="overview">${esc(series.overview)}</p>` : ''}
+          ${ss.series_status ? `<div class="tiny faint" style="margin-top:4px">Estado: ${esc(ss.series_status)}${ss.genres ? ` · ${esc(ss.genres)}` : ''}</div>` : ''}
           <div class="detail-actions">
             ${allAdded ? '' : `<button class="btn btn-primary" data-action="library-series" data-tmdb="${tmdb}" data-title="${esc(series.title || '')}" data-mode="${seriesMode}">${icon('plus')} ${seriesAction}</button>`}
             <button class="btn" data-action="sync-series" data-tmdb="${tmdb}">${icon('search')} Buscar y añadir</button>
@@ -181,6 +219,8 @@ export async function renderSeries({ params, query, signal }) {
 
     ${data.tmdb_error ? `<div class="notice section">No se pudo consultar TMDB. Se muestra solo lo que hay en la base.</div>` : ''}
     ${data.tmdb_errors?.length ? `<div class="notice section">TMDB no devolvió todas las temporadas.</div>` : ''}
+
+    ${settingsBar}
 
     <div class="record-line section">
       <span><b>${fmtInt(totals.episodes || 0)}</b> episodios</span>

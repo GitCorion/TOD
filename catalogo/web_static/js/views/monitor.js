@@ -2,7 +2,7 @@ import { api } from '../api.js';
 import { esc, fmtInt, fmtRelative, fmtShortDate, pct } from '../format.js';
 import { updateQuery } from '../router.js';
 import { state } from '../store.js';
-import { $, badge, bar, empty, icon, setHeader, status, thumb } from '../ui.js';
+import { $, badge, empty, icon, setHeader, status, thumb } from '../ui.js';
 
 function stateInfo(item) {
   switch (item.state) {
@@ -29,15 +29,86 @@ function availability(item) {
 }
 
 export async function renderMonitor({ query, signal }) {
+  const tab = query.get('tab') || 'missing';
   const filters = {
+    tab,
     q: query.get('q') || '',
     state: query.get('state') || '',
     kind: query.get('kind') || '',
     page: Math.max(1, Number(query.get('page')) || 1),
   };
+  setHeader('Pendientes (Wanted)');
+
+  if (tab === 'cutoff') {
+    const params = new URLSearchParams({ kind: filters.kind, limit: '200' });
+    const data = await api(`/api/monitor/cutoff?${params}`, { signal });
+    const items = (data.items || []).filter((it) => !filters.q || (it.title || '').toLowerCase().includes(filters.q.toLowerCase()));
+    const rows = items.map((item) => {
+      const label = item.kind === 'series'
+        ? `T${String(item.season || 0).padStart(2, '0')}E${String(item.episode || 0).padStart(2, '0')}`
+        : 'Película';
+      const href = item.kind === 'series' ? `#/series/${item.tmdb}` : `#/title/${item.id}`;
+      return `<tr>
+        <td data-label="Título">
+          <div class="episode-title-cell">
+            ${thumb(item.poster_path, item.title)}
+            <div class="cell-title">
+              <strong>${esc(item.title || '—')}</strong>
+              <small>${esc(item.year || '—')}, ${esc(label)}</small>
+            </div>
+          </div>
+        </td>
+        <td data-label="Perfil">${badge(item.profile_name || 'Por defecto')}</td>
+        <td data-label="Actual">${status(item.current_quality || '—', 'warn')}</td>
+        <td data-label="Objetivo">${status(item.cutoff_quality || '—', 'ok')}</td>
+        <td data-label="CF Score" class="num">${fmtInt(item.current_cf_score || 0)}</td>
+        <td class="actions" data-label="">
+          <button class="btn btn-sm btn-ghost" data-action="manual-search" data-id="${item.id}" data-title="${esc(item.title || '')}">${icon('search', 'sm')} Buscar mejora</button>
+          <a class="btn btn-sm btn-ghost" href="${href}">Ficha</a>
+        </td>
+      </tr>`;
+    }).join('');
+
+    $('#view').innerHTML = `
+      <div class="breadcrumb"><a href="#/catalog">Biblioteca</a>${icon('chevron')}<span>Pendientes (Wanted)</span></div>
+      <div class="tabs section" role="tablist">
+        <button class="" data-action="catalog-filter" data-key="tab" data-value="missing" role="tab">Faltantes</button>
+        <button class="active" data-action="catalog-filter" data-key="tab" data-value="cutoff" role="tab">Mejorables (Cutoff Unmet) <b>${fmtInt(items.length)}</b></button>
+        <button class="" data-action="catalog-filter" data-key="tab" data-value="upcoming" role="tab">Próximos</button>
+      </div>
+      <div class="toolbar">
+        <label class="field grow">
+          <span>Buscar</span>
+          <input data-input="monitor-q" value="${esc(filters.q)}" placeholder="Filtrar títulos mejorables" autocomplete="off">
+        </label>
+        <label class="field">
+          <span>Tipo</span>
+          <select data-change="monitor-kind">
+            <option value="" ${filters.kind === '' ? 'selected' : ''}>Todo</option>
+            <option value="movie" ${filters.kind === 'movie' ? 'selected' : ''}>Películas</option>
+            <option value="series" ${filters.kind === 'series' ? 'selected' : ''}>Series</option>
+          </select>
+        </label>
+        <button class="btn btn-primary" data-action="wanted-upgrade-cutoff">${icon('refresh', 'sm')} Actualizar punteros virtuales</button>
+      </div>
+      <div class="panel flush section">
+        <div class="panel-head">
+          <h2>Cutoff Unmet (Virtual)</h2>
+          <span class="right tiny faint">Mejora la fuente predeterminada sin descargar torrents hasta reproducir</span>
+        </div>
+        ${rows ? `<div class="table-wrap"><table class="table--stack">
+          <thead><tr><th>Título</th><th>Perfil</th><th>Calidad actual</th><th>Cutoff objetivo</th><th class="num">CF Score</th><th></th></tr></thead>
+          <tbody>${rows}</tbody>
+        </table></div>` : `<div class="pad">${empty('Todo cumple el Cutoff', 'No hay títulos por debajo de la calidad objetivo de su perfil.')}</div>`}
+      </div>
+    `;
+    return;
+  }
+
+  const effectiveState = tab === 'upcoming' ? 'pending' : (filters.state || '');
   const params = new URLSearchParams({
     q: filters.q,
-    state: filters.state,
+    state: effectiveState,
     kind: filters.kind,
     page: String(filters.page),
     per_page: '50',
@@ -46,7 +117,6 @@ export async function renderMonitor({ query, signal }) {
   const items = data.items || [];
   const summary = data.summary || {};
   state.monitorSummary = summary;
-  setHeader('Pendientes');
 
   const chips = [
     ['', 'Todos', summary.total || 0],
@@ -85,7 +155,13 @@ export async function renderMonitor({ query, signal }) {
   }).join('');
 
   $('#view').innerHTML = `
-    <div class="breadcrumb"><a href="#/catalog">Biblioteca</a>${icon('chevron')}<span>Pendientes</span></div>
+    <div class="breadcrumb"><a href="#/catalog">Biblioteca</a>${icon('chevron')}<span>Pendientes (Wanted)</span></div>
+
+    <div class="tabs section" role="tablist">
+      <button class="${tab === 'missing' ? 'active' : ''}" data-action="catalog-filter" data-key="tab" data-value="missing" role="tab">Faltantes <b>${fmtInt(summary.missing || 0)}</b></button>
+      <button class="${tab === 'cutoff' ? 'active' : ''}" data-action="catalog-filter" data-key="tab" data-value="cutoff" role="tab">Mejorables (Cutoff Unmet)</button>
+      <button class="${tab === 'upcoming' ? 'active' : ''}" data-action="catalog-filter" data-key="tab" data-value="upcoming" role="tab">Próximos <b>${fmtInt(summary.pending || 0)}</b></button>
+    </div>
 
     <div class="toolbar">
       <label class="field grow">
@@ -104,18 +180,18 @@ export async function renderMonitor({ query, signal }) {
       <button class="btn btn-icon" data-action="monitor-refresh" aria-label="Actualizar" title="Actualizar">${icon('refresh')}</button>
     </div>
 
-    <div class="panel section" style="padding:12px 14px">
+    ${tab !== 'upcoming' ? `<div class="panel section" style="padding:12px 14px">
       <div class="row between">
         <div class="chips" role="tablist" aria-label="Estado del seguimiento">
           ${chips.map(([value, label, count]) => `<button class="chip ${filters.state === value ? 'active' : ''}" data-action="monitor-filter" data-value="${value}" role="tab" aria-selected="${filters.state === value}">${esc(label)} <b>${fmtInt(count)}</b></button>`).join('')}
         </div>
         <span class="tiny faint">${fmtInt(summary.total || 0)} en seguimiento</span>
       </div>
-    </div>
+    </div>` : ''}
 
     <div class="panel flush section">
       <div class="panel-head">
-        <h2>Cola de seguimiento</h2>
+        <h2>${tab === 'upcoming' ? 'Próximos estrenos en seguimiento' : 'Cola de seguimiento'}</h2>
         <span class="right tiny faint">RSS cada 30 min, barrido diario 04:20</span>
       </div>
       ${rows ? `<div class="table-wrap"><table class="table--stack">

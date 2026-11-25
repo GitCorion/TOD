@@ -243,6 +243,7 @@ const PRIMARY_ROUTE = {
   jobs: 'downloads',
   history: 'downloads',
   seeds: 'downloads',
+  blocklist: 'downloads',
   system: 'system',
   settings: 'system',
   technical: 'system',
@@ -259,6 +260,7 @@ const SECTION_FOR_VIEW = {
   jobs: 'activity',
   history: 'activity',
   seeds: 'activity',
+  blocklist: 'activity',
   system: 'system',
   settings: 'system',
   technical: 'system',
@@ -274,6 +276,7 @@ const SECTION_TABS = {
     { label: 'Descargas', href: '#/downloads', views: ['downloads'] },
     { label: 'Tareas', href: '#/jobs', views: ['jobs', 'history'], count: 'jobs' },
     { label: 'Siembra', href: '#/seeds', views: ['seeds'] },
+    { label: 'Blocklist', href: '#/blocklist', views: ['blocklist'] },
   ],
   system: [
     { label: 'Estado', href: '#/system', views: ['system', 'technical'] },

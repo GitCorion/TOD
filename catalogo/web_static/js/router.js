@@ -1,6 +1,7 @@
 import { beginRequest, state, clearSelection } from './store.js';
 import { $, setActiveNav, setHeader, renderSectionTabs, focusTitle, focusKey, restoreFocus, pageError } from './ui.js';
 import { renderDashboard } from './views/dashboard.js';
+import { renderBlocklist } from './views/blocklist.js';
 import { renderCalendar } from './views/calendar.js';
 import { renderHistory } from './views/history.js';
 import { renderCatalog } from './views/catalog.js';
@@ -32,6 +33,7 @@ const ROUTES = {
   jobs: { title: 'Tareas', render: renderJobs },
   history: { title: 'Historial', render: renderHistory },
   seeds: { title: 'Siembra', render: renderSeeds },
+  blocklist: { title: 'Blocklist', render: renderBlocklist },
   settings: { title: 'Configuración', render: renderSettings },
   system: { title: 'Estado', render: renderSystem },
   technical: { title: 'Detalle técnico', render: renderTechnical },
