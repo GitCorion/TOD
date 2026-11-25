@@ -75,7 +75,7 @@ def handle(
                 """
                 SELECT key, kind, COALESCE(tmdb, id) AS grp
                 FROM media_items
-                WHERE monitored = 1 AND library_added = 0
+                WHERE monitored = 1
                 """
             ).fetchall()
         published = strm_inventory.inventory(

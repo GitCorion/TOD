@@ -355,6 +355,7 @@ export async function renderCatalog({ query, signal }) {
             </select>
           </label>
           <span class="library-total">${resultLabel}</span>
+          <button class="btn btn-sm btn-ghost" data-action="catalog-select-all" title="Seleccionar o deseleccionar todos los títulos de esta página">${icon('check', 'sm')} Seleccionar todo</button>
           ${filters.view === 'table' ? `<details class="library-more">
             <summary class="btn btn-sm btn-ghost">Columnas (${cols.size})</summary>
             <div class="library-more-body" style="width:220px">
@@ -470,7 +471,7 @@ export async function renderCatalog({ query, signal }) {
           ? `<div class="poster-grid">${cards}</div>`
           : `<div class="table-wrap" style="margin-top:14px"><table class="table--stack catalog-table">
               <thead><tr>
-                <th class="pick"></th>
+                <th class="pick"><input type="checkbox" data-action="catalog-select-all" aria-label="Seleccionar todos" title="Seleccionar todos"></th>
                 <th>Título</th>
                 ${cols.has('estado') ? '<th>Estado</th>' : ''}
                 ${cols.has('perfil') ? '<th>Perfil</th>' : ''}
