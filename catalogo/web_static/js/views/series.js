@@ -161,7 +161,7 @@ export async function renderSeries({ params, query, signal }) {
     <label class="field"><span>Perfil</span>
       <select class="input input-sm" data-ss="quality_profile_id"><option value="">Por defecto</option>${profOpts}</select>
     </label>
-    <label class="field"><span>Root Folder</span>
+    <label class="field"><span>Carpeta</span>
       <select class="input input-sm" data-ss="root_folder_id"><option value="">Por defecto</option>${rfOpts}</select>
     </label>
     <label class="field"><span>Tipo serie</span>

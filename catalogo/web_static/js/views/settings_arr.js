@@ -82,7 +82,7 @@ export function renderArrSettingsSections(data) {
         <strong>${esc(p.name)}</strong> ${p.is_default ? badge('por defecto', 'ok') : ''}
         <div class="tiny faint">${esc(limits || 'Sin límites extra')}</div>
       </td>
-      <td data-label="Cutoff">${p.cutoff_quality ? badge(p.cutoff_quality, 'mono') : '<span class="faint">—</span>'}</td>
+      <td data-label="Objetivo">${p.cutoff_quality ? badge(p.cutoff_quality, 'mono') : '<span class="faint">—</span>'}</td>
       <td data-label="Idioma" class="tiny">${esc(p.language_preference || 'inherit')}</td>
       <td data-label="Calidades" class="tiny faint">${esc(allowed + more)}</td>
       <td class="actions" data-label="">
@@ -150,14 +150,14 @@ export function renderArrSettingsSections(data) {
   return `
     <div class="panel section" id="settings-profiles">
       <div class="panel-head">
-        <h2>Perfiles de Calidad (Quality Profiles)</h2>
+        <h2>Perfiles de calidad</h2>
         <div class="right row" style="gap:8px">
           <button class="btn btn-sm btn-primary" data-action="arr-profile-new">${icon('plus', 'sm')} Nuevo perfil</button>
         </div>
       </div>
       <div class="panel-body" style="padding:0">
         <div class="table-wrap"><table class="table--stack">
-          <thead><tr><th>Perfil</th><th>Cutoff</th><th>Idioma</th><th>Calidades permitidas</th><th></th></tr></thead>
+          <thead><tr><th>Perfil</th><th>Objetivo</th><th>Idioma</th><th>Calidades permitidas</th><th></th></tr></thead>
           <tbody>${profileRows || '<tr><td colspan="5" class="tiny faint">Sin perfiles</td></tr>'}</tbody>
         </table></div>
       </div>
@@ -187,14 +187,14 @@ export function renderArrSettingsSections(data) {
 
     <div class="panel section" id="settings-media">
       <div class="panel-head">
-        <h2>Gestión de Medios, Root Folders y Naming</h2>
+        <h2>Carpetas y nombres de ficheros</h2>
         <div class="right row" style="gap:8px">
           <button class="btn btn-sm btn-ghost" data-action="arr-rf-new">${icon('plus', 'sm')} Nueva carpeta raíz</button>
           <button class="btn btn-sm btn-ghost" data-action="arr-reorg-preview">${icon('refresh', 'sm')} Preview Rename (.strm)</button>
         </div>
       </div>
       <div class="panel-body">
-        <h3 class="tiny muted" style="margin:0 0 8px;text-transform:uppercase;letter-spacing:.04em">Root Folders (Bibliotecas Jellyfin)</h3>
+        <h3 class="tiny muted" style="margin:0 0 8px;text-transform:uppercase;letter-spacing:.04em">Carpetas de biblioteca</h3>
         <div class="table-wrap section" style="margin-top:0"><table class="table--stack">
           <thead><tr><th>Nombre</th><th>Tipo</th><th>Ruta</th><th></th></tr></thead>
           <tbody>${rfRows || '<tr><td colspan="4" class="tiny faint">Sin carpetas raíz</td></tr>'}</tbody>
@@ -307,7 +307,7 @@ function openProfileModal(existing = null) {
       <label class="field"><span>Nombre</span>
         <input name="name" class="input" value="${esc(p.name)}" required>
       </label>
-      <label class="field"><span>Calidad Cutoff</span>
+      <label class="field"><span>Calidad objetivo</span>
         <select name="cutoff_quality" class="input">
           ${allQualities.map((q) => `<option value="${esc(q)}" ${p.cutoff_quality === q ? 'selected' : ''}>${esc(q)}</option>`).join('')}
         </select>
@@ -339,7 +339,7 @@ function openProfileModal(existing = null) {
     </div>
     <div class="row" style="gap:14px;flex-wrap:wrap">
       <label class="inline check"><input type="checkbox" name="is_default" ${p.is_default ? 'checked' : ''}> Perfil por defecto</label>
-      <label class="inline check"><input type="checkbox" name="upgrade_allowed" ${p.upgrade_allowed !== false ? 'checked' : ''}> Permitir Cutoff Virtual</label>
+      <label class="inline check"><input type="checkbox" name="upgrade_allowed" ${p.upgrade_allowed !== false ? 'checked' : ''}> Permitir mejoras automáticas</label>
       <label class="inline check"><input type="checkbox" name="prefer_smaller" ${p.prefer_smaller !== false ? 'checked' : ''}> Menor tamaño primero</label>
       <label class="inline check"><input type="checkbox" name="block_cam" ${p.block_cam !== false ? 'checked' : ''}> Bloquear CAM/TS</label>
       <label class="inline check"><input type="checkbox" name="block_disc_images" ${p.block_disc_images !== false ? 'checked' : ''}> Bloquear ISO/BDMV</label>
@@ -453,7 +453,7 @@ function openRootFolderModal() {
     <label class="inline check"><input type="checkbox" name="is_default"> Por defecto para este tipo</label>
   </form>`;
   openModal(
-    'Nueva Carpeta Raíz (Root Folder)',
+    'Nueva carpeta de biblioteca',
     body,
     `<button class="btn btn-ghost" data-action="modal-close">Cancelar</button>
      <button class="btn btn-primary" data-action="arr-rf-save">Añadir carpeta</button>`,

@@ -344,7 +344,7 @@ export async function renderSettings({ signal, query } = {}) {
     ['general', 'General y Directorios'],
     ['integraciones', 'Integraciones e Indexers'],
     ['perfiles', 'Perfiles y Formatos'],
-    ['medios', 'Medios y Naming .strm'],
+    ['medios', 'Carpetas y nombres .strm'],
     ['listas', 'Etiquetas e Import Lists'],
     ['siembra', 'Trackers y Siembra'],
     ['tareas', 'Tareas'],

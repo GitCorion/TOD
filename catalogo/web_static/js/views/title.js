@@ -151,12 +151,12 @@ export async function renderTitle({ params, query, signal }) {
       </div>
     </div>
     <div class="panel title-settings-box">
-      <div class="panel-head"><h2>Perfil y Ubicación (*Arr)</h2></div>
+      <div class="panel-head"><h2>Perfil y carpeta</h2></div>
       <div class="panel-body stack" style="gap:8px">
         <label class="field"><span>Perfil de Calidad</span>
           <select class="input input-sm" data-ts="quality_profile_id"><option value="">Por defecto</option>${profOpts}</select>
         </label>
-        <label class="field"><span>Root Folder</span>
+        <label class="field"><span>Carpeta</span>
           <select class="input input-sm" data-ts="root_folder_id"><option value="">Por defecto</option>${rfOpts}</select>
         </label>
         ${item.kind === 'movie' ? `<label class="field"><span>Disponibilidad mínima</span>

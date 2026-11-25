@@ -1636,6 +1636,9 @@ def monitored_items(
             }
         )
 
+    titles_count = len(
+        {(item["kind"], item.get("tmdb") or item["id"]) for item in items}
+    )
     summary = {
         "total": len(items),
         "missing": sum(
@@ -1662,6 +1665,7 @@ def monitored_items(
     start = (page - 1) * per_page
     return {
         "items": items[start : start + per_page],
+        "titles": titles_count,
         "total": total,
         "page": page,
         "pages": pages,

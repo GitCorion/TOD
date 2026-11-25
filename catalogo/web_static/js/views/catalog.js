@@ -11,7 +11,7 @@ const ALL_COLS = [
   { id: 'progreso', label: 'Progreso', def: true },
   { id: 'proxima', label: 'Próx. emisión', def: false },
   { id: 'tags', label: 'Etiquetas', def: true },
-  { id: 'root', label: 'Root Folder', def: false },
+  { id: 'root', label: 'Carpeta', def: false },
   { id: 'fuentes', label: 'Fuentes', def: true },
   { id: 'peso', label: 'Peso local', def: false },
   { id: 'procedencia', label: 'Procedencia', def: false },
@@ -135,13 +135,13 @@ function row(item, selected, cols) {
         </span>
       </a>
     </td>
-    ${cols.has('estado') ? `<td data-label="Estado">${status(info.label, info.tone)}${item.cutoff_unmet ? ' <span class="status warn" title="Cutoff no cumplido">Mejorable</span>' : ''}</td>` : ''}
+    ${cols.has('estado') ? `<td data-label="Estado">${status(info.label, info.tone)}${item.cutoff_unmet ? ' <span class="status warn" title="Por debajo del perfil objetivo">Mejorable</span>' : ''}</td>` : ''}
     ${cols.has('perfil') ? `<td data-label="Perfil" class="tiny">${esc(item.profile_name || '—')}</td>` : ''}
     ${cols.has('calidad') ? `<td data-label="Calidad" class="tiny">${qText ? badge(qText, 'mono') : '<span class="faint">—</span>'}</td>` : ''}
     ${cols.has('progreso') ? `<td data-label="Progreso"><div class="progress-cell">${barPercent(prog, prog >= 100 ? 'green' : '')}<span class="tiny mono">${epRatio}</span></div></td>` : ''}
     ${cols.has('proxima') ? `<td data-label="Próx. emisión" class="tiny faint nowrap">${item.next_air_date ? fmtShortDate(item.next_air_date) : '—'}</td>` : ''}
     ${cols.has('tags') ? `<td data-label="Etiquetas">${tagsHtml || '<span class="faint">—</span>'}</td>` : ''}
-    ${cols.has('root') ? `<td data-label="Root Folder" class="tiny faint">${esc(item.root_folder_name || 'Por defecto')}</td>` : ''}
+    ${cols.has('root') ? `<td data-label="Carpeta" class="tiny faint">${esc(item.root_folder_name || 'Por defecto')}</td>` : ''}
     ${cols.has('fuentes') ? `<td data-label="Fuentes" class="num"><span class="mono ${sources ? '' : 'faint'}">${fmtInt(sources)}</span></td>` : ''}
     ${cols.has('peso') ? `<td data-label="Peso" class="num tiny faint">${item.disk_bytes ? fmtBytes(item.disk_bytes) : '—'}</td>` : ''}
     ${cols.has('procedencia') ? `<td data-label="Procedencia">${item.origin ? `<span class="badge">${esc(originLabel(item.origin))}</span>` : '<span class="faint">—</span>'}</td>` : ''}
@@ -286,7 +286,7 @@ export async function renderCatalog({ query, signal }) {
     filters.monitored === '1' ? { label: 'En seguimiento', key: 'monitored' } : null,
     filters.monitored === '0' ? { label: 'Sin seguimiento', key: 'monitored' } : null,
     filters.incomplete ? { label: 'Solo incompletos', action: 'catalog-incomplete' } : null,
-    filters.cutoff_unmet ? { label: 'Cutoff Unmet', key: 'cutoff_unmet' } : null,
+    filters.cutoff_unmet ? { label: 'Mejorables', key: 'cutoff_unmet' } : null,
   ].filter(Boolean);
 
   const hasAnyFilter = Boolean(filters.q || filters.kind || filters.publication || advancedCount);
@@ -418,7 +418,7 @@ export async function renderCatalog({ query, signal }) {
                     ${Object.keys(facets.genres || {}).map((g) => `<option value="${esc(g)}" ${filters.genre === g ? 'selected' : ''}>${esc(g)}</option>`).join('')}
                   </select>
                 </label>
-                <label class="field"><span>Root Folder</span>
+                <label class="field"><span>Carpeta</span>
                   <select class="input input-sm" data-change="catalog-adv" data-filter-key="root_folder">
                     <option value="">Todos</option>
                     ${(rfData.items || []).map((rf) => `<option value="${rf.id}" ${String(filters.root_folder) === String(rf.id) ? 'selected' : ''}>${esc(rf.name)}</option>`).join('')}
@@ -438,10 +438,10 @@ export async function renderCatalog({ query, signal }) {
                 </div>
               </div>` : ''}
               <div class="filter-line">
-                <span class="filter-name">Estado *Arr</span>
+                <span class="filter-name">Seguimiento</span>
                 <div class="seg seg-quiet">
                   <button class="seg-item ${filters.incomplete ? 'active' : ''}" data-action="catalog-incomplete">Incompletos <b>${fmtInt(facets.incomplete || 0)}</b></button>
-                  <button class="seg-item ${filters.cutoff_unmet ? 'active' : ''}" data-action="catalog-filter" data-key="cutoff_unmet" data-value="${filters.cutoff_unmet ? '' : '1'}">Cutoff Unmet <b>${fmtInt(facets.cutoff_unmet || 0)}</b></button>
+                  <button class="seg-item ${filters.cutoff_unmet ? 'active' : ''}" data-action="catalog-filter" data-key="cutoff_unmet" data-value="${filters.cutoff_unmet ? '' : '1'}">Mejorables <b>${fmtInt(facets.cutoff_unmet || 0)}</b></button>
                   <button class="seg-item ${filters.monitored === '1' ? 'active' : ''}" data-action="catalog-filter" data-key="monitored" data-value="${filters.monitored === '1' ? '' : '1'}">En seguimiento</button>
                 </div>
               </div>
@@ -483,7 +483,7 @@ export async function renderCatalog({ query, signal }) {
                 ${cols.has('progreso') ? '<th>Progreso</th>' : ''}
                 ${cols.has('proxima') ? '<th>Próx. emisión</th>' : ''}
                 ${cols.has('tags') ? '<th>Etiquetas</th>' : ''}
-                ${cols.has('root') ? '<th>Root Folder</th>' : ''}
+                ${cols.has('root') ? '<th>Carpeta</th>' : ''}
                 ${cols.has('fuentes') ? '<th class="num">Fuentes</th>' : ''}
                 ${cols.has('peso') ? '<th class="num">Peso</th>' : ''}
                 ${cols.has('procedencia') ? '<th>Procedencia</th>' : ''}

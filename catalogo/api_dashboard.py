@@ -81,12 +81,7 @@ def handle(
         published = strm_inventory.inventory(
             app.config.catalog_library
         )["keys"]
-        monitored_groups = {
-            (r["kind"], int(r["grp"]))
-            for r in rows
-            if r["key"] not in published
-        }
-        monitored = len(monitored_groups)
+        monitored = sum(1 for r in rows if r["key"] not in published)
         return 200, {
                 "active": active,
                 "running": next(

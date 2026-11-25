@@ -37,7 +37,7 @@ export async function renderMonitor({ query, signal }) {
     kind: query.get('kind') || '',
     page: Math.max(1, Number(query.get('page')) || 1),
   };
-  setHeader('Seguimiento (Wanted)');
+  setHeader('Seguimiento');
 
   if (tab === 'cutoff') {
     const params = new URLSearchParams({ kind: filters.kind, limit: '200' });
@@ -61,7 +61,7 @@ export async function renderMonitor({ query, signal }) {
         <td data-label="Perfil">${badge(item.profile_name || 'Por defecto')}</td>
         <td data-label="Actual">${status(item.current_quality || '—', 'warn')}</td>
         <td data-label="Objetivo">${status(item.cutoff_quality || '—', 'ok')}</td>
-        <td data-label="CF Score" class="num">${fmtInt(item.current_cf_score || 0)}</td>
+        <td data-label="Puntos" class="num">${fmtInt(item.current_cf_score || 0)}</td>
         <td class="actions" data-label="">
           <button class="btn btn-sm btn-ghost" data-action="manual-search" data-id="${item.id}" data-title="${esc(item.title || '')}">${icon('search', 'sm')} Buscar mejora</button>
           <a class="btn btn-sm btn-ghost" href="${href}">Ficha</a>
@@ -73,7 +73,7 @@ export async function renderMonitor({ query, signal }) {
       <div class="breadcrumb"><a href="#/catalog">Biblioteca</a>${icon('chevron')}<span>Seguimiento</span></div>
       <div class="tabs section" role="tablist">
         <button class="" data-action="catalog-filter" data-key="tab" data-value="missing" role="tab">Faltantes</button>
-        <button class="active" data-action="catalog-filter" data-key="tab" data-value="cutoff" role="tab">Mejorables (Cutoff Unmet) <b>${fmtInt(items.length)}</b></button>
+        <button class="active" data-action="catalog-filter" data-key="tab" data-value="cutoff" role="tab">Mejorables <b>${fmtInt(items.length)}</b></button>
         <button class="" data-action="catalog-filter" data-key="tab" data-value="upcoming" role="tab">Próximos</button>
       </div>
       <div class="toolbar">
@@ -93,13 +93,13 @@ export async function renderMonitor({ query, signal }) {
       </div>
       <div class="panel flush section">
         <div class="panel-head">
-          <h2>Cutoff Unmet (Virtual)</h2>
+          <h2>Calidad mejorable</h2>
           <span class="right tiny faint">Mejora la fuente predeterminada sin descargar torrents hasta reproducir</span>
         </div>
         ${rows ? `<div class="table-wrap"><table class="table--stack">
-          <thead><tr><th>Título</th><th>Perfil</th><th>Calidad actual</th><th>Cutoff objetivo</th><th class="num">CF Score</th><th></th></tr></thead>
+          <thead><tr><th>Título</th><th>Perfil</th><th>Calidad actual</th><th>Objetivo</th><th class="num">Puntos</th><th></th></tr></thead>
           <tbody>${rows}</tbody>
-        </table></div>` : `<div class="pad">${empty('Todo cumple el Cutoff', 'No hay títulos por debajo de la calidad objetivo de su perfil.')}</div>`}
+        </table></div>` : `<div class="pad">${empty('Todo al día', 'No hay títulos por debajo de la calidad objetivo de su perfil.')}</div>`}
       </div>
     `;
     return;
@@ -159,7 +159,7 @@ export async function renderMonitor({ query, signal }) {
 
     <div class="tabs section" role="tablist">
       <button class="${tab === 'missing' ? 'active' : ''}" data-action="catalog-filter" data-key="tab" data-value="missing" role="tab">Faltantes <b>${fmtInt(summary.missing || 0)}</b></button>
-      <button class="${tab === 'cutoff' ? 'active' : ''}" data-action="catalog-filter" data-key="tab" data-value="cutoff" role="tab">Mejorables (Cutoff Unmet)</button>
+      <button class="${tab === 'cutoff' ? 'active' : ''}" data-action="catalog-filter" data-key="tab" data-value="cutoff" role="tab">Mejorables</button>
       <button class="${tab === 'upcoming' ? 'active' : ''}" data-action="catalog-filter" data-key="tab" data-value="upcoming" role="tab">Próximos <b>${fmtInt(summary.pending || 0)}</b></button>
     </div>
 
@@ -185,7 +185,7 @@ export async function renderMonitor({ query, signal }) {
         <div class="chips" role="tablist" aria-label="Estado del seguimiento">
           ${chips.map(([value, label, count]) => `<button class="chip ${filters.state === value ? 'active' : ''}" data-action="monitor-filter" data-value="${value}" role="tab" aria-selected="${filters.state === value}">${esc(label)} <b>${fmtInt(count)}</b></button>`).join('')}
         </div>
-        <span class="tiny faint">${fmtInt(summary.total || 0)} en seguimiento</span>
+        <span class="tiny faint">${fmtInt(summary.total || 0)} en seguimiento${data.titles ? ` (${fmtInt(data.titles)} títulos)` : ''}</span>
       </div>
     </div>` : ''}
 

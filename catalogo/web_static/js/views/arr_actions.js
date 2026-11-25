@@ -97,7 +97,7 @@ export async function openMassEditModal() {
           ${profiles.map((p) => `<option value="${p.id}">${esc(p.name)}</option>`).join('')}
         </select>
       </label>
-      <label class="field"><span>Root Folder (Biblioteca)</span>
+      <label class="field"><span>Carpeta de biblioteca</span>
         <select name="root_folder_id" class="input">
           <option value="__keep__">— No cambiar —</option>
           <option value="">Por defecto del sistema</option>
@@ -129,7 +129,7 @@ export async function openMassEditModal() {
         </select>
       </label>
     </div>
-    <label class="inline check"><input type="checkbox" name="reorganize" checked> Mover / reorganizar ficheros .strm existentes si cambia Root Folder</label>
+    <label class="inline check"><input type="checkbox" name="reorganize" checked> Mover y reorganizar ficheros .strm si cambia la carpeta</label>
   </form>`;
 
   openModal(
@@ -211,7 +211,7 @@ export async function handleArrViewAction(action, element) {
   if (action === 'release-blocklist') {
     const rid = element.dataset.release;
     const ok = await confirmModal({
-      title: 'Vetar fuente (Blocklist)',
+      title: 'Bloquear fuente',
       message: 'TOD dejará de usar y mostrar este release automáticamente.',
       confirm: 'Vetar fuente',
       danger: true,
