@@ -13,10 +13,11 @@ from __future__ import annotations
 
 from contextlib import closing
 from dataclasses import dataclass
+import sqlite3
 from pathlib import Path
 from typing import Any
 
-from . import language_settings
+from . import language_settings, profiles, release_evaluator
 from .db import connect
 from .identity import normalize_key
 
@@ -160,69 +161,73 @@ class Resolver:
             )
         return rank, only
 
-    def _best_release(self, asset_id: int) -> Any:
-        audio_rank, only = self._language_sql()
+    def _evaluate_candidates(
+        self,
+        asset: Any,
+        *,
+        alive_only: bool = False,
+        include_rejected: bool = False,
+    ) -> list[tuple[sqlite3.Row, release_evaluator.ReleaseEvaluation]]:
+        asset_dict = dict(asset)
         with closing(self._conn()) as conn:
-            return conn.execute(
-                f"""
-                SELECT releases.*
+            rows = conn.execute(
+                """
+                SELECT releases.*,
+                       ss.started_ok AS swarm_started_ok,
+                       ss.failures AS swarm_failures,
+                       ss.speed_bps AS swarm_speed_bps
                 FROM releases
                 LEFT JOIN swarm_stats ss ON ss.release_id = releases.id
-                JOIN media_items m ON m.id = releases.asset_id
-                WHERE releases.asset_id = ?{only}
-                  AND NOT EXISTS (
-                      SELECT 1 FROM tracker_policies p
-                      WHERE p.tracker = releases.tracker AND p.enabled = 0
-                  )
-                  AND NOT EXISTS (
-                      SELECT 1 FROM stream_failures sf
-                      WHERE sf.release_id = releases.id
-                        AND sf.until > strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
-                  )
-                ORDER BY
-                    CASE WHEN ss.failures > 0 AND ss.started_ok = 0
-                         THEN 1 ELSE 0 END,
-                    CASE releases.health WHEN 'alive' THEN 0 WHEN 'unknown' THEN 1
-                                WHEN 'stale' THEN 2 ELSE 3 END,
-                    {audio_rank},
-                    COALESCE(releases.seeders, 0) DESC,
-                    COALESCE(releases.size_bytes, 999999999999) ASC,
-                    releases.id DESC
-                LIMIT 1
+                WHERE releases.asset_id = ?
                 """,
-                (asset_id,),
+                (int(asset_dict["id"]),),
+            ).fetchall()
+            ctx = release_evaluator.load_evaluation_context(
+                conn, self.db_path, asset_dict
+            )
+        evaluated: list[tuple[sqlite3.Row, release_evaluator.ReleaseEvaluation]] = []
+        for row in rows:
+            if alive_only and row["health"] != "alive":
+                continue
+            ev = release_evaluator.evaluate_release(
+                dict(row),
+                ctx["asset"],
+                ctx["profile"],
+                global_language=ctx["global_language"],
+                custom_formats=ctx["custom_formats"],
+                restrictions=ctx["restrictions"],
+                asset_tag_ids=ctx["asset_tag_ids"],
+                blocked_trackers=ctx["blocked_trackers"],
+                failed_release_reasons=ctx["failed_release_reasons"],
+                max_size_bytes=self.max_size_bytes,
+            )
+            if include_rejected or ev.allowed:
+                evaluated.append((row, ev))
+        evaluated.sort(key=lambda pair: pair[1].sort_key)
+        return evaluated
+
+    def _asset_by_id(self, asset_id: int) -> Any:
+        with closing(self._conn()) as conn:
+            return conn.execute(
+                "SELECT * FROM media_items WHERE id = ?", (int(asset_id),)
             ).fetchone()
 
+    def _best_release(self, asset_id: int) -> Any:
+        asset = self._asset_by_id(asset_id)
+        if asset is None:
+            return None
+        candidates = self._evaluate_candidates(asset, alive_only=False)
+        for row, _ in candidates:
+            if row["health"] in ("alive", "unknown", "stale"):
+                return row
+        return None
+
     def _alive_release(self, asset_id: int) -> Any:
-        audio_rank, only = self._language_sql()
-        with closing(self._conn()) as conn:
-            return conn.execute(
-                f"""
-                SELECT releases.*
-                FROM releases
-                LEFT JOIN swarm_stats ss ON ss.release_id = releases.id
-                JOIN media_items m ON m.id = releases.asset_id
-                WHERE releases.asset_id = ? AND releases.health = 'alive'{only}
-                  AND NOT EXISTS (
-                      SELECT 1 FROM tracker_policies p
-                      WHERE p.tracker = releases.tracker AND p.enabled = 0
-                  )
-                  AND NOT EXISTS (
-                      SELECT 1 FROM stream_failures sf
-                      WHERE sf.release_id = releases.id
-                        AND sf.until > strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
-                  )
-                ORDER BY
-                    CASE WHEN ss.failures > 0 AND ss.started_ok = 0
-                         THEN 1 ELSE 0 END,
-                    {audio_rank},
-                    COALESCE(releases.seeders, 0) DESC,
-                    COALESCE(releases.size_bytes, 999999999999) ASC,
-                    releases.id DESC
-                LIMIT 1
-                """,
-                (asset_id,),
-            ).fetchone()
+        asset = self._asset_by_id(asset_id)
+        if asset is None:
+            return None
+        candidates = self._evaluate_candidates(asset, alive_only=True)
+        return candidates[0][0] if candidates else None
 
     def _release(self, release_id: int) -> Any:
         with closing(self._conn()) as conn:
@@ -352,84 +357,116 @@ class Resolver:
             save_path=row["torrent_save_path"] if row is not None else None,
         )
 
-    def sources(self, key: str) -> list[dict[str, Any]]:
+    def sources(
+        self, key: str, *, include_rejected: bool = False
+    ) -> list[dict[str, Any]]:
         asset = self.asset(key)
         if asset is None:
             return []
-        with closing(self._conn()) as conn:
-            rows = conn.execute(
-                """
-                SELECT releases.id, releases.tracker, releases.title,
-                       releases.quality, releases.audio, releases.size_bytes,
-                       releases.seeders, releases.health, releases.privacy,
-                       releases.source, ss.started_ok AS swarm_started_ok,
-                       ss.failures AS swarm_failures,
-                       ss.speed_bps AS swarm_speed_bps
-                FROM releases
-                LEFT JOIN swarm_stats ss ON ss.release_id = releases.id
-                WHERE releases.asset_id = ?
-                  AND releases.health IN ('alive', 'unknown', 'stale')
-                  AND NOT EXISTS (
-                      SELECT 1 FROM tracker_policies p
-                      WHERE p.tracker = releases.tracker AND p.enabled = 0
-                  )
-                  AND NOT EXISTS (
-                      SELECT 1 FROM stream_failures sf
-                      WHERE sf.release_id = releases.id
-                        AND sf.until > strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
-                  )
-                ORDER BY
-                    CASE WHEN ss.failures > 0 AND ss.started_ok = 0
-                         THEN 1 ELSE 0 END,
-                    CASE releases.health WHEN 'alive' THEN 0 WHEN 'unknown' THEN 1 ELSE 2 END,
-                    COALESCE(releases.seeders, 0) DESC,
-                    COALESCE(releases.size_bytes, 999999999999) ASC,
-                    id DESC
-                """,
-                (asset["id"],),
-            ).fetchall()
-        preference = language_settings.load(self.db_path)
+        evaluated = self._evaluate_candidates(
+            asset, alive_only=False, include_rejected=include_rejected
+        )
         original_language = asset["original_language"]
         original_country = asset["original_country"]
-        ranked: list[tuple[int, dict[str, Any]]] = []
-        for row in rows:
-            rank = language_settings.rank(
-                row["audio"], preference, original_language, original_country
-            )
-            if rank is None:
+        items: list[dict[str, Any]] = []
+        for row, ev in evaluated:
+            if not include_rejected and row["health"] not in ("alive", "unknown", "stale"):
                 continue
-            ranked.append(
-                (
-                    rank,
-                    {
-                        "release_id": row["id"],
-                        "tracker": row["tracker"],
-                        "title": row["title"],
-                        "quality": row["quality"],
-                        "audio": row["audio"],
-                        "original_language": original_language,
-                        "original_country": original_country,
-                        "size_bytes": row["size_bytes"],
-                        "seeders": row["seeders"],
-                        "health": row["health"],
-                        "privacy": row["privacy"],
-                        "source": row["source"],
-                        "too_large": bool(
-                            self.max_size_bytes
-                            and (row["size_bytes"] or 0) > self.max_size_bytes
-                        ),
-                        "swarm_started_ok": (
-                            bool(row["swarm_started_ok"])
-                            if row["swarm_started_ok"] is not None
-                            else None
-                        ),
-                        "swarm_failures": row["swarm_failures"],
-                        "swarm_speed_bps": row["swarm_speed_bps"],
-                    },
-                )
+            items.append(
+                {
+                    "release_id": row["id"],
+                    "tracker": row["tracker"],
+                    "title": row["title"],
+                    "quality": row["quality"],
+                    "quality_tier": ev.quality_tier,
+                    "source_type": row["source_type"] if "source_type" in row.keys() else None,
+                    "codec": row["codec"] if "codec" in row.keys() else None,
+                    "hdr": row["hdr"] if "hdr" in row.keys() else None,
+                    "audio": row["audio"],
+                    "audio_codec": row["audio_codec"] if "audio_codec" in row.keys() else None,
+                    "audio_channels": row["audio_channels"] if "audio_channels" in row.keys() else None,
+                    "edition": row["edition"] if "edition" in row.keys() else None,
+                    "release_group": row["release_group"] if "release_group" in row.keys() else None,
+                    "original_language": original_language,
+                    "original_country": original_country,
+                    "size_bytes": row["size_bytes"],
+                    "seeders": row["seeders"],
+                    "health": row["health"],
+                    "privacy": row["privacy"],
+                    "source": row["source"],
+                    "allowed": ev.allowed,
+                    "rejections": list(ev.rejections),
+                    "cf_score": ev.cf_score,
+                    "score_breakdown": [
+                        {"name": n, "score": s} for n, s in ev.score_breakdown
+                    ],
+                    "cutoff_met": ev.cutoff_met,
+                    "mb_per_min": round(ev.mb_per_min, 1) if ev.mb_per_min is not None else None,
+                    "too_large": bool(
+                        self.max_size_bytes
+                        and (row["size_bytes"] or 0) > self.max_size_bytes
+                    ),
+                    "swarm_started_ok": (
+                        bool(row["swarm_started_ok"])
+                        if row["swarm_started_ok"] is not None
+                        else None
+                    ),
+                    "swarm_failures": row["swarm_failures"],
+                    "swarm_speed_bps": row["swarm_speed_bps"],
+                }
             )
-        ranked.sort(key=lambda pair: pair[0])
-        return [item for _, item in ranked]
+        return items
+
+    def cutoff_status(self, key: str) -> dict[str, Any]:
+        """Comprueba si la fuente actual cumple el Cutoff del perfil sin descargar."""
+        asset = self.asset(key)
+        if asset is None:
+            return {"found": False, "cutoff_met": False}
+        asset_dict = dict(asset)
+        with closing(self._conn()) as conn:
+            ctx = release_evaluator.load_evaluation_context(
+                conn, self.db_path, asset_dict
+            )
+        profile = ctx["profile"]
+        evaluated = self._evaluate_candidates(asset, alive_only=False)
+        best_ev = evaluated[0][1] if evaluated else None
+        best_row = evaluated[0][0] if evaluated else None
+        resolved = self.resolve(key)
+        current_ev = None
+        if resolved.release_id:
+            for row, ev in evaluated:
+                if int(row["id"]) == int(resolved.release_id):
+                    current_ev = ev
+                    break
+        effective_ev = current_ev or best_ev
+        cutoff_met = True
+        if resolved.source == "library":
+            cutoff_met = True
+        elif effective_ev is not None:
+            cutoff_met = bool(effective_ev.cutoff_met)
+        else:
+            cutoff_met = False
+        return {
+            "found": True,
+            "profile_id": profile.get("id"),
+            "profile_name": profile.get("name"),
+            "cutoff_quality": profile.get("cutoff_quality"),
+            "cutoff_score": profile.get("cutoff_score"),
+            "cutoff_met": cutoff_met,
+            "current_release_id": resolved.release_id,
+            "current_quality": effective_ev.quality_tier if effective_ev else None,
+            "current_cf_score": effective_ev.cf_score if effective_ev else None,
+            "best_release_id": int(best_row["id"]) if best_row is not None else None,
+            "best_cutoff_met": bool(best_ev.cutoff_met) if best_ev is not None else False,
+            "upgrade_available": bool(
+                best_row is not None
+                and resolved.release_id
+                and int(best_row["id"]) != int(resolved.release_id)
+                and best_ev is not None
+                and current_ev is not None
+                and best_ev.sort_key < current_ev.sort_key
+            ),
+        }
 
     def resolve_release(self, key: str, release_id: int) -> Resolution:
         asset = self.asset(key)

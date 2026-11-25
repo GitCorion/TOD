@@ -76,6 +76,22 @@ def rank(
     tag = (audio or "unknown").strip().lower()
     if preference == "only_castellano":
         return 0 if tag in ("castellano", "espanol") else None
+    if preference == "vose_first":
+        if tag == "vose":
+            return 0
+        if tag in ("", "unknown", "english"):
+            return 1
+        if tag in ("castellano", "espanol"):
+            return 2
+        if tag == "latino":
+            if (
+                _is_spanish_original(original_language)
+                and "ES" not in _codes(original_country)
+                and (not _codes(original_country) or bool(_codes(original_country) & LATAM))
+            ):
+                return 1
+            return None
+        return 3
     spanish_original = _is_spanish_original(original_language)
     countries = _codes(original_country)
     # España manda si participa: una coproducción hispano-mexicana sigue

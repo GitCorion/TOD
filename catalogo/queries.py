@@ -455,33 +455,73 @@ def list_titles(
 
 
 def _release_rows(conn, asset_id: int) -> list[dict[str, Any]]:
+    from . import release_evaluator
+
+    asset_row = conn.execute(
+        "SELECT * FROM media_items WHERE id = ?", (int(asset_id),)
+    ).fetchone()
+    db_file = conn.execute("PRAGMA database_list").fetchone()
+    db_path = db_file[2] if db_file and len(db_file) > 2 else ""
+    ctx = None
+    if asset_row is not None and db_path:
+        try:
+            ctx = release_evaluator.load_evaluation_context(
+                conn, db_path, dict(asset_row)
+            )
+        except Exception:
+            ctx = None
+
     rows = conn.execute(
         f"""
         SELECT r.id, r.tracker, r.title, r.quality, r.codec, r.audio,
+               r.source_type, r.hdr, r.audio_codec, r.audio_channels,
+               r.edition, r.release_group, r.proper_rank, r.streaming_service,
                r.audio_confidence, r.size_bytes, r.seeders, r.peers,
                r.health, r.health_checked_at, r.privacy, r.source,
                r.is_pack, r.info_hash, r.info_url,
                r.created_at, r.updated_at,
+               ss.started_ok AS swarm_started_ok,
+               ss.failures AS swarm_failures,
                t.state AS torrent_state, t.qbit_state AS torrent_qbit_state,
                t.progress AS torrent_progress, t.ratio AS torrent_ratio,
                t.save_path AS torrent_save_path
         FROM releases r
+        LEFT JOIN swarm_stats ss ON ss.release_id = r.id
         LEFT JOIN torrents t ON t.id = (
             SELECT id FROM torrents WHERE release_id = r.id
             ORDER BY id DESC LIMIT 1
         )
         WHERE r.asset_id = ?
           AND {UNBLOCKED_RELEASE_SQL}
-        ORDER BY
-            CASE r.health WHEN 'alive' THEN 0 WHEN 'unknown' THEN 1
-                 WHEN 'stale' THEN 2 WHEN 'dead' THEN 3 ELSE 4 END,
-            COALESCE(r.seeders,0) DESC,
-            COALESCE(r.size_bytes, 999999999999) ASC,
-            r.id DESC
         """,
         (int(asset_id),),
     ).fetchall()
-    return [dict(row) for row in rows]
+    result: list[tuple[tuple, dict[str, Any]]] = []
+    for row in rows:
+        item = dict(row)
+        if ctx is not None:
+            ev = release_evaluator.evaluate_release(
+                item,
+                ctx["asset"],
+                ctx["profile"],
+                global_language=ctx["global_language"],
+                custom_formats=ctx["custom_formats"],
+                restrictions=ctx["restrictions"],
+                asset_tag_ids=ctx["asset_tag_ids"],
+                blocked_trackers=ctx["blocked_trackers"],
+                failed_release_reasons=ctx["failed_release_reasons"],
+            )
+            item.update(ev.as_dict())
+            sort_k = ev.sort_key
+        else:
+            item["allowed"] = True
+            item["rejections"] = []
+            item["cf_score"] = 0
+            item["score_breakdown"] = []
+            sort_k = (0, 0, -(item.get("seeders") or 0), item.get("size_bytes") or 0)
+        result.append((sort_k, item))
+    result.sort(key=lambda pair: pair[0])
+    return [item for _, item in result]
 
 
 def title_detail(

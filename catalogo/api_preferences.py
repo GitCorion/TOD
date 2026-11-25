@@ -5,7 +5,7 @@ from __future__ import annotations
 from contextlib import closing
 from typing import Any
 
-from . import language_settings, policy, seed_settings
+from . import language_settings, policy, profiles, seed_settings
 from .db import connect
 from .errors import WebError
 
@@ -140,4 +140,81 @@ def handle(
                 "target_ratio": item.target_ratio,
                 "enabled": item.enabled,
             }
+
+    if parts == ["profiles"]:
+        if not mutate:
+            return 200, {
+                "items": profiles.list_profiles(db),
+                "custom_formats": profiles.list_custom_formats(db),
+                "restrictions": profiles.list_restrictions(db),
+                "qualities": list(profiles.DEFAULT_QUALITIES),
+            }
+        try:
+            saved = profiles.save_profile(db, body)
+        except ValueError as exc:
+            raise WebError(400, str(exc))
+        app.audit("web.profile_save", payload={"profile": saved.get("id"), "name": saved.get("name")})
+        return 201, {"profile": saved}
+
+    if len(parts) == 2 and parts[0] == "profiles":
+        pid = _int(parts[1], 0)
+        if pid <= 0:
+            raise WebError(400, "perfil inválido")
+        if not mutate:
+            item = profiles.get_profile(db, pid)
+            if not item:
+                raise WebError(404, "perfil no encontrado")
+            return 200, item
+        if body.get("_delete"):
+            try:
+                deleted = profiles.delete_profile(db, pid)
+            except ValueError as exc:
+                raise WebError(400, str(exc))
+            if not deleted:
+                raise WebError(404, "perfil no encontrado")
+            app.audit("web.profile_delete", payload={"profile": pid})
+            return 200, {"deleted": True, "id": pid}
+        try:
+            saved = profiles.save_profile(db, body, profile_id=pid)
+        except ValueError as exc:
+            raise WebError(400, str(exc))
+        app.audit("web.profile_save", payload={"profile": pid, "name": saved.get("name")})
+        return 200, {"profile": saved}
+
+    if parts == ["custom-formats"]:
+        if not mutate:
+            return 200, {"items": profiles.list_custom_formats(db)}
+        try:
+            saved = profiles.save_custom_format(db, body)
+        except ValueError as exc:
+            raise WebError(400, str(exc))
+        return 201, {"format": saved}
+
+    if len(parts) == 2 and parts[0] == "custom-formats":
+        fid = _int(parts[1], 0)
+        if fid <= 0:
+            raise WebError(400, "formato inválido")
+        if body.get("_delete") and mutate:
+            return 200, {"deleted": profiles.delete_custom_format(db, fid)}
+        if mutate:
+            try:
+                return 200, {"format": profiles.save_custom_format(db, body, format_id=fid)}
+            except ValueError as exc:
+                raise WebError(400, str(exc))
+
+    if parts == ["restrictions"]:
+        if not mutate:
+            return 200, {"items": profiles.list_restrictions(db)}
+        saved = profiles.save_restriction(db, body)
+        return 201, {"restriction": saved}
+
+    if len(parts) == 2 and parts[0] == "restrictions":
+        rid = _int(parts[1], 0)
+        if rid <= 0:
+            raise WebError(400, "regla inválida")
+        if body.get("_delete") and mutate:
+            return 200, {"deleted": profiles.delete_restriction(db, rid)}
+        if mutate:
+            return 200, {"restriction": profiles.save_restriction(db, body, restriction_id=rid)}
+
     return None
