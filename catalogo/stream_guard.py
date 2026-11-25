@@ -28,6 +28,7 @@ DEFAULT_FAILURE_HOURS = 2
 DEFAULT_MAX_ATTEMPTS = 3
 DEFAULT_RUNTIME_SECONDS = 7200
 LEASE_WINDOW_MINUTES = 5
+DISCARD_DELETE_THRESHOLD = 0.05
 
 
 def _now() -> datetime:
@@ -162,6 +163,16 @@ class StreamGuard:
                     (recent_start,),
                 ).fetchall()
             )
+            keys.extend(
+                str(row["media_id"])
+                for row in conn.execute(
+                    """
+                    SELECT DISTINCT media_id FROM play_intents
+                    WHERE created_at >= ? AND expires_at >= ?
+                    """,
+                    (recent_start, current.isoformat()),
+                ).fetchall()
+            )
         keys = list(dict.fromkeys(keys))
         self._busy = self._qbit_busy(current.timestamp())
         report: dict[str, Any] = {
@@ -220,8 +231,10 @@ class StreamGuard:
         buffer_required: int,
         now_ts: float,
         report: dict[str, Any],
+        *,
+        progress: float = 0.0,
     ) -> None:
-        """Re-pide el hueco que bloquea el prefijo contiguo.
+        """Re-pide el hueco que bloquea el prefijo contiguo (incluida la pieza 0).
 
         qBittorrent no expone control de piezas por la WebUI. Poner el
         fichero objetivo a prioridad 0 durante un par de segundos cancela
@@ -229,10 +242,10 @@ class StreamGuard:
         pedir a otros pares. El resto del pack no se toca y no se deja
         nada a medias.
         """
+        has_download = buffer_bytes > 0 or speed > 0 or progress > 0.002
         if (
             len(samples) < 3
-            or speed <= 0
-            or buffer_bytes <= 0
+            or not has_download
             or buffer_bytes >= buffer_required
         ):
             return
@@ -521,6 +534,7 @@ class StreamGuard:
             int(buffer_required),
             current.timestamp(),
             report,
+            progress=progress,
         )
 
         elapsed = current.timestamp() - since
@@ -622,29 +636,67 @@ class StreamGuard:
             self.db_path, int(release_id), asset_id, reason
         )
         qbit = self.play_service.qbit_write
-        try:
-            # TOD no borra: pausa el candidato fallido y deja que
-            # qBittorrent aplique sus reglas de borrado.
-            qbit.pause(info_hash)
-        except Exception as exc:
-            report["errors"].append(
-                f"{key}: no se pudo pausar {str(exc)[:120]}"
-            )
-            return
+        under_threshold = float(progress or 0.0) <= DISCARD_DELETE_THRESHOLD
+        deleted = False
+        if under_threshold:
+            delete_fn = getattr(qbit, "delete", None)
+            try:
+                if callable(delete_fn):
+                    delete_fn(info_hash, delete_files=True)
+                    deleted = True
+                else:
+                    qbit.pause(info_hash)
+            except Exception as exc:
+                report["errors"].append(
+                    f"{key}: no se pudo eliminar {str(exc)[:120]}"
+                )
+                return
+        else:
+            # Superó el 5 %: no borrar ni pausar; quitar force_start para
+            # que siga descargando/sembrando en segundo plano sin H&R.
+            try:
+                force = getattr(qbit, "set_force_start", None)
+                if callable(force):
+                    force(info_hash, False)
+            except Exception:
+                pass
 
         with closing(connect(self.db_path)) as conn:
             torrent = conn.execute(
                 "SELECT id FROM torrents WHERE info_hash = ?", (info_hash,)
             ).fetchone()
             torrent_id = int(torrent["id"]) if torrent else None
-            if torrent_id is not None:
+            if under_threshold:
+                if torrent_id is not None:
+                    if deleted:
+                        conn.execute(
+                            "UPDATE torrents SET state = 'removed', "
+                            "qbit_state = 'removed' WHERE id = ?",
+                            (torrent_id,),
+                        )
+                        conn.execute(
+                            "UPDATE torrent_files SET state = 'evicted', "
+                            "local_path = NULL WHERE torrent_id = ? "
+                            "AND COALESCE(storage_location, 'LOCAL_DISK') <> '1FICHIER'",
+                            (torrent_id,),
+                        )
+                    else:
+                        conn.execute(
+                            "UPDATE torrents SET state = 'paused', "
+                            "qbit_state = 'paused' WHERE id = ?",
+                            (torrent_id,),
+                        )
                 conn.execute(
                     """
-                    UPDATE torrents SET state = 'paused',
-                        qbit_state = 'paused'
-                    WHERE id = ?
+                    UPDATE seed_commitments
+                    SET state = 'cancelled', reason = ?,
+                        completed_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+                    WHERE state IN ('approved', 'active')
+                      AND (
+                          release_id = ? OR info_hash = ?
+                      )
                     """,
-                    (torrent_id,),
+                    (reason, int(release_id), info_hash),
                 )
             conn.execute(
                 """

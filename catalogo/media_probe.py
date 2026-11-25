@@ -22,6 +22,7 @@ SPANISH_CODES = {
 }
 SPANISH_WORDS = ("castellano", "español", "espanol", "spanish", "latino")
 UNKNOWN_CODES = {"", "und", "unknown", "none"}
+_PROBE_CACHE: dict[tuple[str, int, int], AudioProbe] = {}
 
 
 @dataclass(frozen=True)
@@ -78,6 +79,13 @@ def probe_audio(
     file_path = Path(path)
     if not file_path.is_file():
         return None
+    try:
+        st = file_path.stat()
+    except OSError:
+        return None
+    cache_key = (str(file_path), int(st.st_size), int(st.st_mtime_ns))
+    if cache_key in _PROBE_CACHE:
+        return _PROBE_CACHE[cache_key]
     payload = _run_ffprobe(file_path, timeout)
     if payload is None:
         return None
@@ -95,7 +103,11 @@ def probe_audio(
             languages.append("spa")
     if not languages and not has_unknown:
         return None
-    return AudioProbe(tuple(dict.fromkeys(languages)), has_unknown)
+    probe = AudioProbe(tuple(dict.fromkeys(languages)), has_unknown)
+    if len(_PROBE_CACHE) >= 256:
+        _PROBE_CACHE.clear()
+    _PROBE_CACHE[cache_key] = probe
+    return probe
 
 
 def audio_verdict(probe: AudioProbe | None) -> bool | None:

@@ -363,3 +363,45 @@ def test_ensure_runtime_for_series_episode(tmp_path, monkeypatch):
         "SELECT runtime_seconds FROM media_items"
     ).fetchone()[0] == 3000
     conn.close()
+
+
+def test_discard_failed_five_percent_rule_and_tracker_error(tmp_path):
+    db = seed(tmp_path, privacy="private")
+    qbit = FakeQbit([{"index": 0, "name": "Movie.mkv", "size": 1000}])
+    qbit.deleted = []
+    qbit.delete = lambda h, delete_files=False: qbit.deleted.append((h, delete_files))
+    service = PlayService(
+        str(db), qbit, qbit, data_path=str(tmp_path),
+        save_path=str(tmp_path / "ondemand"), reserve_bytes=0,
+    )
+    handle = service.ensure("movie:tmdb:300", torrent_bytes=TORRENT)
+    h = handle["info_hash"]
+
+    # <= 5 %: borrar torrent y datos
+    qbit.torrents_list[0]["progress"] = 0.03
+    service.discard_failed(handle)
+    assert qbit.deleted == [(h, True)]
+    conn = sqlite3.connect(db)
+    assert conn.execute("SELECT state FROM seed_commitments").fetchone()[0] == "cancelled"
+    conn.close()
+
+    # > 5 %: conservar descargando/sembrando sin forceStart
+    conn = sqlite3.connect(db)
+    conn.execute("UPDATE seed_commitments SET state='active'")
+    conn.commit()
+    conn.close()
+    qbit.deleted.clear()
+    qbit.forced.clear()
+    qbit.torrents_list[0]["progress"] = 0.06
+    service.discard_failed({"info_hash": h, "release_id": 1})
+    assert qbit.deleted == []
+    assert (h, False) in qbit.forced
+    conn = sqlite3.connect(db)
+    assert conn.execute("SELECT state FROM seed_commitments").fetchone()[0] == "active"
+    conn.close()
+
+    # Tracker terminal error in preflight fails fast
+    qbit.torrents_list[0].update({"progress": 0, "dlspeed": 0, "num_complete": 5})
+    qbit.trackers = lambda _h: [{"url": "https://priv.example/announce", "msg": "Torrent not registered"}]
+    with pytest.raises(NoPeers, match="tracker_unregistered"):
+        service.preflight({"info_hash": h, "release_id": 1, "private": True}, timeout=5.0)

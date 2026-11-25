@@ -219,6 +219,7 @@ def test_mkv_downloading_serves_sequential_stream_without_ranges(tmp_path):
     # Serves 200 OK with Accept-Ranges: none to prevent ffprobe/ffmpeg jumping to Cues at the end
     assert handler.status == 200
     assert handler.headers["Accept-Ranges"] == "none"
+    assert handler.headers["X-Catalogo-Complete"] == "0"
     assert handler.headers["Content-Length"] == str(10 * MB)
     assert "Content-Range" not in handler.headers
 
@@ -239,6 +240,7 @@ def test_mkv_complete_serves_range_with_bytes_accepted(tmp_path):
     )
     assert handler.status == 206
     assert handler.headers["Accept-Ranges"] == "bytes"
+    assert handler.headers["X-Catalogo-Complete"] == "1"
     assert handler.headers["Content-Range"] == f"bytes 0-{10 * MB - 1}/{10 * MB}"
 
 

@@ -159,6 +159,10 @@ class QbittorrentClient:
         )
         return payload if isinstance(payload, list) else []
 
+    def preferences(self) -> dict[str, Any]:
+        payload = self._get_json("/api/v2/app/preferences")
+        return payload if isinstance(payload, dict) else {}
+
 
 def info_hash_from_name(path: str | Path) -> str | None:
     """Utilidad para .torrent: no descarga nada; calcula el hash del info dict."""

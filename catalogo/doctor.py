@@ -58,6 +58,22 @@ def _qbit_state(client: Any) -> dict[str, Any]:
         if state.startswith("checking")
     )
     queued = states.get("queueddl", 0) + states.get("queuedup", 0)
+    prefs_fn = getattr(client, "preferences", None)
+    private_safety = None
+    if callable(prefs_fn):
+        try:
+            prefs = prefs_fn() or {}
+            if isinstance(prefs, dict) and prefs:
+                private_safety = {
+                    "dht": bool(prefs.get("dht")),
+                    "pex": bool(prefs.get("pex")),
+                    "lsd": bool(prefs.get("lsd")),
+                    "anonymous_mode": bool(prefs.get("anonymous_mode")),
+                    "listen_port": prefs.get("listen_port"),
+                    "incomplete_files_ext": bool(prefs.get("incomplete_files_ext")),
+                }
+        except Exception:
+            private_safety = None
     return {
         "version": client.app_version(),
         "torrents": len(torrents),
@@ -66,6 +82,7 @@ def _qbit_state(client: Any) -> dict[str, Any]:
         "ondemand_states": dict(ondemand.most_common()),
         "checking": checking,
         "queued": queued,
+        "private_safety": private_safety,
     }
 
 
@@ -176,6 +193,24 @@ def run_doctor(
             report["warnings"].append(
                 f"cola de descargas grande: {q['queued']} en cola"
             )
+        ps = q.get("private_safety") or {}
+        if ps:
+            if ps.get("dht") or ps.get("pex") or ps.get("lsd"):
+                report["warnings"].append(
+                    "qBittorrent tiene DHT/PeX/LSD activo; desactívalo para trackers privados"
+                )
+            if ps.get("anonymous_mode"):
+                report["warnings"].append(
+                    "qBittorrent tiene anonymous_mode activo; puede perjudicar announces en trackers privados"
+                )
+            if ps.get("listen_port") == 6881:
+                report["warnings"].append(
+                    "qBittorrent usa el puerto 6881; muchos trackers privados lo bloquean"
+                )
+            if ps.get("incomplete_files_ext"):
+                report["warnings"].append(
+                    "qBittorrent añade extensión .!qB; desactívalo para lectura directa de streams"
+                )
     db = report["db"]
     if db["orphan_commitments"]:
         report["warnings"].append(

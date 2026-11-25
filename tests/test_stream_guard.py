@@ -53,6 +53,10 @@ class FakeQbit:
     def pause(self, info_hash):
         self.paused.append(info_hash)
 
+    def set_force_start(self, info_hash, value=True):
+        self.forced = getattr(self, "forced", [])
+        self.forced.append((info_hash, value))
+
 
 class FakePlayService:
     def __init__(self, qbit):
@@ -115,11 +119,15 @@ def test_guard_pauses_early_bad_swarm_and_tries_next(tmp_path):
     assert first["bad"] == []
     second = guard.run_once(now=NOW + timedelta(seconds=40))
     assert second["bad"][0]["reason"] == "no_contiguous_buffer"
-    assert qbit.paused == ["hash1"]
-    assert qbit.deleted == []
+    assert qbit.deleted == [("hash1", True)]
+    assert qbit.paused == []
     assert service.calls == ["movie:tmdb:1"]
     assert release_id in failed_release_ids(str(db), asset_id=asset_id)
     assert Resolver(db).sources("movie:tmdb:1") == []
+    conn = sqlite3.connect(db)
+    assert conn.execute("SELECT state FROM seed_commitments").fetchone()[0] == "cancelled"
+    assert conn.execute("SELECT state FROM torrents").fetchone()[0] == "removed"
+    conn.close()
 
 
 def test_guard_keeps_torrent_over_five_percent(tmp_path):
@@ -130,7 +138,11 @@ def test_guard_keeps_torrent_over_five_percent(tmp_path):
     guard.run_once(now=NOW)
     guard.run_once(now=NOW + timedelta(seconds=40))
     assert qbit.deleted == []
-    assert qbit.paused == ["hash1"]
+    assert qbit.paused == []
+    assert qbit.forced == [("hash1", False)]
+    conn = sqlite3.connect(db)
+    assert conn.execute("SELECT state FROM seed_commitments").fetchone()[0] == "active"
+    conn.close()
 
 
 def test_guard_starts_when_buffer_is_enough(tmp_path):
@@ -198,8 +210,8 @@ def test_guard_switches_when_audio_is_not_spanish(tmp_path, monkeypatch):
     guard.run_once(now=NOW)
     report = guard.run_once(now=NOW + timedelta(seconds=40))
     assert report["bad"][0]["reason"] == "audio_not_spanish"
-    assert qbit.paused == ["hash1"]
-    assert qbit.deleted == []
+    assert qbit.deleted == [("hash1", True)]
+    assert qbit.paused == []
 
 
 class BusyQbit(FakeQbit):
@@ -258,3 +270,16 @@ def test_guard_does_not_switch_on_unknown_audio(tmp_path, monkeypatch):
     assert report["bad"] == []
     assert qbit.deleted == []
     assert service.calls == []
+
+
+def test_guard_nudges_when_piece_zero_stalled(tmp_path):
+    db, _asset_id, _release_id = seed(tmp_path)
+    qbit = FakeQbit(progress=0.12, speed=10 * MB, buffer_pieces=0)
+    service = FakePlayService(qbit)
+    guard = StreamGuard(str(db), service, grace_seconds=120, nudge_hold=0)
+    guard.run_once(now=NOW)
+    guard.run_once(now=NOW + timedelta(seconds=10))
+    report = guard.run_once(now=NOW + timedelta(seconds=16))
+    assert report["nudged"], report
+    assert qbit.priorities[0] == {0: 0}
+    assert qbit.priorities[1] == {0: 1}

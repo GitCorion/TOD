@@ -30,6 +30,7 @@ DEFAULT_RESERVE_BYTES = 20 * 1024**3
 PREFLIGHT_TIMEOUT = 15.0
 NO_PEERS_GRACE = 3.0
 FAIL_COOLDOWN = 300.0
+DISCARD_DELETE_THRESHOLD = 0.05
 
 
 class AdmissionDenied(BackendError):
@@ -128,27 +129,47 @@ class PlayService:
             self._failed[int(release_id)] = time.monotonic() + FAIL_COOLDOWN
 
     def discard_failed(self, handle: dict[str, Any]) -> None:
-        """Libera un candidato fallido.
+        """Libera un candidato fallido según la regla del 5 %.
 
-        Un torrent que no llegó a descargar nada no debe ocupar una plaza de
-        admisión ni dejar un compromiso de seed. Si ya tenía datos, se pausa
-        (privado) o se borra (público con muy poco progreso).
+        - Si no ha pasado del 5 %: se borra el torrent y sus datos y se
+          cancela el compromiso de seed.
+        - Si ha superado el 5 %: se mantiene descargando y sembrando para
+          evitar hit-and-run en trackers privados, quitando forceStart para
+          no competir por prioridad con el respaldo.
         """
         info_hash = handle.get("info_hash") or ""
         release_id = handle.get("release_id")
         self.mark_failed(release_id)
         if not info_hash:
             return
+        live = self._live_torrent(info_hash)
+        progress = float((live or {}).get("progress") or 0)
+        if progress > DISCARD_DELETE_THRESHOLD:
+            try:
+                force = getattr(self.qbit_write, "set_force_start", None)
+                if callable(force):
+                    force(info_hash, False)
+            except Exception:
+                pass
+            return
         try:
-            # TOD no borra torrents ni ficheros. Un candidato fallido se
-            # pausa para no ocupar la admisión; qBittorrent decide después
-            # si lo elimina con sus propias reglas.
-            self.qbit_write.pause(info_hash)
-            self._forget_failed(info_hash, release_id)
+            delete_fn = getattr(self.qbit_write, "delete", None)
+            deleted = callable(delete_fn)
+            if deleted:
+                delete_fn(info_hash, delete_files=True)
+            else:
+                self.qbit_write.pause(info_hash)
+            self._forget_failed(info_hash, release_id, deleted=deleted)
         except Exception:
             pass
 
-    def _forget_failed(self, info_hash: str, release_id: int | None) -> None:
+    def _forget_failed(
+        self,
+        info_hash: str,
+        release_id: int | None,
+        *,
+        deleted: bool = False,
+    ) -> None:
         from contextlib import closing
 
         from .db import connect
@@ -167,12 +188,53 @@ class PlayService:
                 """,
                 (release_id, release_id, info_hash),
             )
-            conn.execute(
-                "UPDATE torrents SET state='paused', qbit_state='pausedDL' "
-                "WHERE info_hash = ?",
-                (info_hash,),
-            )
+            if deleted:
+                conn.execute(
+                    "UPDATE torrents SET state='removed', qbit_state='removed' "
+                    "WHERE info_hash = ?",
+                    (info_hash,),
+                )
+                conn.execute(
+                    "UPDATE torrent_files SET state='evicted', local_path=NULL "
+                    "WHERE torrent_id IN (SELECT id FROM torrents WHERE info_hash = ?) "
+                    "AND COALESCE(storage_location, 'LOCAL_DISK') <> '1FICHIER'",
+                    (info_hash,),
+                )
+            else:
+                conn.execute(
+                    "UPDATE torrents SET state='paused', qbit_state='pausedDL' "
+                    "WHERE info_hash = ?",
+                    (info_hash,),
+                )
             conn.commit()
+
+    def _tracker_terminal_error(self, handle: dict[str, Any]) -> str | None:
+        trackers_fn = getattr(self.qbit_write, "trackers", None)
+        if not callable(trackers_fn):
+            return None
+        info_hash = handle.get("info_hash") or ""
+        if not info_hash:
+            return None
+        try:
+            items = trackers_fn(info_hash) or []
+        except Exception:
+            return None
+        msgs = [
+            str(x.get("msg") or "").strip()
+            for x in items
+            if str(x.get("url") or "").startswith("http")
+            and str(x.get("msg") or "").strip()
+        ]
+        if not msgs:
+            return None
+        from .seed_health import classify
+
+        verdict, _ = classify(msgs)
+        if verdict in ("client_not_allowed", "not_authorized"):
+            return verdict
+        if verdict == "unregistered" and handle.get("private"):
+            return verdict
+        return None
 
     def preflight(
         self, handle: dict[str, Any], *, timeout: float = PREFLIGHT_TIMEOUT
@@ -182,6 +244,7 @@ class PlayService:
         deadline = time.monotonic() + max(1.0, timeout)
         no_peers_since: float | None = None
         had_peers = False
+        last_tracker_check = 0.0
         while True:
             torrent = self._live_torrent(info_hash)
             if torrent is None:
@@ -200,6 +263,11 @@ class PlayService:
             if complete > 0 or seeds > 0:
                 had_peers = True
             now = time.monotonic()
+            if now - last_tracker_check >= 2.0:
+                last_tracker_check = now
+                verdict = self._tracker_terminal_error(handle)
+                if verdict is not None:
+                    raise NoPeers(f"tracker_{verdict}")
             if complete == 0 and seeds == 0:
                 if no_peers_since is None:
                     no_peers_since = now
@@ -409,6 +477,8 @@ class PlayService:
         release_id: int | None = None,
         torrent_bytes: bytes | None = None,
         force: bool = False,
+        fetch_timeout: float = 30.0,
+        deadline: float | None = None,
     ) -> dict[str, Any]:
         intent = play_intents.active(self.db_path, media_id)
         if intent is None:
@@ -435,6 +505,8 @@ class PlayService:
         live_hashes = self._live_download_hashes()
         active_cache: dict[str, int] = {}
         for candidate in candidates:
+            if deadline is not None and time.monotonic() >= deadline and attempts:
+                break
             if candidate is not None and self.is_failed(candidate):
                 continue
             if not self._has_commitment(media_id, candidate):
@@ -479,6 +551,10 @@ class PlayService:
                     continue
                 candidate = result.release_id
             try:
+                per_fetch = fetch_timeout
+                if deadline is not None:
+                    remaining = max(3.0, deadline - time.monotonic())
+                    per_fetch = min(fetch_timeout, remaining)
                 return prepare_download(
                     self.db_path,
                     media_id,
@@ -489,6 +565,7 @@ class PlayService:
                     save_path=self.save_path,
                     max_active=max_active,
                     force=force,
+                    fetch_timeout=per_fetch,
                 )
             except CapacityError:
                 raise

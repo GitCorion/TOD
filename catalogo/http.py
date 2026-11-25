@@ -15,6 +15,7 @@ descarga. La app debe pedir `download=1` de forma explícita.
 from __future__ import annotations
 
 import hashlib
+import inspect
 import json
 import os
 import re
@@ -440,21 +441,45 @@ class CatalogHandler(BaseHTTPRequestHandler):
                 client_ip=self.client_address[0],
                 user_agent=self.headers.get("User-Agent"),
             )
+            stream_leases.touch(
+                self.db_path,
+                key,
+                f"prepare:{self.client_address[0]}",
+                client_ip=self.client_address[0],
+                user_agent=self.headers.get("User-Agent"),
+            )
+            prepare_deadline = started + 28.0
+            ensure_sig = inspect.signature(self.play_service.ensure).parameters
+            ensure_extra: dict[str, Any] = {}
+            if 'fetch_timeout' in ensure_sig or any(
+                param.kind == inspect.Parameter.VAR_KEYWORD for param in ensure_sig.values()
+            ):
+                ensure_extra['fetch_timeout'] = 10.0
+            if 'deadline' in ensure_sig or any(
+                param.kind == inspect.Parameter.VAR_KEYWORD for param in ensure_sig.values()
+            ):
+                ensure_extra['deadline'] = prepare_deadline
             try:
                 try:
                     handle = self.play_service.ensure(
-                        key, release_id=release_id, force=True
+                        key,
+                        release_id=release_id,
+                        force=True,
+                        **ensure_extra,
                     )
                 except (NoSource, ReleaseUnavailable):
                     # El release que fija el .strm puede estar muerto (el
                     # índice devuelve 404) aunque el tracker lo anuncie vivo.
                     # Buscamos alternativas una vez y reintentamos la mejor.
-                    if release_id is None or not self._search_sources(
+                    if release_id is None or time.monotonic() >= prepare_deadline or not self._search_sources(
                         key, force=True
                     ):
                         raise
                     handle = self.play_service.ensure(
-                        key, release_id=None, force=True
+                        key,
+                        release_id=None,
+                        force=True,
+                        **ensure_extra,
                     )
                     # Reflejar la fuente que realmente se ha elegido.
                     release_id = handle.get("release_id")

@@ -197,8 +197,15 @@ def stream_torrent_file(
             available = max(0, frontier_piece * piece_size - int(offset))
             if start > available + SEEK_TOLERANCE:
                 raise SeekNotReady(start, min(size, available))
+    is_speculative_eof = (
+        not ready_now
+        and len(states) > end_piece
+        and size > 100 * 1024 * 1024
+        and start >= size - 8 * 1024 * 1024
+    )
+    wait_timeout = min(timeout, 4.0) if is_speculative_eof else timeout
     if not wait_pieces(
-        qbit, info_hash, offset + start, initial, piece_size, timeout=timeout
+        qbit, info_hash, offset + start, initial, piece_size, timeout=wait_timeout
     ):
         print(
             f"stream_wait hash={info_hash[:12]} start={start} "
@@ -230,6 +237,7 @@ def stream_torrent_file(
         handler.send_header("Accept-Ranges", "none")
         handler.send_header("Content-Length", str(size))
         handler.send_header("ETag", f'"{info_hash[:20]}-{file_index}"')
+        handler.send_header("X-Catalogo-Complete", "0")
         handler.send_header("Cache-Control", "no-store")
         handler.end_headers()
     else:
@@ -240,6 +248,7 @@ def stream_torrent_file(
         if has_range_header or start > 0 or end < size - 1:
             handler.send_header("Content-Range", f"bytes {start}-{end}/{size}")
         handler.send_header("ETag", f'"{info_hash[:20]}-{file_index}"')
+        handler.send_header("X-Catalogo-Complete", "1" if is_complete else "0")
         handler.send_header("Cache-Control", "no-store")
         handler.end_headers()
     if head:

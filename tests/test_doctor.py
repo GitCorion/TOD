@@ -53,3 +53,28 @@ def test_doctor_detects_orphans_and_qbit_checks(tmp_path):
     assert report["qbit"]["checking"] == 60
     assert any("verificando" in item for item in report["warnings"])
     assert any("sin torrent" in item for item in report["warnings"])
+
+
+class UnsafePrivateQbit(FakeQbit):
+    def torrents(self):
+        return []
+
+    def preferences(self):
+        return {
+            "dht": True,
+            "pex": False,
+            "lsd": False,
+            "anonymous_mode": True,
+            "listen_port": 6881,
+            "incomplete_files_ext": True,
+        }
+
+
+def test_doctor_warns_on_unsafe_private_qbit_settings(tmp_path):
+    db = seed(tmp_path)
+    report = run_doctor(str(db), qbit=UnsafePrivateQbit(), paths=(str(tmp_path),))
+    joined = " | ".join(report["warnings"])
+    assert "DHT/PeX/LSD" in joined
+    assert "anonymous_mode" in joined
+    assert "6881" in joined
+    assert ".!qB" in joined

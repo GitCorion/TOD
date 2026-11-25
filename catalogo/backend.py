@@ -314,6 +314,7 @@ def prepare_download(
     max_active: int = MAX_ACTIVE_ONDEMAND,
     release_id: int | None = None,
     force: bool = False,
+    fetch_timeout: float = 30.0,
     now: datetime | None = None,
 ) -> dict[str, Any]:
     from . import play_intents
@@ -419,7 +420,9 @@ def prepare_download(
         if torrent_bytes is None:
             try:
                 torrent_bytes = fetch_torrent(
-                    release["download_url"], jackett_api_key=jackett_api_key
+                    release["download_url"],
+                    jackett_api_key=jackett_api_key,
+                    timeout=fetch_timeout,
                 )
             except TorrentFetchError as exc:
                 if exc.permanent:
