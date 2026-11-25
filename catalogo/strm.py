@@ -251,6 +251,7 @@ def _versions(
     versions_filter: str = "available",
     min_seeders: int = 1,
     preference: str = "any",
+    pinned_release_id: int | None = None,
 ) -> list[tuple[dict, str]]:
     """Devuelve las versiones que deben tener fichero `.strm` propio.
 
@@ -264,8 +265,13 @@ def _versions(
     used: set[str] = set()
     result: list[tuple[dict, str]] = []
     for release in releases:
+        release_id = int(release["id"])
+        is_available = release_id in available_ids
+        is_pinned = pinned_release_id is not None and release_id == pinned_release_id
         if (
-            language_settings.rank(
+            not is_available
+            and not is_pinned
+            and language_settings.rank(
                 release["audio"],
                 preference,
                 asset.get("original_language"),
@@ -274,8 +280,6 @@ def _versions(
             is None
         ):
             continue
-        release_id = int(release["id"])
-        is_available = release_id in available_ids
         if versions_filter == "available":
             decision_allowed = bool(is_available)
         elif versions_filter == "alive":
@@ -445,6 +449,17 @@ def export_strm(
 
     with closing(connect(db_path)) as conn:
         available_ids = _available_release_ids(conn)
+        pinned_targets: dict[int, int] = {}
+        if conn.execute(
+            "SELECT 1 FROM sqlite_master WHERE type='table' AND name='play_targets'"
+        ).fetchone():
+            pinned_targets = {
+                int(r["asset_id"]): int(r["release_id"])
+                for r in conn.execute(
+                    "SELECT asset_id, release_id FROM play_targets "
+                    "WHERE source_kind = 'torrent' AND release_id IS NOT NULL"
+                ).fetchall()
+            }
         local_assets = {
             int(row["asset_id"])
             for row in conn.execute(
@@ -536,6 +551,7 @@ def export_strm(
             versions_filter="all",
             min_seeders=min_seeders,
             preference=preference,
+            pinned_release_id=pinned_targets.get(int(asset["id"])),
         )
         # Un .strm solo se publica si hay algo que reproducir de verdad:
         # fichero local/archivado o un release VIVO con seeds. Los releases

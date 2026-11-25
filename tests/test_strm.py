@@ -461,3 +461,35 @@ def test_prune_key_removes_default_and_versions(tmp_path):
     assert len(removed) == 2
     assert not list(folder.glob("*.strm"))
     assert list(other.glob("*.strm"))
+
+
+def test_export_strm_allows_pinned_or_prepared_override_audio(tmp_path):
+    from catalogo import language_settings
+    from catalogo.resolver import Resolver
+    from catalogo.strm import export_strm
+
+    db = tmp_path / "catalogo.db"
+    init_db(db, MIGRATIONS)
+    language_settings.save(db, "castellano_first")
+    conn = sqlite3.connect(db)
+    conn.execute(
+        "INSERT INTO media_items(key,kind,tmdb,title,year,original_language) VALUES(?,?,?,?,?,?)",
+        ("series:tmdb:285404:1:1", "series", 285404, "Serie", 2026, "en"),
+    )
+    asset_id = conn.execute("SELECT id FROM media_items WHERE key='series:tmdb:285404:1:1'").fetchone()[0]
+    conn.execute(
+        "INSERT INTO releases(asset_id,tracker,guid,title,quality,audio,size_bytes,seeders,health,source,privacy) "
+        "VALUES(?,?,?,?,?,?,?,?,?,?,?)",
+        (asset_id, "Torrenteros (API)", "g1", "Serie.S01E01.1080p.Latino.mkv", "1080p", "latino", 1000, 2, "alive", "prowlarr", "private"),
+    )
+    release_id = conn.execute("SELECT id FROM releases WHERE asset_id=?", (asset_id,)).fetchone()[0]
+    conn.commit()
+    conn.close()
+
+    out = tmp_path / "strm"
+    res1 = export_strm(db, out, base_url="http://x")
+    assert res1["written"] == 0
+
+    Resolver(db).set_target("series:tmdb:285404:1:1", "torrent", release_id=release_id)
+    res2 = export_strm(db, out, base_url="http://x")
+    assert res2["written"] >= 1

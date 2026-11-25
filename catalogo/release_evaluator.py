@@ -247,7 +247,14 @@ def evaluate_release(
         asset.get("original_country"),
     )
     if lang_rank is None:
-        rejections.append(f"Audio ({audio}) excluido por preferencia ({eff_lang})")
+        pref_labels = {
+            "castellano_first": "castellano preferido",
+            "only_castellano": "solo castellano",
+            "vose_first": "VOSE preferido",
+            "any": "cualquiera",
+        }
+        pref_text = pref_labels.get(eff_lang, eff_lang)
+        rejections.append(f"Audio {audio} excluido por preferencia ({pref_text})")
 
     if restrictions:
         rejections.extend(

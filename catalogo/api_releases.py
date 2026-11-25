@@ -5,9 +5,39 @@ from __future__ import annotations
 from contextlib import closing
 from typing import Any
 
-from . import admin, jellyfin, jobs, strm_inventory
+from . import admin, jellyfin, jobs, ondemand, strm_inventory
 from .db import connect
 from .errors import WebError
+
+
+
+def _publish_key_strm(app: Any, key: str | None) -> dict[str, Any]:
+    """Exporta `.strm` para un título concreto y notifica a Jellyfin si hubo cambios."""
+    if not key:
+        return {"written": 0, "paths": []}
+    try:
+        radarr, sonarr = admin._arr_clients(app.config)
+        published = admin.export_strm(
+            app.config.db_path,
+            app.config.catalog_library,
+            base_url=app.config.playback_base_url,
+            key=key,
+            limit=None,
+            min_seeders=1,
+            versions_filter="available",
+            radarr=radarr,
+            sonarr=sonarr,
+        )
+        paths = published.get("written_paths") or []
+        if paths:
+            strm_inventory.invalidate(app.config.catalog_library)
+            jellyfin.notify_updated(app.config, paths[:100])
+        return {
+            "written": published.get("written", 0),
+            "paths": paths[:10],
+        }
+    except Exception as exc:
+        return {"error": str(exc)[:200]}
 
 
 def _int(value: Any, default: int) -> int:
@@ -54,6 +84,9 @@ def handle(
             file_id=_int(body.get("file_id"), 0) or None,
             note=str(body.get("note") or "")[:300] or None,
         )
+        if source_kind in ("torrent", "auto"):
+            result["strm"] = _publish_key_strm(app, result.get("key") or row["key"])
+        ondemand.invalidate_caches()
         app.audit(
             "web.set_target", asset_id=row["asset_id"], payload=result
         )
@@ -92,29 +125,8 @@ def handle(
         except Exception as exc:
             detail = getattr(exc, "decision", None) or str(exc)[:300]
             raise WebError(503, "no se pudo preparar", detail)
-        try:
-            radarr, sonarr = admin._arr_clients(app.config)
-            published = admin.export_strm(
-                app.config.db_path,
-                app.config.catalog_library,
-                base_url=app.config.playback_base_url,
-                key=result.get("key"),
-                limit=None,
-                min_seeders=1,
-                versions_filter="available",
-                radarr=radarr,
-                sonarr=sonarr,
-            )
-            paths = published.get("written_paths") or []
-            if paths:
-                strm_inventory.invalidate(app.config.catalog_library)
-                jellyfin.notify_updated(app.config, paths[:100])
-            result["strm"] = {
-                "written": published.get("written", 0),
-                "paths": paths[:10],
-            }
-        except Exception as exc:
-            result["strm"] = {"error": str(exc)[:200]}
+        result["strm"] = _publish_key_strm(app, result.get("key") or row["key"])
+        ondemand.invalidate_caches()
         app.audit(
             "web.prepare", asset_id=row["asset_id"], payload={
                 "release_id": release_id,
