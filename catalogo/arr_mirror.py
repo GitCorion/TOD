@@ -55,6 +55,10 @@ def _series_item(row: dict[str, Any]) -> dict[str, Any] | None:
     title = str(row.get("title") or "").strip()
     if not tmdb or not title:
         return None
+    genres = row.get("genres")
+    genres_str = ", ".join(str(g).strip() for g in genres if g) if isinstance(genres, list) else (str(genres) if genres else None)
+    raw_type = str(row.get("seriesType") or "standard").lower()
+    series_type = raw_type if raw_type in ("standard", "daily", "anime") else "standard"
     return {
         "tmdb": tmdb,
         "title": title,
@@ -65,6 +69,14 @@ def _series_item(row: dict[str, Any]) -> dict[str, Any] | None:
         "backdrop_path": _image_url(row.get("images"), "fanart"),
         "vote_average": None,
         "popularity": None,
+        "genres": genres_str or None,
+        "imdb_id": row.get("imdbId") or None,
+        "certification": row.get("certification") or None,
+        "network_studio": row.get("network") or None,
+        "series_status": row.get("status") or None,
+        "series_type": series_type,
+        "is_anime": 1 if series_type == "anime" else 0,
+        "arr_profile_id": row.get("qualityProfileId"),
     }
 
 
@@ -101,6 +113,15 @@ def _movie_item(row: dict[str, Any]) -> dict[str, Any] | None:
     if not tmdb or not title:
         return None
     runtime = int(row.get("runtime") or 0)
+    genres = row.get("genres")
+    genres_str = ", ".join(str(g).strip() for g in genres if g) if isinstance(genres, list) else (str(genres) if genres else None)
+    min_avail_raw = str(row.get("minimumAvailability") or "").lower()
+    min_avail = {
+        "announced": "announced",
+        "incinemas": "in_cinemas",
+        "in_cinemas": "in_cinemas",
+        "released": "released",
+    }.get(min_avail_raw, "released")
     return {
         "tmdb": tmdb,
         "title": title,
@@ -117,7 +138,34 @@ def _movie_item(row: dict[str, Any]) -> dict[str, Any] | None:
         "vote_average": None,
         "popularity": row.get("popularity"),
         "runtime_seconds": runtime * 60 if runtime > 0 else None,
+        "genres": genres_str or None,
+        "imdb_id": row.get("imdbId") or None,
+        "certification": row.get("certification") or None,
+        "network_studio": row.get("studio") or None,
+        "in_cinemas_date": _date(row.get("inCinemas")),
+        "digital_release_date": _date(row.get("digitalRelease")),
+        "physical_release_date": _date(row.get("physicalRelease")),
+        "minimum_availability": min_avail,
+        "arr_profile_id": row.get("qualityProfileId"),
     }
+
+
+
+def _profile_map(conn, kind: str) -> dict[int, int]:
+    """Devuelve {arr_profile_id: tod_profile_id} si existe quality_profiles."""
+    col = "radarr_profile_id" if kind == "radarr" else "sonarr_profile_id"
+    try:
+        exists = conn.execute(
+            "SELECT 1 FROM sqlite_master WHERE type='table' AND name='quality_profiles'"
+        ).fetchone()
+        if not exists:
+            return {}
+        rows = conn.execute(
+            f"SELECT id, {col} FROM quality_profiles WHERE {col} IS NOT NULL"
+        ).fetchall()
+        return {int(r[col]): int(r["id"]) for r in rows}
+    except Exception:
+        return {}
 
 
 def mirror_radarr(db_path, radarr, *, now: str | None = None) -> dict[str, Any]:
@@ -139,6 +187,7 @@ def mirror_radarr(db_path, radarr, *, now: str | None = None) -> dict[str, Any]:
 
     items: list[dict[str, Any]] = []
     updates: list[tuple[int | None, str, int, bool, bool]] = []
+    meta_items: dict[str, dict[str, Any]] = {}
     fallback_enabled = load_seed_settings(db_path)["arr_fallback"]
     queue_movies, queue_ok = _queue_ids(radarr, "radarr")
     for row in rows:
@@ -157,6 +206,7 @@ def mirror_radarr(db_path, radarr, *, now: str | None = None) -> dict[str, Any]:
                 bool(row.get("monitored", True)),
             )
         )
+        meta_items[f"movie:tmdb:{item['tmdb']}"] = item
     fallback_keys = [
         key for _runtime, key, movie_id, has_file, monitored in updates
         if fallback_enabled and queue_ok and monitored and not has_file
@@ -205,6 +255,37 @@ def mirror_radarr(db_path, radarr, *, now: str | None = None) -> dict[str, Any]:
             WHERE key = ?
             """,
             [(stamp, runtime, key) for runtime, key, *_rest in updates],
+        )
+        pmap = _profile_map(conn, "radarr")
+        conn.executemany(
+            """
+            UPDATE media_items SET
+                genres = COALESCE(?, genres),
+                imdb_id = COALESCE(?, imdb_id),
+                certification = COALESCE(?, certification),
+                network_studio = COALESCE(?, network_studio),
+                in_cinemas_date = COALESCE(?, in_cinemas_date),
+                digital_release_date = COALESCE(?, digital_release_date),
+                physical_release_date = COALESCE(?, physical_release_date),
+                minimum_availability = COALESCE(minimum_availability, ?),
+                quality_profile_id = COALESCE(quality_profile_id, ?)
+            WHERE key = ?
+            """,
+            [
+                (
+                    it.get("genres"),
+                    it.get("imdb_id"),
+                    it.get("certification"),
+                    it.get("network_studio"),
+                    it.get("in_cinemas_date"),
+                    it.get("digital_release_date"),
+                    it.get("physical_release_date"),
+                    it.get("minimum_availability") or "released",
+                    pmap.get(int(it["arr_profile_id"])) if it.get("arr_profile_id") else None,
+                    k,
+                )
+                for k, it in meta_items.items()
+            ],
         )
         # Si estaba en Radarr ya no hace falta perseguirlo desde TOD,
         # salvo que no tenga fichero ni descarga en cola: ahí TOD busca
@@ -276,6 +357,7 @@ def mirror_sonarr(db_path, sonarr, *, now: str | None = None) -> dict[str, Any]:
 
     all_states: list[tuple[int | None, str]] = []
     seen_series: set[int] = set()
+    series_meta: dict[int, dict[str, Any]] = {}
     complete_series: set[int] = set()
     fallback_keys: list[str] = []
     fallback_pairs: list[tuple[str, str]] = []
@@ -288,6 +370,7 @@ def mirror_sonarr(db_path, sonarr, *, now: str | None = None) -> dict[str, Any]:
             report["skipped"] += 1
             continue
         seen_series.add(int(item["tmdb"]))
+        series_meta[int(item["tmdb"])] = item
         series_monitored = bool(series.get("monitored", True))
         try:
             episodes = sonarr.episodes(int(series.get("id") or 0))
@@ -418,6 +501,36 @@ def mirror_sonarr(db_path, sonarr, *, now: str | None = None) -> dict[str, Any]:
             conn.executemany(
                 "INSERT OR IGNORE INTO _arr_complete_series(tmdb) VALUES(?)",
                 [(tmdb,) for tmdb in complete_series],
+            )
+        if series_meta:
+            smap = _profile_map(conn, "sonarr")
+            conn.executemany(
+                """
+                UPDATE media_items SET
+                    genres = COALESCE(?, genres),
+                    imdb_id = COALESCE(?, imdb_id),
+                    certification = COALESCE(?, certification),
+                    network_studio = COALESCE(?, network_studio),
+                    series_status = COALESCE(?, series_status),
+                    series_type = ?,
+                    is_anime = ?,
+                    quality_profile_id = COALESCE(quality_profile_id, ?)
+                WHERE kind = 'series' AND tmdb = ?
+                """,
+                [
+                    (
+                        it.get("genres"),
+                        it.get("imdb_id"),
+                        it.get("certification"),
+                        it.get("network_studio"),
+                        it.get("series_status"),
+                        it.get("series_type") or "standard",
+                        int(it.get("is_anime") or 0),
+                        smap.get(int(it["arr_profile_id"])) if it.get("arr_profile_id") else None,
+                        stmdb,
+                    )
+                    for stmdb, it in series_meta.items()
+                ],
             )
         # Si está en Sonarr ya no hace falta perseguirlo desde TOD,
         # salvo episodios sin fichero y sin descarga en cola.

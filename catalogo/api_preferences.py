@@ -5,7 +5,7 @@ from __future__ import annotations
 from contextlib import closing
 from typing import Any
 
-from . import language_settings, policy, profiles, seed_settings
+from . import language_settings, naming, policy, profiles, seed_settings
 from .db import connect
 from .errors import WebError
 
@@ -216,5 +216,90 @@ def handle(
             return 200, {"deleted": profiles.delete_restriction(db, rid)}
         if mutate:
             return 200, {"restriction": profiles.save_restriction(db, body, restriction_id=rid)}
+
+
+    # --- Naming templates ---
+    if parts == ["naming"]:
+        if not mutate:
+            cfg = naming.load_naming_settings(db)
+            examples = naming.preview_examples(cfg)
+            return 200, {"settings": cfg, "examples": examples}
+        try:
+            saved = naming.save_naming_settings(db, body)
+            examples = naming.preview_examples(saved)
+        except ValueError as exc:
+            raise WebError(400, str(exc))
+        return 200, {"settings": saved, "examples": examples}
+
+    if parts == ["naming", "preview"]:
+        cfg = dict(naming.load_naming_settings(db))
+        for key in cfg:
+            if key in body:
+                cfg[key] = body[key]
+        return 200, {"examples": naming.preview_examples(cfg)}
+
+    if parts == ["naming", "reorganize"]:
+        if not mutate:
+            raise WebError(405, "usa POST")
+        out_dir = app.config.catalog_library
+        kind_filter = str(body.get("kind") or "") or None
+        tmdb_filter = int(body.get("tmdb")) if body.get("tmdb") else None
+        if body.get("execute"):
+            result = naming.apply_reorganize(db, out_dir, kind=kind_filter, tmdb=tmdb_filter)
+            if result.get("moved"):
+                from . import jellyfin, strm_inventory
+                strm_inventory.invalidate(out_dir)
+                jellyfin.notify_updated(app.config, result.get("affected_paths", [])[:500])
+            app.audit("web.naming_reorganize", payload={"moved": result.get("moved", 0), "planned": result.get("planned", 0)})
+            return 200, result
+        moves = naming.plan_reorganize(db, out_dir, kind=kind_filter, tmdb=tmdb_filter)
+        return 200, {"planned": len(moves), "moves": moves[:500]}
+
+    # --- Root Folders ---
+    if parts == ["root-folders"]:
+        if not mutate:
+            return 200, {"items": naming.list_root_folders(db)}
+        try:
+            saved = naming.save_root_folder(
+                db,
+                name=str(body.get("name") or "").strip(),
+                kind=str(body.get("kind") or "any"),
+                path=str(body.get("path") or "").strip(),
+                is_default=bool(body.get("is_default")),
+            )
+        except ValueError as exc:
+            raise WebError(400, str(exc))
+        return 201, {"root_folder": saved}
+
+    if len(parts) == 2 and parts[0] == "root-folders":
+        rf_id = _int(parts[1], 0)
+        if rf_id <= 0:
+            raise WebError(400, "id inválido")
+        if not mutate:
+            folders = naming.list_root_folders(db)
+            item = next((f for f in folders if f["id"] == rf_id), None)
+            if not item:
+                raise WebError(404, "carpeta no encontrada")
+            return 200, item
+        if body.get("_delete"):
+            try:
+                deleted = naming.delete_root_folder(db, rf_id)
+            except ValueError as exc:
+                raise WebError(400, str(exc))
+            if not deleted:
+                raise WebError(404, "carpeta no encontrada")
+            return 200, {"deleted": True, "id": rf_id}
+        try:
+            saved = naming.save_root_folder(
+                db,
+                name=str(body.get("name") or "").strip(),
+                kind=str(body.get("kind") or "any"),
+                path=str(body.get("path") or "").strip(),
+                is_default=bool(body.get("is_default")),
+                folder_id=rf_id,
+            )
+        except ValueError as exc:
+            raise WebError(400, str(exc))
+        return 200, {"root_folder": saved}
 
     return None

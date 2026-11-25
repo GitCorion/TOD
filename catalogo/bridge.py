@@ -21,6 +21,7 @@ from typing import Any
 
 from .db import connect
 from .strm import safe_name
+from . import profiles as _profiles_mod
 
 
 def _source(row) -> Path | None:
@@ -58,6 +59,35 @@ def _first_profile(rows: list[dict]) -> int | None:
         return int(rows[0]["id"]) if rows else None
     except (KeyError, TypeError, ValueError):
         return None
+
+
+def _mapped_profile(
+    db_path,
+    arr_kind: str,
+    arr_client,
+    *,
+    tod_profile_id: int | None = None,
+) -> int | None:
+    """Resuelve el profile_id de Radarr/Sonarr a partir del perfil de TOD.
+
+    Prioriza `tod_profile_id` asignado al título/serie; si no tiene mapping,
+    usa el perfil por defecto de TOD y, en última instancia, el primer perfil
+    disponible en el *arr.
+    """
+    col = "radarr_profile_id" if arr_kind == "radarr" else "sonarr_profile_id"
+    try:
+        tod_profiles = _profiles_mod.list_profiles(db_path)
+        by_id = {int(p["id"]): p for p in tod_profiles}
+        if tod_profile_id and int(tod_profile_id) in by_id:
+            mapped_id = by_id[int(tod_profile_id)].get(col)
+            if mapped_id:
+                return int(mapped_id)
+        default = next((p for p in tod_profiles if p.get("is_default")), None)
+        if default and default.get(col):
+            return int(default[col])
+    except Exception:
+        pass
+    return _first_profile(arr_client.quality_profiles())
 
 
 def _cancel_queue(client, *, movie_id: int | None = None,
@@ -120,6 +150,7 @@ def bridge_downloads(
             SELECT DISTINCT t.id AS torrent_id, t.info_hash,
                    m.id AS asset_id, m.key, m.kind, m.tmdb, m.tvdb_id,
                    m.title, m.year, m.season, m.episode,
+                   m.quality_profile_id,
                    f.local_path, f.library_path
             FROM torrents t
             JOIN torrent_files f ON f.torrent_id = t.id
@@ -140,20 +171,28 @@ def bridge_downloads(
     sonarr_root: str | None = None
     sonarr_profile: int | None = None
 
-    def movie_defaults() -> tuple[str | None, int | None]:
+    def movie_defaults(tod_profile_id: int | None = None) -> tuple[str | None, int | None]:
         nonlocal radarr_root, radarr_profile
         if radarr_root is None:
             radarr_root = _first_path(radarr.root_folders())
+        if tod_profile_id:
+            specific = _mapped_profile(db_path, "radarr", radarr, tod_profile_id=tod_profile_id)
+            if specific is not None:
+                return radarr_root, specific
         if radarr_profile is None:
-            radarr_profile = _first_profile(radarr.quality_profiles())
+            radarr_profile = _mapped_profile(db_path, "radarr", radarr)
         return radarr_root, radarr_profile
 
-    def series_defaults() -> tuple[str | None, int | None]:
+    def series_defaults(tod_profile_id: int | None = None) -> tuple[str | None, int | None]:
         nonlocal sonarr_root, sonarr_profile
         if sonarr_root is None:
             sonarr_root = _first_path(sonarr.root_folders())
+        if tod_profile_id:
+            specific = _mapped_profile(db_path, "sonarr", sonarr, tod_profile_id=tod_profile_id)
+            if specific is not None:
+                return sonarr_root, specific
         if sonarr_profile is None:
-            sonarr_profile = _first_profile(sonarr.quality_profiles())
+            sonarr_profile = _mapped_profile(db_path, "sonarr", sonarr)
         return sonarr_root, sonarr_profile
 
     bridged_count = 0
@@ -205,7 +244,7 @@ def bridge_downloads(
                 movie = radarr.movie_by_tmdb(tmdb)
                 added = False
                 if movie is None:
-                    root, profile = movie_defaults()
+                    root, profile = movie_defaults(asset.get("quality_profile_id"))
                     if not root or not profile:
                         report["skipped"].append(
                             {"key": asset["key"], "reason": "sin_root_o_perfil"}
@@ -292,7 +331,7 @@ def bridge_downloads(
             series = sonarr.series_by_tmdb(tmdb)
             added = False
             if series is None:
-                root, profile = series_defaults()
+                root, profile = series_defaults(asset.get("quality_profile_id"))
                 if not root or not profile:
                     report["skipped"].append(
                         {"key": asset["key"], "reason": "sin_root_o_perfil"}

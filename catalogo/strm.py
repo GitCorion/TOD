@@ -17,6 +17,7 @@ from pathlib import Path
 from xml.sax.saxutils import escape as xml_escape
 
 from . import language_settings
+from . import naming as naming_mod
 from .db import connect
 from .health import publishable
 from .identity import play_url
@@ -35,7 +36,15 @@ def _title(asset: dict) -> str:
     return safe_name(asset["title"] or asset["key"])
 
 
-def strm_path(out_dir: Path, asset: dict) -> Path:
+def strm_path(out_dir: Path, asset: dict, *, naming_cfg=None,
+              root_folders_by_id=None, series_settings_map=None) -> Path:
+    """Ruta del .strm principal. Delega a naming_mod si hay configuración."""
+    if naming_cfg is not None:
+        return naming_mod.build_asset_strm_path(
+            out_dir, asset, cfg=naming_cfg,
+            root_folders_by_id=root_folders_by_id,
+            series_settings_map=series_settings_map,
+        )
     title = _title(asset)
     suffix = f" ({asset['year']})" if asset["year"] else ""
     if asset["kind"] == "movie":
@@ -51,8 +60,11 @@ def strm_path(out_dir: Path, asset: dict) -> Path:
     )
 
 
-def version_path(out_dir: Path, asset: dict, label: str) -> Path:
-    default = strm_path(out_dir, asset)
+def version_path(out_dir: Path, asset: dict, label: str, *, naming_cfg=None,
+                 root_folders_by_id=None, series_settings_map=None) -> Path:
+    default = strm_path(out_dir, asset, naming_cfg=naming_cfg,
+                        root_folders_by_id=root_folders_by_id,
+                        series_settings_map=series_settings_map)
     return default.with_name(f"{default.stem} - {safe_name(label)}.strm")
 
 
@@ -84,7 +96,48 @@ def write_strm(path: Path, content: str, *, root: Path) -> None:
         pass
 
 
-def _nfo(asset: dict) -> tuple[Path, str] | None:
+def _rich_nfo_tags(asset: dict) -> list[str]:
+    """Campos NFO extra cuando rich_nfo está activado."""
+    tags: list[str] = []
+    imdb = asset.get("imdb_id") or asset.get("imdb") or ""
+    if imdb:
+        tags.append(f'  <uniqueid type="imdb">{xml_escape(str(imdb))}</uniqueid>')
+    genres = str(asset.get("genres") or "")
+    for genre in genres.split(","):
+        g = genre.strip()
+        if g:
+            tags.append(f"  <genre>{xml_escape(g)}</genre>")
+    overview = str(asset.get("overview") or "").strip()
+    if overview:
+        tags.append(f"  <plot>{xml_escape(overview[:2000])}</plot>")
+    runtime = asset.get("runtime_seconds")
+    if runtime and int(runtime) > 0:
+        tags.append(f"  <runtime>{int(runtime) // 60}</runtime>")
+    vote = asset.get("vote_average")
+    if vote:
+        try:
+            tags.append(f"  <rating>{float(vote):.1f}</rating>")
+        except (TypeError, ValueError):
+            pass
+    cert = str(asset.get("certification") or "").strip()
+    if cert:
+        tags.append(f"  <mpaa>{xml_escape(cert)}</mpaa>")
+    orig_title = str(asset.get("original_title") or "").strip()
+    if orig_title:
+        tags.append(f"  <originaltitle>{xml_escape(orig_title)}</originaltitle>")
+    return tags
+
+
+def _nfo_path_for(
+    default_strm: Path, kind: str, *, use_season_folders: bool = True
+) -> Path:
+    if kind == "movie":
+        return default_strm.with_suffix(".nfo")
+    parent = default_strm.parent.parent if use_season_folders else default_strm.parent
+    return parent / "tvshow.nfo"
+
+
+def _nfo(asset: dict, *, rich: bool = False) -> tuple[Path, str] | None:
     title = xml_escape(str(asset.get("title") or ""))
     year = asset.get("year")
     tmdb = asset.get("tmdb")
@@ -100,6 +153,8 @@ def _nfo(asset: dict) -> tuple[Path, str] | None:
             body.append(f"  <year>{int(year)}</year>")
         if tmdb:
             body.append(f"  <tmdbid>{int(tmdb)}</tmdbid>")
+        if rich:
+            body.extend(_rich_nfo_tags(asset))
         body.append("</movie>")
         return path, "\n".join(body) + "\n"
     default = strm_path(Path("."), asset)
@@ -115,6 +170,8 @@ def _nfo(asset: dict) -> tuple[Path, str] | None:
         body.append(f"  <tmdbid>{int(tmdb)}</tmdbid>")
     if asset.get("tvdb_id"):
         body.append(f"  <tvdbid>{int(asset['tvdb_id'])}</tvdbid>")
+    if rich:
+        body.extend(_rich_nfo_tags(asset))
     body.append("</tvshow>")
     return path, "\n".join(body) + "\n"
 
@@ -281,13 +338,39 @@ def export_strm(
         raise ValueError("--prune solo se permite en una exportación completa")
     out = Path(out_dir)
     preference = language_settings.load(db_path)
+    # --- Fase 3: naming config ---
+    try:
+        _naming_cfg = naming_mod.load_naming_settings(db_path)
+        _root_folders = {rf["id"]: rf for rf in naming_mod.list_root_folders(db_path)}
+        _ss_map: dict[int, dict] = {}
+        with closing(connect(db_path)) as _nc:
+            if _nc.execute(
+                "SELECT 1 FROM sqlite_master WHERE type='table' AND name='series_settings'"
+            ).fetchone():
+                for _r in _nc.execute("SELECT * FROM series_settings").fetchall():
+                    _ss_map[int(_r["tmdb"])] = dict(_r)
+        _rich_nfo = _naming_cfg.get("rich_nfo", False)
+    except Exception:
+        _naming_cfg = None
+        _root_folders = {}
+        _ss_map = {}
+        _rich_nfo = False
+    def _strm(asset):
+        return strm_path(out, asset, naming_cfg=_naming_cfg,
+                         root_folders_by_id=_root_folders,
+                         series_settings_map=_ss_map)
 
-    def ensure_nfo(asset: dict) -> None:
-        data = _nfo(asset)
+
+    def ensure_nfo(asset: dict, default_strm: Path | None = None) -> None:
+        data = _nfo(asset, rich=_rich_nfo)
         if data is None:
             return
         relative, content = data
-        path = out / relative
+        if default_strm is not None:
+            use_sf = bool(_naming_cfg.get("use_season_folders", True)) if _naming_cfg else True
+            path = _nfo_path_for(default_strm, asset["kind"], use_season_folders=use_sf)
+        else:
+            path = out / relative
         if path in nfo_done:
             return
         nfo_done.add(path)
@@ -385,7 +468,7 @@ def export_strm(
         if existing_only:
             assets = [
                 asset for asset in assets
-                if strm_path(out, dict(asset)).is_file()
+                if strm_path(out, dict(asset), naming_cfg=_naming_cfg, root_folders_by_id=_root_folders, series_settings_map=_ss_map).is_file()
             ]
         all_releases = {}
         library_available: dict[int, bool] = {}
@@ -470,7 +553,7 @@ def export_strm(
                 continue
             # Hay una copia local o de biblioteca aunque no haya release:
             # el resolver la sirve directamente.
-            default = strm_path(out, asset)
+            default = _strm(asset)
             expected.add(default)
             content = play_url(asset["key"], base_url) + "\n"
             if not default.exists() or default.read_text(encoding="utf-8") != content:
@@ -479,7 +562,7 @@ def export_strm(
                 written_paths.append(str(default))
             else:
                 unchanged += 1
-            ensure_nfo(asset)
+            ensure_nfo(asset, default)
             continue
 
         versions = _versions(
@@ -491,7 +574,7 @@ def export_strm(
             preference=preference,
         )
 
-        default = strm_path(out, asset)
+        default = _strm(asset)
         expected.add(default)
         content = play_url(asset["key"], base_url) + "\n"
         if not default.exists() or default.read_text(encoding="utf-8") != content:
@@ -500,11 +583,11 @@ def export_strm(
             written_paths.append(str(default))
         else:
             unchanged += 1
-        ensure_nfo(asset)
+        ensure_nfo(asset, default)
 
         if len(versions) > 1:
             for release, label in versions:
-                path = version_path(out, asset, label)
+                path = version_path(out, asset, label, naming_cfg=_naming_cfg, root_folders_by_id=_root_folders, series_settings_map=_ss_map)
                 expected.add(path)
                 content = (
                     play_url(asset["key"], base_url)

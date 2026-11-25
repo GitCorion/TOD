@@ -374,3 +374,48 @@ def test_bridge_copies_every_file_of_a_pack_in_one_run(tmp_path):
     assert sonarr.rescanned == [9]
     # El reescaneo llega cuando el pack ya está copiado entero.
     assert sonarr.rescan_files == [3]
+
+
+def test_bridge_uses_mapped_tod_profile(tmp_path):
+    from catalogo import profiles as profiles_mod
+
+    db, _source = seed(tmp_path, kind="movie")
+    # Crear perfil TOD mapeado al perfil 5 (Ultra-HD) de Radarr y asignarlo al título
+    p = profiles_mod.save_profile(db, {
+        "name": "4K Mapped",
+        "radarr_profile_id": 5,
+        "sonarr_profile_id": 6,
+        "qualities": ["2160p", "1080p"],
+    })
+    conn = sqlite3.connect(db)
+    conn.execute("UPDATE media_items SET quality_profile_id = ?", (p["id"],))
+    conn.commit()
+    conn.close()
+
+    added_calls = []
+
+    class FakeRadarrCapture:
+        def movie_by_tmdb(self, tmdb):
+            return None
+
+        def root_folders(self):
+            return [{"path": str(tmp_path / "radarr"), "accessible": True}]
+
+        def quality_profiles(self):
+            return [{"id": 1, "name": "Any"}, {"id": 5, "name": "Ultra-HD"}]
+
+        def add_movie(self, **kwargs):
+            added_calls.append(kwargs)
+            return {"id": 99, "title": kwargs["title"], "year": kwargs["year"],
+                    "path": str(tmp_path / "radarr" / f"{kwargs['title']} ({kwargs['year']})"),
+                    "hasFile": False}
+
+        def rescan_movie(self, movie_id):
+            pass
+
+        def queue(self):
+            return {"records": []}
+
+    bridge_downloads(db, FakeRadarrCapture(), None, limit=1, dry_run=False)
+    assert len(added_calls) == 1
+    assert added_calls[0]["quality_profile_id"] == 5
