@@ -4,6 +4,8 @@ import { esc, fmtBytes, fmtDate, fmtDuration, fmtEta, fmtInt, pct, debounce } fr
 import { healthStatus, jobLabel, jobState, qbitState, taskDef } from './labels.js';
 import { navigate, parseRoute, route, updateQuery } from './router.js';
 import { addSearchResult, submitAdd, uploadTorrent } from './views/add.js';
+import { handleSettingsArrAction } from './views/settings_arr.js';
+import { handleArrViewAction, renderRichReleaseRow, runSeasonManualSearch } from './views/arr_actions.js';
 import { state, toggleSelection } from './store.js';
 import {
   $, $$, closeModal, confirmModal, icon, openModal, poster, restoreFocus, setLive,
