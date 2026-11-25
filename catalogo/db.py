@@ -25,12 +25,12 @@ def connect(path: Path | str, *, readonly: bool = False) -> sqlite3.Connection:
     path = Path(path)
     if readonly:
         uri = f"file:{path}?mode=ro&immutable=1"
-        conn = sqlite3.connect(uri, uri=True, timeout=10)
+        conn = sqlite3.connect(uri, uri=True, timeout=20)
     else:
-        conn = sqlite3.connect(path, timeout=10)
+        conn = sqlite3.connect(path, timeout=20)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys = ON")
-    conn.execute("PRAGMA busy_timeout = 5000")
+    conn.execute("PRAGMA busy_timeout = 15000")
     if not readonly:
         conn.execute("PRAGMA journal_mode = WAL")
         conn.execute("PRAGMA synchronous = NORMAL")

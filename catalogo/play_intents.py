@@ -27,40 +27,48 @@ def create(
     user_agent: str | None = None,
     now: datetime | None = None,
 ) -> dict[str, Any]:
+    import time
     current = now or _now()
     expires = current + timedelta(minutes=max(1, ttl_minutes))
-    with closing(connect(db_path)) as conn:
-        row = conn.execute(
-            """
-            SELECT * FROM play_intents
-            WHERE media_id = ? AND consumed_at IS NULL AND expires_at > ?
-            ORDER BY id DESC LIMIT 1
-            """,
-            (media_id, current.isoformat()),
-        ).fetchone()
-        if row:
-            return dict(row)
-        cur = conn.execute(
-            """
-            INSERT INTO play_intents(media_id, source, client_ip, user_agent,
-                                     created_at, expires_at)
-            VALUES (?, ?, ?, ?, ?, ?)
-            """,
-            (
-                media_id,
-                source,
-                client_ip,
-                user_agent,
-                current.isoformat(),
-                expires.isoformat(),
-            ),
-        )
-        conn.commit()
-        return dict(
-            conn.execute(
-                "SELECT * FROM play_intents WHERE id = ?", (cur.lastrowid,)
-            ).fetchone()
-        )
+    last_err = None
+    for attempt in range(5):
+        try:
+            with closing(connect(db_path)) as conn:
+                row = conn.execute(
+                    """
+                    SELECT * FROM play_intents
+                    WHERE media_id = ? AND consumed_at IS NULL AND expires_at > ?
+                    ORDER BY id DESC LIMIT 1
+                    """,
+                    (media_id, current.isoformat()),
+                ).fetchone()
+                if row:
+                    return dict(row)
+                cur = conn.execute(
+                    """
+                    INSERT INTO play_intents(media_id, source, client_ip, user_agent,
+                                             created_at, expires_at)
+                    VALUES (?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        media_id,
+                        source,
+                        client_ip,
+                        user_agent,
+                        current.isoformat(),
+                        expires.isoformat(),
+                    ),
+                )
+                conn.commit()
+                return dict(
+                    conn.execute(
+                        "SELECT * FROM play_intents WHERE id = ?", (cur.lastrowid,)
+                    ).fetchone()
+                )
+        except Exception as exc:
+            last_err = exc
+            time.sleep(0.1 * (attempt + 1))
+    return {"id": 0, "media_id": media_id, "source": source}
 
 
 def active(
