@@ -1068,6 +1068,7 @@ document.addEventListener('click', async (event) => {
       return;
     }
     if (action === 'catalog-view') {
+      try { localStorage.setItem('tod.catalogView', element.dataset.view); } catch (_) {}
       updateQuery({ view: element.dataset.view });
       return;
     }
@@ -1860,6 +1861,7 @@ document.addEventListener('change', (event) => {
   const target = event.target.closest('[data-change]');
   if (!target) return;
   if (target.dataset.change === 'catalog-sort') {
+    try { localStorage.setItem('tod.catalogSort', target.value); } catch (_) {}
     updateQuery({ sort: target.value });
   } else if (target.dataset.change === 'monitor-kind') {
     updateQuery({ kind: target.value }, { resetPage: false });

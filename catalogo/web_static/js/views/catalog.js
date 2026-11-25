@@ -177,8 +177,12 @@ export async function renderCatalog({ query, signal }) {
     root_folder: query.get('root_folder') || '',
     monitored: query.get('monitored') || '',
     cutoff_unmet: query.get('cutoff_unmet') === '1',
-    sort: query.get('sort') || 'popularity',
-    view: ['table', 'list'].includes(query.get('view')) ? 'table' : 'grid',
+    sort: query.get('sort') || (() => { try { return localStorage.getItem('tod.catalogSort') || 'popularity'; } catch (_) { return 'popularity'; } })(),
+    view: (() => {
+      const qv = query.get('view');
+      const v = qv || (() => { try { return localStorage.getItem('tod.catalogView') || 'grid'; } catch (_) { return 'grid'; } })();
+      return ['table', 'list'].includes(v) ? 'table' : 'grid';
+    })(),
     page: Math.max(1, Number(query.get('page')) || 1),
   };
   state.filters = filters;

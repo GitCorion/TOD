@@ -1810,11 +1810,14 @@ def job_prune(ctx: JobContext) -> dict[str, Any]:
 def job_library(ctx: JobContext) -> dict[str, Any]:
     ctx.report("sincronizando biblioteca Radarr/Sonarr", progress=0.1)
     radarr, sonarr = _arr_clients(ctx.config)
-    return sync_library(
+    rep = sync_library(
         str(ctx.config.db_path),
         radarr=radarr,
         sonarr=sonarr,
     )
+    from .ondemand import invalidate_caches
+    invalidate_caches()
+    return rep
 
 
 def job_arr_mirror(ctx: JobContext) -> dict[str, Any]:

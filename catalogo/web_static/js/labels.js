@@ -329,13 +329,13 @@ export const TASKS = [
     ],
   },
   {
-    kind: 'sync-library', title: 'Sincronizar Radarr/Sonarr', category: 'biblioteca',
-    desc: 'Importa library_files desde Radarr/Sonarr.',
+    kind: 'sync-library', title: 'Escanear ficheros de Radarr/Sonarr', category: 'biblioteca',
+    desc: 'Solo actualiza ficheros ya descargados en disco (no importa altas nuevas).',
     fields: [],
   },
   {
-    kind: 'arr-mirror', title: 'Espejo Radarr/Sonarr', category: 'biblioteca',
-    desc: 'Importa altas, busca fuentes y crea sus accesos.',
+    kind: 'arr-mirror', title: 'Importar altas de Radarr/Sonarr (Espejo)', category: 'biblioteca',
+    desc: 'Trae películas/series nuevas desde Radarr/Sonarr, busca fuentes y crea sus .strm.',
     fields: [
       { name: 'source_limit', label: 'Títulos a buscar', type: 'number', value: 50, min: 0 },
       { name: 'publish_limit', label: 'Títulos a preparar', type: 'number', value: 200, min: 0 },
