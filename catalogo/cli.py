@@ -1522,7 +1522,23 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--delay", type=float, default=1.0)
     p.add_argument("--dry-run", action="store_true")
 
+    p = sub.add_parser(
+        "backfill-parse",
+        help="re-parsea releases existentes para extraer fuente, códec, HDR y grupo",
+    )
+    p.add_argument("--reparse-audio", action="store_true")
+
     return parser
+
+
+def cmd_backfill_parse(args: argparse.Namespace, config: Config) -> int:
+    from .release_parser import backfill_releases
+
+    result = backfill_releases(
+        str(config.db_path), reparse_audio=bool(getattr(args, "reparse_audio", False))
+    )
+    print(json.dumps(result, ensure_ascii=False))
+    return 0
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -1564,6 +1580,7 @@ def main(argv: list[str] | None = None) -> int:
         "prowlarr-sync": cmd_prowlarr_sync,
         "runtime-sync": cmd_runtime_sync,
         "public-sync": cmd_public_sync,
+        "backfill-parse": cmd_backfill_parse,
         "worker": cmd_worker,
         "repair": cmd_repair,
         "block-tracker": cmd_block_tracker,

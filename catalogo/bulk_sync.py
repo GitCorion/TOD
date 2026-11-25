@@ -21,6 +21,7 @@ from .importer import norm_title
 from .jackett import sanitize_link
 from .policy import reconcile_privacy
 from .public_sync import quality_of, year_of
+from .release_parser import parse_release_info
 from .release_parse import (
     episode_in_release,
     pack_matches_season,
@@ -261,14 +262,16 @@ def _upsert_release(
     audio, confidence = audio_for(
         title, tracker, spanish_trackers=spanish_trackers
     )
+    parsed = parse_release_info(title)
     values = (
         tracker,
         title,
         norm_title(title),
         year_of(title),
-        quality_of(title),
+        parsed.quality,
         audio,
         confidence,
+        *parsed.extra_db_tuple(),
         size,
         1 if is_pack else 0,
         info_hash,
@@ -313,7 +316,11 @@ def _upsert_release(
         conn.execute(
             """
             UPDATE releases SET tracker=?, title=?, normalized_title=?, year=?,
-                quality=?, audio=?, audio_confidence=?, size_bytes=?, is_pack=?,
+                quality=?, audio=?, audio_confidence=?,
+                source_type=?, codec=?, hdr=?, audio_codec=?, audio_channels=?,
+                edition=?, release_group=?, proper_rank=?, streaming_service=?,
+                parsed_flags=?,
+                size_bytes=?, is_pack=?,
                 info_hash=?, download_url=?, info_url=?, seeders=?, peers=?,
                 health='alive', health_checked_at=?,
                 source=?, privacy=?,
@@ -328,10 +335,13 @@ def _upsert_release(
         """
         INSERT INTO releases(
             asset_id, tracker, guid, title, normalized_title, year, quality,
-            audio, audio_confidence, size_bytes, is_pack, info_hash,
+            audio, audio_confidence,
+            source_type, codec, hdr, audio_codec, audio_channels,
+            edition, release_group, proper_rank, streaming_service, parsed_flags,
+            size_bytes, is_pack, info_hash,
             download_url, info_url, seeders, peers, health, health_checked_at,
             source, privacy
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'alive',
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'alive',
                   ?, ?, ?)
         """,
         (asset_id,) + values[:1] + (guid,) + values[1:] + (source, privacy),

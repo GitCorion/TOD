@@ -13,6 +13,7 @@ Casos cubiertos:
 - ``[Primera Temporada]``, ``[Segunda Temporada]``...
 - ``T9``/``Temp 9``.
 - Packs de serie completa, miniseries y packs sin temporada.
+- Series diarias (``YYYY-MM-DD`` / ``DD.MM.YYYY``) y anime absoluto opcionales.
 """
 
 from __future__ import annotations
@@ -57,7 +58,9 @@ _SEASON_S = re.compile(r"(?i)(?<![a-z])s(\d{1,2})(?!\d)")
 _SEASON_WORD = re.compile(r"(?i)\b(?:temporada|season|serie)\s*(\d{1,2})\b")
 _SEASON_NUMBERED = re.compile(r"(?i)\b(\d{1,2})\s*[ªº°]?\s*temporada\b")
 _SEASON_ORDINAL = re.compile(
-    r"(?i)\b(" + "|".join(sorted(_ORDINALS, key=len, reverse=True)) + r")\s*temporada\b"
+    r"(?i)\b("
+    + "|".join(sorted(_ORDINALS, key=len, reverse=True))
+    + r")\s*temporada\b"
 )
 _SEASON_T = re.compile(r"(?i)\b(?:t|temp)\s*(\d{1,2})\b")
 
@@ -68,7 +71,16 @@ _COMPLETE = re.compile(
     r"|\bmini-?serie\b"
 )
 
-PACK = re.compile(r"(?i)\b(?:pack|complete|completa|completo|temporada|season|mini-?serie)\b")
+PACK = re.compile(
+    r"(?i)\b(?:pack|complete|completa|completo|temporada|season|mini-?serie)\b"
+)
+
+# Series diarias: 2026-03-15 o 2026.03.15
+_DAILY_DATE = re.compile(r"(?<!\d)(19\d{2}|20\d{2})[-.](\d{2})[-.](\d{2})(?!\d)")
+# Anime absoluto: "[Group] Show - 1025 (1080p)" o "Show - 045v2 [1080p]"
+_ANIME_ABS = re.compile(
+    r"(?i)(?:^|\s-\s|\sEp\.?\s*)(\d{2,4})(?:v\d)?(?:\s*[\[(]|\s+(?:1080p|720p|480p|2160p|4k|web|bd|hevc|x264|x265))"
+)
 
 
 @dataclass(frozen=True)
@@ -78,16 +90,17 @@ class ParsedRelease:
     season: int | None
     episodes: tuple[int, ...]
     complete_series: bool = False
+    air_date: str | None = None
+    absolute_episode: int | None = None
 
     @property
     def is_pack(self) -> bool:
-        return not self.episodes
+        return not self.episodes and not self.air_date and self.absolute_episode is None
 
 
 def _episode_range(start: int, end: int | None) -> tuple[int, ...]:
     if end is None or end <= start:
         return (start,)
-    # Un rango absurdo sería ruido del título, no una lista de episodios.
     if end - start > 50:
         return (start,)
     return tuple(range(start, end + 1))
@@ -109,16 +122,19 @@ def _season_of_text(text: str) -> int | None:
     return None
 
 
-def parse_release(title: str | None) -> ParsedRelease:
-    """Devuelve temporada, episodios y si es pack de serie completa."""
+def parse_release(
+    title: str | None, *, series_type: str = "standard"
+) -> ParsedRelease:
+    """Devuelve temporada, episodios, fecha diaria o episodio absoluto."""
     text = title or ""
 
     match = _SXXEYY.search(text)
     if match:
         season = int(match.group(1))
-        episodes = _episode_range(int(match.group(2)), (
-            int(match.group(3)) if match.group(3) else None
-        ))
+        episodes = _episode_range(
+            int(match.group(2)),
+            int(match.group(3)) if match.group(3) else None,
+        )
         return ParsedRelease(season=season, episodes=episodes)
 
     match = _XXYY.search(text)
@@ -142,6 +158,24 @@ def parse_release(title: str | None) -> ParsedRelease:
             episodes=(int(match.group(2)),),
         )
 
+    if series_type == "daily":
+        dm = _DAILY_DATE.search(text)
+        if dm:
+            return ParsedRelease(
+                season=None,
+                episodes=(),
+                air_date=f"{dm.group(1)}-{dm.group(2)}-{dm.group(3)}",
+            )
+
+    if series_type == "anime":
+        am = _ANIME_ABS.search(text)
+        if am:
+            ep = int(am.group(1))
+            if not (1900 <= ep <= 2100):
+                return ParsedRelease(
+                    season=None, episodes=(), absolute_episode=ep
+                )
+
     return ParsedRelease(
         season=_season_of_text(text),
         episodes=(),
@@ -162,21 +196,30 @@ def season_of(title: str | None) -> int | None:
 
 
 def episode_in_release(
-    title: str | None, season: int, episode: int
+    title: str | None,
+    season: int,
+    episode: int,
+    *,
+    series_type: str = "standard",
+    air_date: str | None = None,
+    absolute_episode: int | None = None,
 ) -> bool:
-    parsed = parse_release(title)
-    if not parsed.episodes:
-        return False
-    return parsed.season == int(season) and int(episode) in parsed.episodes
+    parsed = parse_release(title, series_type=series_type)
+    if parsed.episodes:
+        return parsed.season == int(season) and int(episode) in parsed.episodes
+    if series_type == "daily" and parsed.air_date and air_date:
+        return parsed.air_date == air_date[:10]
+    if (
+        series_type == "anime"
+        and parsed.absolute_episode is not None
+        and absolute_episode is not None
+    ):
+        return parsed.absolute_episode == int(absolute_episode)
+    return False
 
 
 def pack_matches_season(title: str | None, season: int) -> bool:
-    """Un pack solo vale para su temporada, salvo que sea de serie completa.
-
-    Un pack sin temporada identificable se considera genérico: puede ser una
-    serie completa, una miniserie o un pack que el tracker no etiqueta. Los
-    que sí declaran temporada no se mezclan con otras.
-    """
+    """Un pack solo vale para su temporada, salvo que sea de serie completa."""
     parsed = parse_release(title)
     if parsed.episodes:
         return False

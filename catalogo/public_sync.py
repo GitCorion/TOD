@@ -15,6 +15,11 @@ from typing import Any, Iterable
 from .db import connect
 from .importer import norm_title
 from .jackett import sanitize_link
+from .release_parser import (
+    audio_of as _rich_audio_of,
+    parse_release_info,
+    quality_of as _rich_quality_of,
+)
 
 PUBLIC_INDEXERS = {
     "divxtotal": "DivxTotal",
@@ -28,22 +33,11 @@ YEAR = re.compile(r"(?<!\d)(19\d{2}|20\d{2})(?!\d)")
 
 
 def quality_of(title: str) -> str:
-    match = QUALITY.search(title or "")
-    if not match:
-        return "unknown"
-    value = match.group(1).lower()
-    return "4K" if value in ("2160p", "4k", "uhd") else value
+    return _rich_quality_of(title)
 
 
 def audio_of(title: str) -> str:
-    text = title or ""
-    if VOSE.search(text) and not CAST.search(text):
-        return "vose"
-    if LATINO.search(text) and not CAST.search(text):
-        return "latino"
-    if CAST.search(text):
-        return "castellano"
-    return "unknown"
+    return _rich_audio_of(title)
 
 
 def year_of(title: str) -> int | None:
@@ -113,13 +107,15 @@ def _upsert_release(conn, asset_id: int, tracker: str, result: dict,
         (asset_id, tracker, title, size),
     ).fetchone()
     info_hash = (result.get("infohash") or "").lower() or None
+    parsed = parse_release_info(title)
     values = (
         tracker,
         title,
         norm_title(title),
         year_of(title),
-        quality_of(title),
-        audio_of(title),
+        parsed.quality,
+        parsed.audio,
+        *parsed.extra_db_tuple(),
         size,
         info_hash,
         link,
@@ -137,7 +133,11 @@ def _upsert_release(conn, asset_id: int, tracker: str, result: dict,
             """
             UPDATE releases SET
                 tracker = ?, title = ?, normalized_title = ?, year = ?,
-                quality = ?, audio = ?, size_bytes = ?, info_hash = ?,
+                quality = ?, audio = ?,
+                source_type = ?, codec = ?, hdr = ?, audio_codec = ?,
+                audio_channels = ?, edition = ?, release_group = ?,
+                proper_rank = ?, streaming_service = ?, parsed_flags = ?,
+                size_bytes = ?, info_hash = ?,
                 download_url = ?, info_url = ?, seeders = ?, peers = ?, health = ?,
                 health_checked_at = ?, source = ?, privacy = ?,
                 torrent_blob = COALESCE(?, torrent_blob),
@@ -150,11 +150,15 @@ def _upsert_release(conn, asset_id: int, tracker: str, result: dict,
     conn.execute(
         """
         INSERT INTO releases(asset_id, tracker, guid, title, normalized_title,
-                             year, quality, audio, size_bytes, is_pack,
+                             year, quality, audio,
+                             source_type, codec, hdr, audio_codec,
+                             audio_channels, edition, release_group,
+                             proper_rank, streaming_service, parsed_flags,
+                             size_bytes, is_pack,
                              info_hash, download_url, info_url, seeders, peers,
                              health, health_checked_at, source, privacy,
                              torrent_blob)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(guid) DO UPDATE SET
             tracker = excluded.tracker,
             title = excluded.title,
@@ -162,6 +166,16 @@ def _upsert_release(conn, asset_id: int, tracker: str, result: dict,
             year = excluded.year,
             quality = excluded.quality,
             audio = excluded.audio,
+            source_type = excluded.source_type,
+            codec = excluded.codec,
+            hdr = excluded.hdr,
+            audio_codec = excluded.audio_codec,
+            audio_channels = excluded.audio_channels,
+            edition = excluded.edition,
+            release_group = excluded.release_group,
+            proper_rank = excluded.proper_rank,
+            streaming_service = excluded.streaming_service,
+            parsed_flags = excluded.parsed_flags,
             size_bytes = excluded.size_bytes,
             info_hash = excluded.info_hash,
             download_url = excluded.download_url,

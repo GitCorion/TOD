@@ -16,6 +16,7 @@ from .db import connect
 from .importer import norm_title
 from .policy import reconcile_privacy
 from .public_sync import audio_of, matches, quality_of, year_of
+from .release_parser import parse_release_info
 
 PRIVATE_CATEGORIES = ("2000", "5000")
 
@@ -79,13 +80,15 @@ def _upsert(
         """,
         (int(asset["id"]), tracker, title, size),
     ).fetchone()
+    parsed = parse_release_info(title)
     values = (
         tracker,
         title,
         norm_title(title),
         year_of(title),
-        quality_of(title),
-        audio_of(title),
+        parsed.quality,
+        parsed.audio,
+        *parsed.extra_db_tuple(),
         size,
         (result.get("infoHash") or "").lower() or None,
         result.get("downloadUrl"),
@@ -98,7 +101,11 @@ def _upsert(
         conn.execute(
             """
             UPDATE releases SET tracker=?, title=?, normalized_title=?, year=?,
-                quality=?, audio=?, size_bytes=?, info_hash=?, download_url=?,
+                quality=?, audio=?,
+                source_type=?, codec=?, hdr=?, audio_codec=?, audio_channels=?,
+                edition=?, release_group=?, proper_rank=?, streaming_service=?,
+                parsed_flags=?,
+                size_bytes=?, info_hash=?, download_url=?,
                 seeders=?, peers=?, health=?, health_checked_at=?,
                 source='prowlarr', privacy=?,
                 updated_at=strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
@@ -110,14 +117,24 @@ def _upsert(
     conn.execute(
         """
         INSERT INTO releases(asset_id, tracker, guid, title, normalized_title,
-                             year, quality, audio, size_bytes, is_pack,
+                             year, quality, audio,
+                             source_type, codec, hdr, audio_codec, audio_channels,
+                             edition, release_group, proper_rank, streaming_service,
+                             parsed_flags,
+                             size_bytes, is_pack,
                              info_hash, download_url, seeders, peers, health,
                              health_checked_at, source, privacy)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, 'prowlarr', ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, 'prowlarr', ?)
         ON CONFLICT(guid) DO UPDATE SET
             tracker=excluded.tracker, title=excluded.title,
             normalized_title=excluded.normalized_title, year=excluded.year,
             quality=excluded.quality, audio=excluded.audio,
+            source_type=excluded.source_type, codec=excluded.codec,
+            hdr=excluded.hdr, audio_codec=excluded.audio_codec,
+            audio_channels=excluded.audio_channels, edition=excluded.edition,
+            release_group=excluded.release_group, proper_rank=excluded.proper_rank,
+            streaming_service=excluded.streaming_service,
+            parsed_flags=excluded.parsed_flags,
             size_bytes=excluded.size_bytes, info_hash=excluded.info_hash,
             download_url=excluded.download_url, seeders=excluded.seeders,
             peers=excluded.peers, health=excluded.health,

@@ -63,16 +63,61 @@ def _fetch(client, kind: str, tmdb: int) -> dict:
         code = str(code or "").strip().upper()
         if code and code not in codes:
             codes.append(code)
+    genres = [
+        str(g.get("name") or "").strip()
+        for g in (payload.get("genres") or [])
+        if isinstance(g, dict) and g.get("name")
+    ]
+    orig_lang = (payload.get("original_language") or "").strip() or None
+    country_csv = ",".join(codes) or None
+    is_anim_genre = any(
+        "anim" in g.lower() or int(g.get("id") or 0) == 16
+        for g in (payload.get("genres") or [])
+        if isinstance(g, dict)
+    )
+    is_anime = 1 if (
+        is_anim_genre and (orig_lang == "ja" or "JP" in codes)
+    ) else 0
+    runtime_sec = None
+    if kind == "movie":
+        rt = int(payload.get("runtime") or 0)
+        runtime_sec = rt * 60 if rt > 0 else None
+        companies = [
+            str(c.get("name") or "").strip()
+            for c in (payload.get("production_companies") or [])
+            if isinstance(c, dict) and c.get("name")
+        ]
+        network_studio = companies[0] if companies else None
+        series_status = (payload.get("status") or "").strip() or None
+    else:
+        rts = payload.get("episode_run_time") or []
+        rt = int(rts[0]) if rts else 0
+        if rt <= 0 and isinstance(payload.get("last_episode_to_air"), dict):
+            rt = int(payload["last_episode_to_air"].get("runtime") or 0)
+        runtime_sec = rt * 60 if rt > 0 else None
+        nets = [
+            str(n.get("name") or "").strip()
+            for n in (payload.get("networks") or [])
+            if isinstance(n, dict) and n.get("name")
+        ]
+        network_studio = nets[0] if nets else None
+        series_status = (payload.get("status") or "").strip() or None
+    imdb_id = (payload.get("imdb_id") or "").strip() or None
     return {
         "kind": kind,
         "tmdb": tmdb,
-        "original_language": (payload.get("original_language") or "").strip()
-        or None,
-        "original_country": ",".join(codes) or None,
+        "original_language": orig_lang,
+        "original_country": country_csv,
         "poster_path": (payload.get("poster_path") or "").strip() or None,
         "backdrop_path": (payload.get("backdrop_path") or "").strip() or None,
         "overview": (payload.get("overview") or "").strip() or None,
         "vote_average": payload.get("vote_average"),
+        "genres": ", ".join(genres) if genres else None,
+        "series_status": series_status,
+        "imdb_id": imdb_id,
+        "network_studio": network_studio,
+        "runtime_seconds": runtime_sec,
+        "is_anime": is_anime,
     }
 
 
@@ -124,6 +169,15 @@ def backfill(
                             vote_average = COALESCE(?, vote_average),
                             original_language = COALESCE(?, original_language),
                             original_country = COALESCE(?, original_country),
+                            genres = COALESCE(?, genres),
+                            series_status = COALESCE(?, series_status),
+                            imdb_id = COALESCE(?, imdb_id),
+                            network_studio = COALESCE(?, network_studio),
+                            runtime_seconds = COALESCE(?, runtime_seconds),
+                            is_anime = CASE WHEN ? = 1 THEN 1 ELSE is_anime END,
+                            series_type = CASE
+                                WHEN ? = 1 AND kind = 'series' AND series_type = 'standard'
+                                THEN 'anime' ELSE series_type END,
                             metadata_at = ?
                         WHERE kind = ? AND tmdb = ?
                         """,
@@ -134,6 +188,13 @@ def backfill(
                             item["vote_average"],
                             item["original_language"],
                             item["original_country"],
+                            item["genres"],
+                            item["series_status"],
+                            item["imdb_id"],
+                            item["network_studio"],
+                            item["runtime_seconds"],
+                            item["is_anime"],
+                            item["is_anime"],
                             _now(),
                             item["kind"],
                             item["tmdb"],
