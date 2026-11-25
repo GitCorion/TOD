@@ -28,7 +28,7 @@ export function renderRichReleaseRow(release, { showProgress = false, showTracke
   const cf = Number(release.cf_score || 0);
   const cfClass = cf > 0 ? 'ok' : cf < 0 ? 'bad' : 'muted';
   const breakdown = Array.isArray(release.score_breakdown) && release.score_breakdown.length
-    ? release.score_breakdown.map(([name, sc]) => `${name}: ${sc > 0 ? '+' : ''}${sc}`).join(' | ')
+    ? release.score_breakdown.map((entry) => { const [name, sc] = Array.isArray(entry) ? entry : [entry?.name || 'CF', entry?.score ?? 0]; return `${name}: ${sc > 0 ? '+' : ''}${sc}`; }).join(' | ')
     : 'Sin Custom Formats aplicados';
   const rejections = Array.isArray(release.rejections) ? release.rejections : [];
   const rejectedHtml = rejections.length
