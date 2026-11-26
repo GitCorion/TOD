@@ -448,6 +448,7 @@ def sync_sources(
         "results": 0,
         "jackett_results": 0,
         "accepted": 0,
+        "accepted_items": [],
         "inserted": 0,
         "updated": 0,
         "skipped": 0,
@@ -715,6 +716,17 @@ def sync_sources(
             report["results"] += int(outcome["results"])
             report["jackett_results"] += int(outcome["jackett_results"])
             report["accepted"] += len(outcome["accepted"])
+            for item in outcome["accepted"]:
+                title = str(item.get("title") or "").strip()
+                if title:
+                    report["accepted_items"].append(
+                        {
+                            "title": title,
+                            "tracker": str(
+                                item.get("indexer") or item.get("tracker") or ""
+                            ),
+                        }
+                    )
             report["errors"].extend(outcome["errors"])
             report["items"].append(outcome["item"])
             pending.append((asset, outcome["accepted"]))

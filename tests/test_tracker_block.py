@@ -3,7 +3,7 @@ from pathlib import Path
 
 from catalogo.db import init_db
 from catalogo.policy import TrackerPolicy, upsert_policy
-from catalogo.tracker_block import set_tracker_blocked
+from catalogo.tracker_block import delete_tracker, set_tracker_blocked
 
 MIGRATIONS = Path(__file__).resolve().parents[1] / "catalogo" / "migrations"
 
@@ -264,3 +264,112 @@ def test_prune_unplayable_keys_and_blocked_sources_hidden(tmp_path):
     report = export_strm(db, out, prune=True)
     assert report["written"] == 0
     assert not main.exists()
+
+
+def test_delete_tracker_removes_releases_and_policy(tmp_path):
+    db = seed(tmp_path)
+    report = delete_tracker(
+        str(db),
+        tmp_path / "strm",
+        "TrackerJackett (API)",
+        delete_strm=False,
+    )
+    assert report["releases"] == 2
+    assert report["policy"] == "deleted"
+    conn = sqlite3.connect(db)
+    assert conn.execute("SELECT COUNT(*) FROM releases").fetchone()[0] == 0
+    assert conn.execute(
+        "SELECT COUNT(*) FROM tracker_policies"
+    ).fetchone()[0] == 0
+    conn.close()
+
+
+def test_delete_tracker_future_releases_are_blocked(tmp_path):
+    db = seed(tmp_path)
+    report = delete_tracker(
+        str(db),
+        tmp_path / "strm",
+        "TrackerJackett (API)",
+        prevent_readd=True,
+        delete_strm=False,
+    )
+    assert report["policy"] == "disabled"
+    assert report["releases"] == 2
+    conn = sqlite3.connect(db)
+    assert conn.execute("SELECT COUNT(*) FROM releases").fetchone()[0] == 0
+    assert conn.execute(
+        "SELECT enabled FROM tracker_policies "
+        "WHERE tracker='TrackerJackett (API)'"
+    ).fetchone()[0] == 0
+    # Un sync futuro no puede reactivar el tracker.
+    conn.execute(
+        "INSERT INTO releases(asset_id,tracker,title,size_bytes,health,seeders) "
+        "VALUES(1,'TrackerJackett (API)','future.mkv',1000,'alive',5)"
+    )
+    conn.commit()
+    assert conn.execute(
+        "SELECT health FROM releases WHERE title='future.mkv'"
+    ).fetchone()[0] == "blocked"
+    conn.close()
+
+
+def test_delete_tracker_also_removes_strm(tmp_path):
+    db, out, main, variant = _strm_setup(tmp_path, other_source=False)
+    report = delete_tracker(str(db), out, "TrackerA")
+    assert report["releases"] == 1
+    assert report["strm"]["total"] == 2
+    assert not variant.exists()
+    assert not main.exists()
+    conn = sqlite3.connect(db)
+    assert conn.execute("SELECT COUNT(*) FROM releases").fetchone()[0] == 0
+    conn.close()
+
+
+def test_delete_tracker_dry_run_changes_nothing(tmp_path):
+    db, out, main, variant = _strm_setup(tmp_path, other_source=False)
+    report = delete_tracker(str(db), out, "TrackerA", dry_run=True)
+    assert report["releases"] == 1
+    assert report["strm"]["total"] == 2
+    assert main.exists()
+    assert variant.exists()
+    conn = sqlite3.connect(db)
+    assert conn.execute("SELECT COUNT(*) FROM releases").fetchone()[0] == 1
+    conn.close()
+
+
+def test_delete_tracker_strm_only_keeps_releases_and_policy(tmp_path):
+    db, out, main, variant = _strm_setup(tmp_path, other_source=False)
+    conn = sqlite3.connect(db)
+    conn.execute(
+        "INSERT INTO tracker_policies(tracker, enabled) VALUES('TrackerA', 1)"
+    )
+    conn.commit()
+    report = delete_tracker(str(db), out, "TrackerA", strm_only=True)
+    assert report["action"] == "delete_strm"
+    assert report["releases"] == 1
+    assert report["policy"] == "present"
+    assert report["prevent_readd"] is False
+    assert report["strm"]["total"] == 2
+    assert not main.exists()
+    assert not variant.exists()
+    conn = sqlite3.connect(db)
+    assert conn.execute("SELECT COUNT(*) FROM releases").fetchone()[0] == 1
+    assert conn.execute(
+        "SELECT enabled FROM tracker_policies WHERE tracker='TrackerA'"
+    ).fetchone()[0] == 1
+    conn.close()
+
+
+def test_delete_tracker_reports_active_seeds(tmp_path):
+    db = seed(tmp_path)
+    conn = sqlite3.connect(db)
+    conn.execute(
+        "INSERT INTO seed_commitments(asset_id,tracker,size_bytes,state) "
+        "VALUES(1,'TrackerJackett (API)',1000,'seeding')"
+    )
+    conn.commit()
+    conn.close()
+    report = delete_tracker(
+        str(db), tmp_path / "strm", "TrackerJackett (API)", delete_strm=False
+    )
+    assert report["active_seeds"] == 1

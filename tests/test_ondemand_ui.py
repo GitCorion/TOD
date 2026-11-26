@@ -375,6 +375,79 @@ def test_manual_request_does_not_fake_arr_membership(tmp_path):
     assert not any(episode["library_added"] for episode in other["episodes"])
 
 
+def test_monitor_reports_current_title_and_found(tmp_path, monkeypatch):
+    from types import SimpleNamespace
+
+    db = _seed(tmp_path)
+    config = _config(tmp_path, db)
+    with sqlite3.connect(db) as conn:
+        conn.execute(
+            "UPDATE media_items SET monitored=1 "
+            "WHERE key='series:tmdb:42:1:1'"
+        )
+        conn.commit()
+
+    class Client:
+        def indexers(self):
+            return []
+
+    monkeypatch.setattr(admin, "_prowlarr", lambda config: Client())
+    monkeypatch.setattr(
+        admin,
+        "sync_sources",
+        lambda *args, **kwargs: {
+            "accepted_items": [
+                {"title": "Release encontrado", "tracker": "TrackerX"}
+            ]
+        },
+    )
+    monkeypatch.setattr(
+        admin, "export_strm", lambda *args, **kwargs: {"written": 1}
+    )
+    messages = []
+    ctx = SimpleNamespace(
+        config=config,
+        check=lambda: None,
+        report=lambda message=None, progress=None: messages.append(message),
+    )
+    report = admin.monitor_titles(db, config, workers=1, ctx=ctx)
+    assert report["found"] == 1
+    assert any(
+        "con fuente" in message
+        and "buscando Serie de prueba" in message
+        and "hallado Release encontrado · TrackerX" in message
+        for message in messages
+    )
+
+
+def test_monitor_respects_search_filters(tmp_path, monkeypatch):
+    db = _seed(tmp_path)
+    config = _config(tmp_path, db)
+    with sqlite3.connect(db) as conn:
+        conn.execute("UPDATE media_items SET monitored=1")
+        conn.commit()
+
+    class Client:
+        def indexers(self):
+            return []
+
+    searched = []
+
+    def fake_sync(db_path, client, **kwargs):
+        searched.append(kwargs.get("key"))
+
+    monkeypatch.setattr(admin, "_prowlarr", lambda config: Client())
+    monkeypatch.setattr(admin, "sync_sources", fake_sync)
+    monkeypatch.setattr(
+        admin, "export_strm", lambda *args, **kwargs: {"written": 0}
+    )
+    report = admin.monitor_titles(
+        db, config, q="alien 3", kind="movie", workers=1
+    )
+    assert set(searched) == {"movie:tmdb:2"}
+    assert report["checked"] == 1
+
+
 def test_monitor_only_checks_available_titles(tmp_path, monkeypatch):
     db = _seed(tmp_path)
     config = _config(tmp_path, db)

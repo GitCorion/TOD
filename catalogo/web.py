@@ -766,7 +766,7 @@ class Handler(PlaybackHandler):
                 return self._json(status_code, payload, head=head)
             raise WebError(404, "no encontrado")
 
-        if parts and parts[0] in ("language", "seed", "profiles", "custom-formats", "restrictions", "naming", "root-folders", "tags", "media-tags", "custom-filters", "import-lists"):
+        if parts and parts[0] in ("language", "seed", "search-fallback", "profiles", "custom-formats", "restrictions", "naming", "root-folders", "tags", "media-tags", "custom-filters", "import-lists"):
             result = api_preferences.handle(
                 app,
                 parts,

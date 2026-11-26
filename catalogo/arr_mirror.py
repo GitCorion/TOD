@@ -16,7 +16,7 @@ from datetime import date, datetime, timezone
 from typing import Any
 
 from .db import connect
-from .seed_settings import load as load_seed_settings
+from .search_settings import load as load_search_settings
 from .title_sync import upsert_episodes, upsert_movies
 
 # Respaldo completo: si el *arr pierde sus ficheros, TOD mantiene el
@@ -188,7 +188,7 @@ def mirror_radarr(db_path, radarr, *, now: str | None = None) -> dict[str, Any]:
     items: list[dict[str, Any]] = []
     updates: list[tuple[int | None, str, int, bool, bool]] = []
     meta_items: dict[str, dict[str, Any]] = {}
-    fallback_enabled = load_seed_settings(db_path)["arr_fallback"]
+    fallback_enabled = load_search_settings(db_path)["arr_fallback"]
     queue_movies, queue_ok = _queue_ids(radarr, "radarr")
     for row in rows:
         report["seen"] += 1
@@ -361,7 +361,7 @@ def mirror_sonarr(db_path, sonarr, *, now: str | None = None) -> dict[str, Any]:
     complete_series: set[int] = set()
     fallback_keys: list[str] = []
     fallback_pairs: list[tuple[str, str]] = []
-    fallback_enabled = load_seed_settings(db_path)["arr_fallback"]
+    fallback_enabled = load_search_settings(db_path)["arr_fallback"]
     queue_episodes, queue_ok = _queue_ids(sonarr, "sonarr")
     for series in rows:
         report["seen"] += 1

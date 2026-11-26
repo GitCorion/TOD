@@ -72,7 +72,7 @@ export async function renderDashboard({ signal }) {
         <span class="spinner" aria-hidden="true"></span>
         <div class="info">
           <strong>${esc(jobLabel(active.kind))}</strong>
-          <small>${esc(active.message || 'En curso')}, ${active.state === 'queued' ? 'en cola' : `${Math.round((active.progress || 0) * 100)} %`}</small>
+          <small id="dashJobMessage">${esc(active.message || 'En curso')}, ${active.state === 'queued' ? 'en cola' : `${Math.round((active.progress || 0) * 100)} %`}</small>
         </div>
         ${barPercent((active.progress || 0) * 100)}
         <a class="btn btn-sm btn-ghost" href="#/jobs">Ver tarea</a>

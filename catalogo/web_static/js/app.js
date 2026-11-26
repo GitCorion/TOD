@@ -140,6 +140,14 @@ function setActivity(data) {
     }
     if (navJobs) navJobs.textContent = String(active.length);
     setSectionCount('jobs', active.length);
+    const activeMsg = $('#jobActiveMessage');
+    if (activeMsg && running.message) activeMsg.textContent = running.message;
+    const dashMsg = $('#dashJobMessage');
+    if (dashMsg && running.state === 'running' && running.message) dashMsg.textContent = running.message;
+    const activeBar = $('#jobActiveBar .bar i');
+    if (activeBar) activeBar.style.width = `${Math.round((running.progress || 0) * 100)}%`;
+    const activePct = $('#jobActivePct');
+    if (activePct) activePct.textContent = `${Math.round((running.progress || 0) * 100)}%`;
     if (bar) {
       bar.innerHTML = `<span class="spinner" aria-hidden="true"></span>
         <strong>${esc(jobLabel(running.kind))}</strong>
@@ -1157,6 +1165,17 @@ document.addEventListener('click', async (event) => {
       await route({ preserveScroll: true });
       return;
     }
+    if (action === 'search-save') {
+      const values = {};
+      $$('[data-search-field]').forEach((input) => {
+        values[input.dataset.searchField] = input.type === 'checkbox' ? input.checked : input.value;
+      });
+      await apiPost('/api/search-fallback', values);
+      state.settingsDirty = false;
+      toast('Preferencias de búsqueda actualizadas', 'ok');
+      await route({ preserveScroll: true });
+      return;
+    }
     if (action === 'seed-policy-save') {
       const tracker = element.dataset.tracker;
       const values = { tracker };
@@ -1399,9 +1418,17 @@ document.addEventListener('click', async (event) => {
         toast('No hay títulos disponibles pendientes de buscar', 'warn');
         return;
       }
+      const filtersNow = parseRoute().query;
+      const searchFilters = {
+        q: (filtersNow.get('q') || '').trim(),
+        kind: filtersNow.get('kind') || '',
+      };
+      const withFilters = searchFilters.q || searchFilters.kind;
       const ok = await confirmModal({
-        title: 'Buscar monitorizados',
-        message: `Se buscarán ${fmtInt(missing)} títulos monitorizados ya estrenados. Los pendientes de estreno se omiten.`,
+        title: withFilters ? 'Buscar con filtros' : 'Buscar monitorizados',
+        message: withFilters
+          ? `Se buscarán los ${fmtInt(missing)} títulos que cumplen los filtros actuales.`
+          : `Se buscarán ${fmtInt(missing)} títulos monitorizados ya estrenados. Los pendientes de estreno se omiten.`,
         confirm: 'Buscar',
       });
       if (!ok) return;
@@ -1409,7 +1436,7 @@ document.addEventListener('click', async (event) => {
       try {
         const result = await apiPost('/api/jobs', {
           kind: 'monitor',
-          params: { limit: 0, delay: 0, workers: 4 },
+          params: { limit: 0, delay: 0, workers: 4, ...searchFilters },
         });
         toast(`Búsqueda en cola (#${result.job_id})`, 'ok',
           `<button class="btn btn-sm btn-ghost" data-action="job-detail" data-id="${result.job_id}">Ver tarea</button>`);
@@ -1796,55 +1823,83 @@ document.addEventListener('click', async (event) => {
       return;
     }
     if (action === 'tracker-block') {
-      const blocked = element.dataset.blocked === '1';
       const tracker = element.dataset.tracker;
-      if (!blocked) {
-        const ok = await confirmModal({
-          title: 'Desbloquear tracker',
-          message: `Se devolverán los releases de ${tracker} a estado desconocido y se habilitará su política.`,
-          confirm: 'Desbloquear',
-        });
-        if (!ok) return;
-        const result = await apiPost('/api/trackers/block', {
-          tracker, blocked: false,
-        });
-        toast(`${tracker}: ${result.releases} releases afectados`, 'ok');
-        await route({ preserveScroll: true });
-        return;
-      }
-
+      const ok = await confirmModal({
+        title: 'Desbloquear tracker',
+        message: `Se habilitará la política de ${tracker}. Las descargas activas no se tocan.`,
+        confirm: 'Desbloquear',
+      });
+      if (!ok) return;
+      const result = await apiPost('/api/trackers/block', {
+        tracker, blocked: false,
+      });
+      toast(`${tracker}: ${result.releases} releases afectados`, 'ok');
+      await route({ preserveScroll: true });
+      return;
+    }
+    if (action === 'tracker-strm') {
+      const tracker = element.dataset.tracker;
+      const ok = await confirmModal({
+        title: 'Borrar .strm del tracker',
+        message: `Se borrarán los accesos .strm que apuntan a versiones de ${tracker}. No se tocan sus versiones ni su política.`,
+        confirm: 'Borrar .strm',
+      });
+      if (!ok) return;
+      const result = await apiPost('/api/trackers/delete', {
+        tracker,
+        strm_only: true,
+      });
+      toast(`${tracker}: ${Number(result.strm?.total || 0)} .strm eliminados`, 'ok');
+      await route({ preserveScroll: true });
+      return;
+    }
+    if (action === 'tracker-delete') {
+      const tracker = element.dataset.tracker;
       const choice = await new Promise((resolve) => {
         openModal(
-          'Bloquear tracker',
-          `<p class="muted" style="margin-top:0">Se marcarán todos los releases de <strong>${esc(tracker)}</strong> como bloqueados y se deshabilitará su política. No se tocan las descargas activas.</p>
+          'Eliminar tracker',
+          `<p class="muted" style="margin-top:0">Se borrarán todas las versiones de <strong>${esc(tracker)}</strong> de la biblioteca de TOD. Las descargas activas en qBittorrent no se tocan.</p>
            <label class="inline check" style="margin-top:10px">
              <input type="checkbox" id="trackerDeleteStrm" checked>
              Eliminar también los .strm de este tracker
            </label>
-           <p class="tiny faint" style="margin:6px 0 0">Se borrarán las versiones que apuntan a sus releases. El .strm principal solo se elimina si el título se queda sin otra fuente ni fichero local.</p>`,
+           <label class="inline check" style="margin-top:6px">
+             <input type="checkbox" id="trackerPreventReadd">
+             Evitar que se vuelva a agregar (bloquear el tracker)
+           </label>
+           <p class="tiny faint" style="margin:6px 0 0">Sin bloquearlo, el tracker se borrará por completo y podría reaparecer si vuelve a estar en Prowlarr/Jackett. El .strm principal solo se elimina si el título se queda sin otra fuente local.</p>`,
           `<button class="btn btn-ghost" data-action="modal-close">Cancelar</button>
-           <button class="btn btn-danger" data-action="tracker-block-start" data-tracker="${esc(tracker)}">Bloquear</button>`,
+           <button class="btn btn-danger" data-action="tracker-delete-start" data-tracker="${esc(tracker)}">Eliminar</button>`,
           { slim: true, resolve },
         );
       });
       if (!choice) return;
 
-      const result = await apiPost('/api/trackers/block', {
+      const result = await apiPost('/api/trackers/delete', {
         tracker,
-        blocked: true,
+        prevent_readd: Boolean(choice.prevent_readd),
         delete_strm: Boolean(choice.delete_strm),
       });
       const removed = Number(result.strm?.total || 0);
       toast(
-        `${tracker}: ${result.releases} releases bloqueados${removed ? `, ${removed} .strm ${removed === 1 ? 'eliminado' : 'eliminados'}` : ''}`,
+        `${tracker}: ${result.releases} versiones eliminadas${removed ? `, ${removed} .strm ${removed === 1 ? 'eliminado' : 'eliminados'}` : ''}`,
         'ok',
       );
+      const seeds = Number(result.active_seeds || 0);
+      if (seeds) {
+        toast(
+          `Quedan ${seeds} siembras activas de ${tracker} en qBittorrent; no se han tocado.`,
+          'warn',
+        );
+      }
       await route({ preserveScroll: true });
       return;
     }
-    if (action === 'tracker-block-start') {
-      const deleteStrm = Boolean($('#trackerDeleteStrm')?.checked);
-      closeModal({ delete_strm: deleteStrm });
+    if (action === 'tracker-delete-start') {
+      closeModal({
+        prevent_readd: Boolean($('#trackerPreventReadd')?.checked),
+        delete_strm: Boolean($('#trackerDeleteStrm')?.checked),
+      });
       return;
     }
     if (action === 'go-title') {

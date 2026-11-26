@@ -52,7 +52,11 @@ from .seeding import normalize_completed
 from .strm import export_strm
 from .title_sync import monitor_if_not_in_arr, upsert_episodes, upsert_movies
 from .tmdb import TmdbClient, TmdbError, episode_items, movie_item, tv_item, year_of_date
-from .tracker_block import delete_tracker_strm, set_tracker_blocked
+from .tracker_block import (
+    delete_tracker as delete_tracker_data,
+    delete_tracker_strm,
+    set_tracker_blocked,
+)
 from .trackers import GENERAL_TRACKERS
 from .worker import run_once
 
@@ -610,6 +614,8 @@ def monitor_titles(
     workers: int = 4,
     no_jackett: bool = True,
     force: bool = False,
+    q: str = "",
+    kind: str = "",
     ctx=None,
 ) -> dict[str, Any]:
     """Busca fuentes en paralelo para títulos en seguimiento y crea su `.strm` si aparecen."""
@@ -637,6 +643,13 @@ def monitor_titles(
             "    AND t.state IN ('waiting', 'downloading'))"
         )
     params: list[Any] = []
+    if kind in ("movie", "series"):
+        query += " AND kind = ?"
+        params.append(kind)
+    text = (q or "").strip().lower()
+    if text:
+        query += " AND (lower(title) LIKE ? OR lower(key) LIKE ?)"
+        params.extend([f"%{text}%", f"%{text}%"])
     selected_keys: list[str] = []
     if keys:
         selected_keys = [str(key) for key in keys if key][:2000]
@@ -682,6 +695,8 @@ def monitor_titles(
         )
 
     published_keys = set(inventory(config.catalog_library)["keys"])
+    last_title = ""
+    last_found = ""
     already_ids = [row["id"] for row in rows if row["key"] in published_keys]
     if already_ids:
         with closing(connect(db_path)) as conn:
@@ -703,11 +718,14 @@ def monitor_titles(
     max_workers = max(1, min(int(workers), 8, len(pending_rows) or 1))
 
     def process_one(row: dict[str, Any]) -> None:
-        nonlocal checked, found
+        nonlocal checked, found, last_title, last_found
         ctx.check()
         key = row["key"]
+        with lock:
+            last_title = str(row.get("title") or key)
+            last_found = ""
         try:
-            sync_sources(
+            sync_result = sync_sources(
                 str(db_path),
                 client,
                 jackett=jackett,
@@ -722,6 +740,13 @@ def monitor_titles(
                 id_fallback=True,
                 indexer_payload=indexer_payload,
             )
+            accepted = (sync_result or {}).get("accepted_items") or []
+            if accepted:
+                best = accepted[0]
+                found_title = str(best.get("title") or "")[:70]
+                tracker = str(best.get("tracker") or "")[:24]
+                with lock:
+                    last_found = found_title + (f" · {tracker}" if tracker else "")
             exported = export_strm(
                 db_path,
                 config.catalog_library,
@@ -763,8 +788,15 @@ def monitor_titles(
             for index, future in enumerate(as_completed(futures)):
                 future.result()
                 if index % 5 == 0 or index == len(futures) - 1:
+                    detail = f" · con fuente {found}"
+                    if errors:
+                        detail += f" · errores {len(errors)}"
+                    if last_title:
+                        detail += f" · buscando {last_title[:50]}"
+                    if last_found:
+                        detail += f" · hallado {last_found}"
                     ctx.report(
-                        f"seguimiento {index + 1 + len(already_ids)}/{len(rows)}",
+                        f"seguimiento {index + 1 + len(already_ids)}/{len(rows)}{detail}",
                         progress=((index + 1 + len(already_ids)) / max(1, len(rows))),
                     )
         if found:
@@ -1102,6 +1134,29 @@ def block_tracker(
     return report
 
 
+def delete_tracker(
+    config: Config,
+    tracker: str,
+    *,
+    prevent_readd: bool = False,
+    delete_strm: bool = True,
+    strm_only: bool = False,
+    dry_run: bool = False,
+) -> dict[str, Any]:
+    """Borra los `.strm` de un tracker y, si se pide, también sus versiones."""
+    if not (tracker or "").strip():
+        raise JobError("falta el tracker")
+    return delete_tracker_data(
+        str(config.db_path),
+        config.catalog_library,
+        tracker.strip(),
+        prevent_readd=prevent_readd,
+        delete_strm=delete_strm,
+        strm_only=strm_only,
+        dry_run=dry_run,
+    )
+
+
 def set_target(
     config: Config,
     key: str,
@@ -1236,7 +1291,7 @@ def qbit_action(
         if not load_seed_settings(config.db_path)["allow_delete"]:
             raise JobError(
                 "el borrado desde TOD está desactivado; actívalo en "
-                "Configuración → Siembra o usa qBittorrent"
+                "Configuración → Trackers y Siembra o usa qBittorrent"
             )
     client = _qb_write(config)
     if action == "pause":
@@ -2133,6 +2188,8 @@ def job_monitor(ctx: JobContext) -> dict[str, Any]:
         workers=max(1, _int(params.get("workers"), 4)),
         no_jackett=_bool(params.get("no_jackett"), True),
         force=_bool(params.get("force"), False),
+        q=str(params.get("q") or ""),
+        kind=str(params.get("kind") or ""),
         ctx=ctx,
     )
     ctx.report("seguimiento terminado", progress=0.97)
@@ -2188,9 +2245,9 @@ def job_worker_cycle(ctx: JobContext) -> dict[str, Any]:
         if lost:
             report["prune_lost_strm"] = _prune_lost_strm(config, lost)
         try:
-            from .seed_settings import load as load_seed_settings
+            from .search_settings import load as load_search_settings
 
-            if load_seed_settings(db)["arr_fallback"]:
+            if load_search_settings(db)["arr_fallback"]:
                 ctx.report("buscando respaldo del *arr", 0.5)
                 report["fallback"] = fallback_sweep(
                     config, limit=50, workers=3

@@ -1,13 +1,17 @@
-"""Bloquea/desbloquea un tracker completo para descargas on-demand.
+"""Bloquea, desbloquea y elimina un tracker completo para descargas on-demand.
 
-Se usa cuando el índice devuelve páginas de login, torrents retirados o un
-HTTP 404/500 sistemático: buscar funciona, pero descargar no. No se tocan
-los compromisos ya activos (se siguen sembrando); solo se impide que el
-catálogo elija ese tracker para nuevas descargas.
+El bloqueo se usa cuando el índice devuelve páginas de login, torrents
+retirados o un HTTP 404/500 sistemático: buscar funciona, pero descargar no.
+No se tocan los compromisos ya activos (se siguen sembrando); solo se impide
+que el catálogo elija ese tracker para nuevas descargas.
 
 `blocked` es un valor de `releases.health`, así que el resolver y el
 exportador de `.strm` lo ignoran. La política queda deshabilitada, lo que
 hace que la admisión rechace el tracker con `tracker_disabled`.
+
+La eliminación borra los releases del tracker y, si se pide, sus `.strm`.
+Para evitar que un sync futuro lo reincorpore se conserva la política
+deshabilitada; si no, se borra también la fila de política.
 """
 
 from __future__ import annotations
@@ -283,4 +287,101 @@ def delete_tracker_strm(
         from . import strm_inventory
 
         strm_inventory.invalidate(root)
+    return report
+
+
+def delete_tracker(
+    db_path,
+    out_dir,
+    tracker: str,
+    *,
+    prevent_readd: bool = False,
+    delete_strm: bool = True,
+    strm_only: bool = False,
+    dry_run: bool = False,
+) -> dict:
+    """Elimina los `.strm` y, si se pide, las versiones de un tracker.
+
+    - `strm_only=True` solo limpia los `.strm`: no toca releases ni política.
+      Es lo que se usa cuando el tracker sigue activo en Prowlarr/Jackett.
+    - Si no, borra todos sus releases y, con `prevent_readd`, conserva la
+      política deshabilitada para que los syncs no lo reincorporen. Sin esa
+      opción se borra también la política (borrado completo).
+    - La limpieza de `.strm` va antes de tocar la BD: necesita los IDs de los
+      releases. No se toca qBittorrent; solo se cuentan las siembras activas.
+    """
+    name = (tracker or "").strip()
+    if not name:
+        raise ValueError("falta el tracker")
+
+    report: dict = {
+        "tracker": name,
+        "action": "delete_strm" if strm_only else "delete",
+        "releases": 0,
+        "policy": "missing",
+        "prevent_readd": bool(prevent_readd) and not strm_only,
+        "delete_strm": bool(delete_strm or strm_only),
+        "active_seeds": 0,
+        "active_torrents": 0,
+        "strm": None,
+        "dry_run": dry_run,
+    }
+    with closing(connect(db_path)) as conn:
+        report["releases"] = int(
+            conn.execute(
+                "SELECT COUNT(*) FROM releases WHERE tracker = ?", (name,)
+            ).fetchone()[0]
+            or 0
+        )
+        report["policy"] = (
+            "present"
+            if conn.execute(
+                "SELECT 1 FROM tracker_policies WHERE tracker = ?", (name,)
+            ).fetchone()
+            else "missing"
+        )
+        report["active_seeds"] = int(
+            conn.execute(
+                "SELECT COUNT(*) FROM seed_commitments WHERE tracker = ? "
+                "AND state IN ('approved', 'active', 'seeding')",
+                (name,),
+            ).fetchone()[0]
+            or 0
+        )
+        report["active_torrents"] = int(
+            conn.execute(
+                "SELECT COUNT(*) FROM torrents WHERE tracker = ? "
+                "AND state IN ('waiting', 'downloading', 'complete', 'seeding')",
+                (name,),
+            ).fetchone()[0]
+            or 0
+        )
+
+    if delete_strm or strm_only:
+        report["strm"] = delete_tracker_strm(
+            db_path, out_dir, name, dry_run=dry_run
+        )
+    if strm_only:
+        return report
+    if prevent_readd:
+        blocked = set_tracker_blocked(
+            db_path,
+            name,
+            blocked=True,
+            reason="eliminado_manualmente",
+            dry_run=dry_run,
+        )
+        report["policy"] = blocked["policy"]
+    if dry_run:
+        return report
+
+    with closing(connect(db_path)) as conn:
+        conn.execute("DELETE FROM releases WHERE tracker = ?", (name,))
+        if not prevent_readd:
+            conn.execute(
+                "DELETE FROM tracker_policies WHERE tracker = ?", (name,)
+            )
+            if report["policy"] == "present":
+                report["policy"] = "deleted"
+        conn.commit()
     return report

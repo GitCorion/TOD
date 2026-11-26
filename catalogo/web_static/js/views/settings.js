@@ -208,11 +208,12 @@ function diskLine(item, key) {
 }
 
 export async function renderSettings({ signal, query } = {}) {
-  const [data, schedule, attention, seed, language, system, indexers, setupData, arrData] = await Promise.all([
+  const [data, schedule, attention, seed, searchFallback, language, system, indexers, setupData, arrData] = await Promise.all([
     api('/api/settings', { signal }),
     api('/api/scheduler', { signal }),
     api('/api/attention', { signal }).catch(() => null),
     api('/api/seed', { signal }).catch(() => null),
+    api('/api/search-fallback', { signal }).catch(() => null),
     api('/api/language', { signal }).catch(() => null),
     api('/api/system', { signal }).catch(() => null),
     api('/api/indexers', { signal }).catch(() => ({ items: [] })),
@@ -285,11 +286,15 @@ export async function renderSettings({ signal, query } = {}) {
     const days = Math.round((Number(hours) / 24) * 100) / 100;
     const ratio = current.target_ratio ?? seedDefaults.ratio;
     const privacy = stats.privacy || known.privacy || current.privacy || 'private';
-    const enabled = stats.enabled !== undefined
-      ? stats.enabled !== 0
-      : current.enabled !== false;
-    const isBlocked = stats.enabled === 0;
+    const isBlocked = stats.enabled !== undefined
+      ? Number(stats.enabled) === 0
+      : current.enabled !== undefined && Number(current.enabled) === 0;
+    const enabled = !isBlocked;
     const hardBlocked = isBlocked && Number(stats.blocked || 0) > 0;
+    const versiones = Number(stats.releases ?? known.releases ?? 0);
+    // Los trackers eliminados quedan bloqueados en la BD para que los syncs
+    // no los reincorporen, pero no se muestran: no tienen versiones.
+    if (isBlocked && versiones === 0) return '';
     const detail = [
       stats.privacy || known.privacy || current.privacy || '',
       stats.releases !== undefined
@@ -317,8 +322,9 @@ export async function renderSettings({ signal, query } = {}) {
       <td data-label="Última" class="tiny faint nowrap">${stats.last_checked ? fmtDate(stats.last_checked) : '—'}</td>
       <td class="actions" data-label="">
         <button class="btn btn-sm btn-ghost" data-action="seed-policy-save" data-tracker="${esc(tracker)}">Guardar</button>
-        <button class="btn btn-sm ${isBlocked ? '' : 'btn-danger'}" data-action="tracker-block"
-          data-tracker="${esc(tracker)}" data-blocked="${isBlocked ? '0' : '1'}">${isBlocked ? 'Desbloquear' : 'Bloquear'}</button>
+        ${isBlocked ? `<button class="btn btn-sm" data-action="tracker-block" data-tracker="${esc(tracker)}">Desbloquear</button>` : ''}
+        <button class="btn btn-sm btn-ghost" data-action="tracker-strm" data-tracker="${esc(tracker)}">Borrar .strm</button>
+        <button class="btn btn-sm btn-danger" data-action="tracker-delete" data-tracker="${esc(tracker)}">Eliminar</button>
       </td>
     </tr>`;
   }).join('');
@@ -420,6 +426,22 @@ export async function renderSettings({ signal, query } = {}) {
       </div>
     </div>
 
+    <div class="panel section" id="settings-search-fallback">
+      <div class="panel-head"><h2>Búsqueda en Radarr/Sonarr</h2></div>
+      <div class="panel-body">
+        <label class="inline check">
+          <input type="checkbox" data-search-field="arr_fallback" ${searchFallback?.arr_fallback ? 'checked' : ''}>
+          Buscar los títulos monitorizados sin fichero ni en cola
+        </label>
+        <p class="muted tiny" style="margin:8px 0">
+          Si Radarr o Sonarr pierde un fichero, TOD busca fuentes para ese
+          título y publica sus accesos. No mueve ni borra nada en el *arr.
+          Se ejecuta en cada espejo y en la pasada de respaldo.
+        </p>
+        <button class="btn btn-sm btn-primary" data-action="search-save">Guardar búsqueda</button>
+      </div>
+    </div>
+
 ` : ''}
     ${activeTab === 'general' ? `
     <div class="panel section" id="settings-directories">
@@ -483,16 +505,11 @@ export async function renderSettings({ signal, query } = {}) {
     <div class="panel section" id="settings-seed">
       <div class="panel-head">
         <h2>Trackers y siembra</h2>
-        <span class="right tiny faint">TOD no borra torrents ni ficheros descargados</span>
       </div>
       <div class="panel-body">
         <p class="muted tiny" style="margin-top:0">
-          TOD mantiene el torrent en force-start hasta cumplir el mínimo. Después
-          lo suelta y qBittorrent aplica sus propias reglas de ratio y tiempo.
-          Por defecto qBittorrent decide el borrado; puedes permitir que TOD
-          también borre desde Descargas. Si aún no está en la biblioteca de
-          Radarr/Sonarr, TOD espera hasta el máximo indicado (0 = sin límite)
-          para no perder la única copia.
+          TOD siembra el mínimo y luego suelta el torrent. El borrado lo decide
+          qBittorrent salvo que actives «Permitir borrar desde TOD».
         </p>
         <div class="form-grid">
           <label class="field"><span>Días mínimos por defecto</span>
@@ -516,14 +533,13 @@ export async function renderSettings({ signal, query } = {}) {
           <label class="field"><span>Máximo de espera (horas)</span>
             <input class="input" type="number" min="0" max="8760" step="1" data-seed-field="keep_max_hours" value="${esc(seedDefaults.keep_max_hours ?? 72)}">
           </label>
-          <label class="inline check" style="align-self:end;padding-bottom:4px">
-            <input type="checkbox" data-seed-field="arr_fallback" ${seedDefaults.arr_fallback !== false ? 'checked' : ''}>
-            Buscar también en Radarr/Sonarr sin fichero ni cola
-          </label>
           <label class="field"><span>&nbsp;</span>
             <button class="btn btn-primary" data-action="seed-save">${icon('check', 'sm')} Guardar siembra</button>
           </label>
         </div>
+        <p class="muted tiny" style="margin:0 0 8px">
+          «Mantener hasta que esté en Radarr/Sonarr» es el seguro para no borrar la única copia mientras el arr no tenga el fichero.
+        </p>
         <div class="table-wrap">
           <table class="table--stack">
             <thead><tr><th>Tracker</th><th>Privacidad</th><th>Días</th><th>Ratio</th><th>Descargar</th><th title="Última comprobación de salud">Última</th><th></th></tr></thead>
@@ -533,8 +549,8 @@ export async function renderSettings({ signal, query } = {}) {
         <p class="muted tiny" style="margin:8px 0 0">
           «Descargar» solo permite o bloquea descargas nuevas de TOD en ese
           tracker; no pausa el indexer (para eso, usa Configuración → Indexers).
-          «Bloquear» marca sus versiones como no disponibles y, si lo eliges,
-          borra sus <span class="mono">.strm</span>.
+          «Eliminar» borra sus versiones y, si lo eliges, sus
+          <span class="mono">.strm</span>.
         </p>
       </div>
     </div>
@@ -562,7 +578,7 @@ export async function renderSettings({ signal, query } = {}) {
   if (!state.settingsDirtyHandler) {
     state.settingsDirtyHandler = (event) => {
       if (state.view !== 'settings') return;
-      if (!event.target.closest('[data-setting], [data-task], [data-seed-field], [data-seed-tracker], [data-language]')) return;
+      if (!event.target.closest('[data-setting], [data-task], [data-seed-field], [data-seed-tracker], [data-search-field], [data-language]')) return;
       state.settingsDirty = true;
       $('#settingsDirty')?.classList.remove('hidden');
     };

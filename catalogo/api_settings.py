@@ -250,4 +250,18 @@ def handle(
         )
         app.audit("web.tracker_block", payload=result)
         return 200, result
+
+    if parts == ["trackers", "delete"]:
+        if not mutate:
+            raise WebError(405, "usa POST")
+        result = admin.delete_tracker(
+            app.config,
+            str(body.get("tracker") or ""),
+            prevent_readd=bool(body.get("prevent_readd", False)),
+            delete_strm=bool(body.get("delete_strm", True)),
+            strm_only=bool(body.get("strm_only", False)),
+            dry_run=bool(body.get("dry_run", False)),
+        )
+        app.audit("web.tracker_delete", payload=result)
+        return 200, result
     return None

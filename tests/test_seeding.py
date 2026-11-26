@@ -81,7 +81,7 @@ def test_seed_settings_roundtrip(tmp_path):
     init_db(db, MIGRATIONS)
     values = save_seed(
         str(db), min_hours=24, ratio=0.5, force=False,
-        keep_until_library=False, keep_max_hours=0, arr_fallback=False,
+        keep_until_library=False, keep_max_hours=0,
     )
     assert values == {
         "min_hours": 24,
@@ -90,7 +90,6 @@ def test_seed_settings_roundtrip(tmp_path):
         "allow_delete": False,
         "keep_until_library": False,
         "keep_max_hours": 0,
-        "arr_fallback": False,
     }
     assert load_seed(str(db)) == values
 

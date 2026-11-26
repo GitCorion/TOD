@@ -28,7 +28,7 @@ from .jellyfin_leases import touch_active_leases
 from .library_sync import sync_library
 from .metadata import backfill as metadata_backfill
 from .monitoring import monitor_all
-from .admin import monitor_titles
+from .admin import delete_tracker as admin_delete_tracker, monitor_titles
 from .mover import move_completed
 from .normalize_series import normalize_series_titles
 from .packs import prune_misassigned_packs
@@ -922,6 +922,19 @@ def cmd_block_tracker(args, config: Config) -> int:
     return 0
 
 
+def cmd_delete_tracker(args, config: Config) -> int:
+    report = admin_delete_tracker(
+        config,
+        args.tracker,
+        prevent_readd=args.prevent_readd,
+        delete_strm=not args.keep_strm,
+        strm_only=args.strm_only,
+        dry_run=not args.execute,
+    )
+    _print(report)
+    return 0
+
+
 def cmd_clean_broken(args, config: Config) -> int:
     try:
         qbit_read = QbittorrentClient.from_config(config)
@@ -1428,6 +1441,24 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--reason", default="downloads_broken")
     p.add_argument("--execute", action="store_true")
 
+    p = sub.add_parser(
+        "delete-tracker",
+        help="elimina las versiones de un tracker (y sus .strm) de TOD",
+    )
+    p.add_argument("tracker")
+    p.add_argument(
+        "--strm-only",
+        action="store_true",
+        help="borrar solo los .strm; no tocar versiones ni política",
+    )
+    p.add_argument(
+        "--prevent-readd",
+        action="store_true",
+        help="al borrar versiones, dejar la política bloqueada",
+    )
+    p.add_argument("--keep-strm", action="store_true", help="no borrar sus .strm")
+    p.add_argument("--execute", action="store_true")
+
     p = sub.add_parser("prune-library", help="borra .strm de títulos ya en Radarr/Sonarr")
     p.add_argument("--out", required=True)
     p.add_argument("--execute", action="store_true")
@@ -1584,6 +1615,7 @@ def main(argv: list[str] | None = None) -> int:
         "worker": cmd_worker,
         "repair": cmd_repair,
         "block-tracker": cmd_block_tracker,
+        "delete-tracker": cmd_delete_tracker,
         "jellyfin-leases": cmd_jellyfin_leases,
         "prune-library": cmd_prune_library,
         "prune-packs": cmd_prune_packs,

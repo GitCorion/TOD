@@ -3,7 +3,9 @@
 TOD garantiza el mínimo pactado (horas y ratio): mientras no se cumpla,
 pone el torrent en force-start para que qBittorrent no lo pare por cola o
 límites y, si estaba pausado, lo reanuda. Al cumplirse, lo suelta y
-qBittorrent decide qué hacer con el torrent y sus ficheros. TOD no borra nada.
+qBittorrent decide qué hacer con el torrent y sus ficheros. En este ciclo TOD
+no borra nada: el borrado se gestiona desde Cola (si se permite) o por acción
+manual.
 
 El reloj de siembra empieza cuando la descarga termina, no cuando empieza:
 `seed_started_at` sale de qBittorrent (`seeding_time`) y, si aún no hay dato,

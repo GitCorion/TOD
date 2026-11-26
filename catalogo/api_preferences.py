@@ -5,7 +5,14 @@ from __future__ import annotations
 from contextlib import closing
 from typing import Any
 
-from . import language_settings, naming, policy, profiles, seed_settings
+from . import (
+    language_settings,
+    naming,
+    policy,
+    profiles,
+    search_settings,
+    seed_settings,
+)
 from .db import connect
 from .errors import WebError
 
@@ -71,12 +78,20 @@ def handle(
                 allow_delete=body.get("allow_delete"),
                 keep_until_library=body.get("keep_until_library"),
                 keep_max_hours=body.get("keep_max_hours"),
-                arr_fallback=body.get("arr_fallback"),
             )
         except (TypeError, ValueError) as exc:
             raise WebError(400, str(exc)[:200])
         app.audit("web.seed_settings", payload=values)
         return 200, {"defaults": values}
+
+    if parts == ["search-fallback"]:
+        if not mutate:
+            return 200, search_settings.load(db)
+        values = search_settings.save(
+            db, arr_fallback=body.get("arr_fallback")
+        )
+        app.audit("web.search_fallback", payload=values)
+        return 200, values
 
     if parts == ["seed", "policies"]:
         if not mutate:

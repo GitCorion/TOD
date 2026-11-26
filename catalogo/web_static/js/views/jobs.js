@@ -55,9 +55,9 @@ export async function renderJobs({ signal }) {
       <div class="panel-head"><h2>Tarea en curso</h2>${status(active.state === 'running' ? 'Ejecutando' : 'En cola', active.state === 'running' ? 'info' : 'warn')}</div>
       <div class="job-active">
         ${active.state === 'running' ? '<span class="spinner" aria-hidden="true"></span>' : icon('clock')}
-        <div class="info"><strong>${esc(jobLabel(active.kind))} <span class="faint" style="font-weight:400">#${active.id}</span></strong><small>${esc(active.message || 'Preparando…')}</small></div>
-        ${bar(active.progress || 0)}
-        <span class="badge mono">${Math.round((active.progress || 0) * 100)}%</span>
+        <div class="info"><strong>${esc(jobLabel(active.kind))} <span class="faint" style="font-weight:400">#${active.id}</span></strong><small id="jobActiveMessage">${esc(active.message || 'Preparando…')}</small></div>
+        <span id="jobActiveBar">${bar(active.progress || 0)}</span>
+        <span class="badge mono" id="jobActivePct">${Math.round((active.progress || 0) * 100)}%</span>
         <button class="btn btn-sm btn-danger" data-action="job-cancel" data-id="${active.id}">Cancelar</button>
       </div>
     </div>` : ''}

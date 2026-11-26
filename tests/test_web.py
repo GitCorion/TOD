@@ -516,3 +516,55 @@ def test_web_tracker_block_can_delete_strm(tmp_path):
         server.shutdown()
         server.server_close()
         server.app.runner.stop()
+
+
+def test_web_tracker_delete_removes_releases_and_strm(tmp_path):
+    db, _movie_id, release_id = seed(tmp_path)
+    config = config_for(tmp_path, db)
+    title_dir = config.catalog_library / "movies" / "Viva (2024)"
+    title_dir.mkdir(parents=True)
+    main = title_dir / "Viva (2024).strm"
+    main.write_text("http://127.0.0.1:8773/play?key=movie%3Atmdb%3A1\n")
+    variant = title_dir / "Viva (2024) - 1080p.strm"
+    variant.write_text(
+        "http://127.0.0.1:8773/play?key=movie%3Atmdb%3A1"
+        f"&release={release_id}\n"
+    )
+    from catalogo.web import make_server
+
+    server = make_server("127.0.0.1", 0, config)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    base = f"http://127.0.0.1:{server.server_address[1]}"
+    try:
+        status, payload = _request(
+            base,
+            "/api/trackers/delete",
+            method="POST",
+            body={
+                "tracker": "Tracker",
+                "prevent_readd": True,
+                "delete_strm": True,
+            },
+            headers={"X-Catalogo": "web"},
+        )
+        assert status == 200
+        assert payload["releases"] == 2
+        assert payload["policy"] == "disabled"
+        assert payload["strm"]["variants"] == 1
+        assert not variant.exists()
+        assert main.exists()
+    finally:
+        server.shutdown()
+        server.server_close()
+        server.app.runner.stop()
+
+    conn = sqlite3.connect(db)
+    assert conn.execute("SELECT COUNT(*) FROM releases").fetchone()[0] == 0
+    assert conn.execute(
+        "SELECT enabled FROM tracker_policies WHERE tracker='Tracker'"
+    ).fetchone()[0] == 0
+    assert conn.execute(
+        "SELECT COUNT(*) FROM events WHERE kind='web.tracker_delete'"
+    ).fetchone()[0] == 1
+    conn.close()
