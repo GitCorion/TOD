@@ -83,7 +83,7 @@ export function renderArrSettingsSections(data) {
         <div class="tiny faint">${esc(limits || 'Sin límites extra')}</div>
       </td>
       <td data-label="Objetivo">${p.cutoff_quality ? badge(p.cutoff_quality, 'mono') : '<span class="faint">—</span>'}</td>
-      <td data-label="Idioma" class="tiny">${esc(p.language_preference || 'inherit')}</td>
+      <td data-label="Idioma" class="tiny">${esc(p.language_preference === 'inherit' || !p.language_preference ? 'Heredar ajuste global' : p.language_preference)}</td>
       <td data-label="Calidades" class="tiny faint">${esc(allowed + more)}</td>
       <td class="actions" data-label="">
         <button class="btn btn-sm btn-ghost" data-action="arr-profile-edit" data-id="${p.id}">Editar</button>
@@ -187,10 +187,10 @@ export function renderArrSettingsSections(data) {
 
     <div class="panel section" id="settings-media">
       <div class="panel-head">
-        <h2>Carpetas y nombres de ficheros</h2>
+        <h2>Gestión de medios (.strm y .nfo)</h2>
         <div class="right row" style="gap:8px">
           <button class="btn btn-sm btn-ghost" data-action="arr-rf-new">${icon('plus', 'sm')} Nueva carpeta raíz</button>
-          <button class="btn btn-sm btn-ghost" data-action="arr-reorg-preview">${icon('refresh', 'sm')} Preview Rename (.strm)</button>
+          <button class="btn btn-sm btn-ghost" data-action="arr-reorg-preview">${icon('refresh', 'sm')} Vista previa de renombrado (.strm)</button>
         </div>
       </div>
       <div class="panel-body">
@@ -246,22 +246,22 @@ export function renderArrSettingsSections(data) {
 
     <div class="panel section" id="settings-lists">
       <div class="panel-head">
-        <h2>Etiquetas (Tags) e Import Lists</h2>
+        <h2>Etiquetas y Listas de importación</h2>
         <div class="right row" style="gap:8px">
-          <button class="btn btn-sm btn-ghost" data-action="arr-list-new">${icon('plus', 'sm')} Nueva Import List</button>
+          <button class="btn btn-sm btn-ghost" data-action="arr-list-new">${icon('plus', 'sm')} Nueva lista de importación</button>
         </div>
       </div>
       <div class="panel-body">
         <div class="row" style="gap:8px;margin-bottom:12px;flex-wrap:wrap">
           <input id="newTagName" class="input" style="max-width:200px" placeholder="Nueva etiqueta (ej. anime)" autocomplete="off">
           <input id="newTagColor" class="input" type="color" value="#eab64b" style="width:46px;padding:2px">
-          <button class="btn btn-sm btn-primary" data-action="arr-tag-add">${icon('plus', 'sm')} Añadir Tag</button>
+          <button class="btn btn-sm btn-primary" data-action="arr-tag-add">${icon('plus', 'sm')} Añadir etiqueta</button>
         </div>
         <div class="tags-wrap" style="margin-bottom:16px">${tagChips || '<span class="tiny faint">Sin etiquetas todavía.</span>'}</div>
 
-        <h3 class="tiny muted" style="margin:12px 0 8px;text-transform:uppercase;letter-spacing:.04em">Import Lists (Auto-catalogado)</h3>
+        <h3 class="tiny muted" style="margin:12px 0 8px;text-transform:uppercase;letter-spacing:.04em">Listas de importación (auto-añadido)</h3>
         <div class="table-wrap"><table class="table--stack">
-          <thead><tr><th>Nombre / Origen</th><th>Contenido</th><th>Perfil / Tag</th><th>Última ejecución</th><th></th></tr></thead>
+          <thead><tr><th>Nombre / Origen</th><th>Contenido</th><th>Perfil / Etiqueta</th><th>Última ejecución</th><th></th></tr></thead>
           <tbody>${listRows || '<tr><td colspan="5" class="tiny faint">Sin listas configuradas.</td></tr>'}</tbody>
         </table></div>
       </div>

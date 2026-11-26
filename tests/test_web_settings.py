@@ -321,7 +321,7 @@ def test_settings_frontend_assets():
     assert "settings: {" in router
     assert 'data-route="system"' in index
     assert "Configuración" in ui
-    assert "Pendientes" in ui
+    assert "Buscados" in ui
     assert 'data-action="settings-save"' in view
     assert "settings-test" in view
     assert "schedulerRun" not in app

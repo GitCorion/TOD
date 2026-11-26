@@ -38,7 +38,7 @@ class TaskSpec:
 
 DEFAULT_TASKS: tuple[TaskSpec, ...] = (
     TaskSpec(
-        "worker-cycle", "Ciclo del worker", "worker-cycle",
+        "worker-cycle", "Ciclo de mantenimiento", "worker-cycle",
         "Sincroniza qBittorrent, repara, reseed y limpia.",
         interval=300,
     ),
@@ -55,7 +55,7 @@ DEFAULT_TASKS: tuple[TaskSpec, ...] = (
     ),
     TaskSpec(
         "arr-mirror", "Espejo Radarr/Sonarr", "arr-mirror",
-        "Importa las altas de Radarr/Sonarr, busca fuentes y crea sus entradas de Jellyfin.",
+        "Importa las altas de Radarr/Sonarr, busca releases y genera sus .strm.",
         interval=1800,
         params={"source_limit": 50, "publish_limit": 200, "delay": 0.2},
     ),
@@ -66,7 +66,7 @@ DEFAULT_TASKS: tuple[TaskSpec, ...] = (
     ),
     TaskSpec(
         "rss-sync", "Novedades RSS", "rss-sync",
-        "Captura novedades de Prowlarr/Jackett y crea sus entradas de Jellyfin.",
+        "Captura novedades de Prowlarr/Jackett y genera sus .strm.",
         interval=1800,
         params={"limit": 200, "delay": 0.3},
     ),
@@ -77,8 +77,8 @@ DEFAULT_TASKS: tuple[TaskSpec, ...] = (
         params={"limit": 1, "execute": True},
     ),
     TaskSpec(
-        "monitor", "Seguimiento diario", "monitor",
-        "Busca fuentes de los títulos en seguimiento que ya están disponibles.",
+        "monitor", "Buscar monitorizados", "monitor",
+        "Busca releases de los títulos monitorizados ya estrenados.",
         schedule="daily", at="04:20",
         params={"limit": 100, "delay": 2},
     ),
@@ -89,7 +89,7 @@ DEFAULT_TASKS: tuple[TaskSpec, ...] = (
         params={"prune": True, "min_seeders": 1},
     ),
     TaskSpec(
-        "backfill", "Fondo antiguo", "backfill",
+        "backfill", "Búsqueda histórica", "backfill",
         "Lote semanal de títulos antiguos pendientes.",
         schedule="weekly", weekday=6, at="03:00",
         params={"limit": 250, "delay": 8},
@@ -101,7 +101,7 @@ DEFAULT_TASKS: tuple[TaskSpec, ...] = (
         enabled=False,
     ),
     TaskSpec(
-        "metadata", "Metadatos TMDB", "metadata",
+        "metadata", "Actualizar metadatos", "metadata",
         "Rellena póster, sinopsis y nota de títulos sin metadatos.",
         schedule="weekly", weekday=0, at="05:00",
         params={"limit": 0, "delay": 0.08, "workers": 6},

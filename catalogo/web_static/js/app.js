@@ -258,16 +258,16 @@ let paletteTimer = null;
 const DESTINATIONS = [
   { label: 'Inicio', href: '#/dashboard', hint: 'Inicio' },
   { label: 'Biblioteca', href: '#/catalog', hint: 'Biblioteca' },
+  { label: 'Buscados', href: '#/monitor', hint: 'Biblioteca' },
   { label: 'Calendario', href: '#/calendar', hint: 'Biblioteca' },
-  { label: 'Pendientes', href: '#/monitor', hint: 'Biblioteca' },
-  { label: 'Descargas', href: '#/downloads', hint: 'Actividad' },
+  { label: 'Cola', href: '#/downloads', hint: 'Actividad' },
   { label: 'Tareas', href: '#/jobs', hint: 'Actividad' },
   { label: 'Historial', href: '#/history', hint: 'Actividad' },
   { label: 'Siembra', href: '#/seeds', hint: 'Actividad' },
   { label: 'Blocklist', href: '#/blocklist', hint: 'Actividad' },
   { label: 'Estado', href: '#/system', hint: 'Sistema' },
   { label: 'Configuración', href: '#/settings', hint: 'Sistema' },
-  { label: 'Añadir contenido', href: '#/add', hint: 'Acción' },
+  { label: 'Añadir nuevo', href: '#/add', hint: 'Acción' },
   { label: 'Primeros pasos', href: '#/setup', hint: 'Sistema' },
   { label: 'Detalle técnico', href: '#/technical', hint: 'Sistema' },
 ];
@@ -490,8 +490,8 @@ async function submitTask(kind) {
   }
   if (task?.danger && params.execute) {
     const ok = await confirmModal({
-      title: 'Ejecutar sin dry-run',
-      message: `«${task.title}» va a modificar datos reales. ¿Continuar?`,
+      title: 'Aplicar cambios reales',
+      message: `«${task.title}» va a modificar datos reales (sin modo simulación). ¿Continuar?`,
       confirm: 'Ejecutar',
       danger: true,
     });
@@ -571,11 +571,11 @@ function openTmdbPreview(tmdb, kind, title) {
 
 function openLibraryTitle(id, key, title, releases) {
   openModal(
-    'Añadir',
-    `<p class="muted" style="margin-top:0">Se añadirá el título.</p>
+    'Añadir a biblioteca',
+    `<p class="muted" style="margin-top:0">Se añadirá el título a tu biblioteca.</p>
      <label class="inline check">
        <input type="checkbox" name="monitored" ${Number(releases) ? '' : 'checked'}>
-       Seguir para buscar fuentes a diario
+       Monitorizar para buscar releases a diario
      </label>`,
     `<button class="btn btn-ghost" data-action="modal-close">Cancelar</button>
      <button class="btn btn-primary" data-action="library-title-start" data-id="${id}" data-key="${esc(key)}" data-releases="${releases}">Añadir</button>`,
@@ -597,7 +597,7 @@ async function startLibraryTitle(element) {
     if (releases && key) {
       await acquireKeys([key], key.startsWith('series:') ? 'series' : 'movie', 'publish');
     } else {
-      toast(monitored ? 'Añadido y en seguimiento' : 'Añadido', 'ok');
+      toast(monitored ? 'Añadido a biblioteca y monitorizado' : 'Añadido a biblioteca', 'ok');
     }
     await route();
   } catch (error) {
@@ -630,7 +630,7 @@ function openLibrarySeries(tmdb, title, season, mode = 'add') {
     `<p class="muted" style="margin-top:0">${intro}</p>
      <label class="inline check">
        <input type="checkbox" name="monitored" ${monitoredByDefault}>
-       Seguir para buscar fuentes a diario
+       Monitorizar para buscar releases a diario
      </label>`,
     `<button class="btn btn-ghost" data-action="modal-close">Cancelar</button>
      <button class="btn btn-primary" data-action="library-series-start" data-tmdb="${tmdb}" data-mode="${mode}" ${season ? `data-season="${season}"` : ''}>${action}</button>`,
@@ -664,7 +664,7 @@ async function startLibrarySeries(element) {
     const done = mode === 'add'
       ? (season !== null ? 'Temporada añadida' : 'Serie añadida')
       : 'Episodios añadidos';
-    const doneMonitored = `${done} y en seguimiento`;
+    const doneMonitored = `${done} y monitorizados`;
     const queued = result.job_id ? `, búsqueda en cola (#${result.job_id})` : '';
     closeModal();
     toast(
@@ -715,7 +715,7 @@ function manualSearchShell(id, query, content) {
 
 async function runManualSearch(id, query) {
   openModal(
-    'Búsqueda manual',
+    'Búsqueda interactiva',
     manualSearchShell(
       id,
       query,
@@ -739,12 +739,12 @@ async function runManualSearch(id, query) {
       </div>
       ${data.forced ? `<div class="notice" style="margin-bottom:10px">Búsqueda forzada por nombre. Revisa que los resultados correspondan antes de preparar.</div>` : ''}
       ${rows ? `<div class="table-wrap"><table class="table--stack">
-        <thead><tr><th>Versión</th><th>Calidad</th><th class="num">Score</th><th class="num">Tamaño</th><th class="num">Seeds</th><th>Salud</th><th></th></tr></thead>
+        <thead><tr><th>Release</th><th>Calidad</th><th class="num">Score</th><th class="num">Tamaño</th><th class="num">Seeds</th><th>Salud</th><th></th></tr></thead>
         <tbody>${rows}</tbody>
       </table></div>` : `<div class="empty"><strong>Sin resultados</strong>Prueba otro nombre o busca el título original.</div>`}
       ${summary.errors?.length ? `<p class="notice" style="margin-top:10px">${esc(summary.errors.slice(0, 2).join(' / '))}</p>` : ''}`;
     openModal(
-      'Búsqueda manual',
+      'Búsqueda interactiva',
       manualSearchShell(id, data.query || query, content),
       `<button class="btn btn-ghost" data-action="manual-search-done">Cerrar y actualizar</button>
        <button class="btn btn-ghost" data-action="modal-close">Cerrar</button>`,
@@ -752,7 +752,7 @@ async function runManualSearch(id, query) {
     );
   } catch (error) {
     openModal(
-      'Búsqueda manual',
+      'Búsqueda interactiva',
       manualSearchShell(id, query, `<div class="notice">${esc(error.message)}</div>`),
       `<button class="btn btn-ghost" data-action="modal-close">Cerrar</button>`,
       { wide: true },
@@ -1400,8 +1400,8 @@ document.addEventListener('click', async (event) => {
         return;
       }
       const ok = await confirmModal({
-        title: 'Buscar seguimiento',
-        message: `Se buscarán ${fmtInt(missing)} títulos disponibles. Los pendientes de estreno se omiten.`,
+        title: 'Buscar monitorizados',
+        message: `Se buscarán ${fmtInt(missing)} títulos monitorizados ya estrenados. Los pendientes de estreno se omiten.`,
         confirm: 'Buscar',
       });
       if (!ok) return;
@@ -1453,8 +1453,8 @@ document.addEventListener('click', async (event) => {
         const result = await apiPost(`/api/titles/${element.dataset.id}/monitor`, { monitored: true });
         toast(
           result.job_id
-            ? `En seguimiento, búsqueda en cola (#${result.job_id})`
-            : 'En seguimiento hasta encontrar fuente',
+            ? `Monitorizado, búsqueda en cola (#${result.job_id})`
+            : 'Monitorizado hasta encontrar fuente',
           'ok',
           result.job_id
             ? `<button class="btn btn-sm btn-ghost" data-action="job-detail" data-id="${result.job_id}">Ver tarea</button>`
@@ -1470,7 +1470,7 @@ document.addEventListener('click', async (event) => {
       element.disabled = true;
       try {
         await apiPost(`/api/titles/${element.dataset.id}/monitor`, { monitored: false });
-        toast('Seguimiento desactivado', 'ok');
+        toast('Monitorización desactivada', 'ok');
         await route();
       } finally {
         element.disabled = false;
@@ -1487,8 +1487,8 @@ document.addEventListener('click', async (event) => {
         const result = await apiPost(`/api/series/${tmdb}/monitor`, { monitored, seasons: season });
         toast(
           monitored
-            ? `Seguimiento activado en ${fmtInt(result.titles || 0)} episodios de la ${scope}`
-            : `Seguimiento desactivado en ${fmtInt(result.titles || 0)} episodios de la ${scope}`,
+            ? `Monitorización activada en ${fmtInt(result.titles || 0)} episodios de la ${scope}`
+            : `Monitorización desactivada en ${fmtInt(result.titles || 0)} episodios de la ${scope}`,
           'ok',
         );
         await route();
@@ -1506,8 +1506,8 @@ document.addEventListener('click', async (event) => {
     }
     if (action === 'unpublish-title') {
       const ok = await confirmModal({
-        title: 'Quitar de TOD',
-        message: 'Se quitará este título de TOD. No se borran las descargas ni los torrents.',
+        title: 'Quitar de la biblioteca',
+        message: 'Se quitará este título de la biblioteca de TOD. No se borran las descargas ni los torrents.',
         confirm: 'Quitar',
         danger: true,
       });
@@ -1516,7 +1516,7 @@ document.addEventListener('click', async (event) => {
       try {
         const result = await apiPost(`/api/titles/${element.dataset.id}/unpublish`, {});
         toast(
-          result.removed ? 'Quitado de TOD' : 'No había nada que quitar',
+          result.removed ? 'Quitado de la biblioteca' : 'No había nada que quitar',
           result.removed ? 'ok' : 'warn',
         );
         await route();
@@ -1527,8 +1527,8 @@ document.addEventListener('click', async (event) => {
     }
     if (action === 'unpublish-series') {
       const ok = await confirmModal({
-        title: 'Quitar serie de TOD',
-        message: 'Se quitará esta serie de TOD. No se borran las descargas ni los torrents.',
+        title: 'Quitar serie de la biblioteca',
+        message: 'Se quitará esta serie de la biblioteca de TOD. No se borran las descargas ni los torrents.',
         confirm: 'Quitar',
         danger: true,
       });
@@ -1537,7 +1537,7 @@ document.addEventListener('click', async (event) => {
       try {
         const result = await apiPost(`/api/series/${element.dataset.tmdb}/unpublish`, {});
         toast(
-          result.removed ? 'Serie quitada de TOD' : 'No había nada que quitar',
+          result.removed ? 'Serie quitada de la biblioteca' : 'No había nada que quitar',
           result.removed ? 'ok' : 'warn',
         );
         await route();
@@ -1685,13 +1685,13 @@ document.addEventListener('click', async (event) => {
     }
     if (action === 'release-target') {
       const result = await apiPost(`/api/releases/${element.dataset.release}/target`, { source_kind: 'torrent' });
-      toast(`Versión fijada para ${result.key}`, 'ok');
+      toast(`Release fijado por defecto para ${result.key}`, 'ok');
       await route();
       return;
     }
     if (action === 'release-auto') {
       await apiPost(`/api/releases/${element.dataset.release}/target`, { source_kind: 'auto' });
-      toast('Puntero vuelto a automático', 'ok');
+      toast('Selección automática de release restaurada', 'ok');
       await route();
       return;
     }

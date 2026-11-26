@@ -341,13 +341,13 @@ export async function renderSettings({ signal, query } = {}) {
   };
   const activeTab = sectionMap[rawSection] || 'general';
   const tabs = [
-    ['general', 'General y Directorios'],
+    ['general', 'General y Rutas'],
     ['integraciones', 'Integraciones e Indexers'],
-    ['perfiles', 'Perfiles y Formatos'],
-    ['medios', 'Carpetas y nombres .strm'],
-    ['listas', 'Etiquetas e Import Lists'],
+    ['perfiles', 'Perfiles y Custom Formats'],
+    ['medios', 'Gestión de medios (.strm)'],
+    ['listas', 'Etiquetas y Listas'],
     ['siembra', 'Trackers y Siembra'],
-    ['tareas', 'Tareas'],
+    ['tareas', 'Tareas programadas'],
   ];
   const showGlobalSave = activeTab === 'general' || activeTab === 'integraciones';
 

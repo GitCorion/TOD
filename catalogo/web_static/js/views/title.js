@@ -73,7 +73,8 @@ export async function renderTitle({ params, query, signal }) {
   const statusData = data.status || {};
   const od = data.ondemand || {};
   const secondaryBadges = [
-    od.library_added ? badge('En Radarr/Sonarr') : '',
+    od.library_added ? badge('En biblioteca') : '',
+    od.has_file ? badge('En Radarr/Sonarr') : '',
     od.downloaded ? badge('Descargada') : '',
   ].filter(Boolean).join('');
   state.titleDetail = data;
@@ -125,8 +126,8 @@ export async function renderTitle({ params, query, signal }) {
 
   const strip = `
     <div class="record-line section">
-      <span><b>${fmtInt(alive)}</b> ${alive === 1 ? 'fuente viva' : 'fuentes vivas'}</span>
-      <span><b>${fmtInt(data.releases.length)}</b> ${data.releases.length === 1 ? 'versión' : 'versiones'}</span>
+      <span><b>${fmtInt(alive)}</b> ${alive === 1 ? 'release vivo' : 'releases vivos'}</span>
+      <span><b>${fmtInt(data.releases.length)}</b> ${data.releases.length === 1 ? 'release' : 'releases'}</span>
       <span><b>${fmtInt(fileCount)}</b> ${fileCount === 1 ? 'fichero' : 'ficheros'}</span>
       ${statusData.quality ? `<span><b>${esc(statusData.quality)}</b> calidad</span>` : ''}
       <span><b>${fmtInt(data.commitments.length)}</b> ${data.commitments.length === 1 ? 'compromiso' : 'compromisos'}</span>
@@ -177,14 +178,14 @@ export async function renderTitle({ params, query, signal }) {
   const overview = `
     <div class="panel flush">
       <div class="panel-head">
-        <h2>Versiones</h2>
+        <h2>Releases</h2>
         <div class="right row" style="gap:8px">
-          <button class="btn btn-sm btn-ghost" data-action="detail-tab" data-tab="fuentes">Ver todas</button>
+          <button class="btn btn-sm btn-ghost" data-action="detail-tab" data-tab="fuentes">Ver todos</button>
         </div>
       </div>
       ${previewReleases.length
         ? `<div class="title-preview">${previewReleases.map(previewRelease).join('')}</div>`
-        : empty('Sin versiones', 'Busca fuentes para capturar candidatos.', `<button class="btn btn-sm" data-action="manual-search" data-id="${id}" data-title="${esc(item.title || '')}">Buscar manualmente</button>`)}
+        : empty('Sin releases', 'Lanza una búsqueda para capturar candidatos.', `<button class="btn btn-sm" data-action="manual-search" data-id="${id}" data-title="${esc(item.title || '')}">Búsqueda interactiva</button>`)}
     </div>
     <div class="panel flush section">
       <div class="panel-head">
@@ -199,10 +200,10 @@ export async function renderTitle({ params, query, signal }) {
         : empty(
           'Sin ficheros',
           aliveReleases
-            ? `Hay ${countLabel(aliveReleases, 'fuente viva', 'fuentes vivas')} sin descargar. Abre Fuentes y pulsa Preparar.`
+            ? `Hay ${countLabel(aliveReleases, 'release vivo', 'releases vivos')} sin descargar. Abre Releases y pulsa Preparar.`
             : 'No hay copias locales ni de archivo indexadas.',
           aliveReleases
-            ? '<button class="btn btn-sm" data-action="detail-tab" data-tab="fuentes">Ver fuentes</button>'
+            ? '<button class="btn btn-sm" data-action="detail-tab" data-tab="fuentes">Ver releases</button>'
             : '',
         )}
     </div>
@@ -211,16 +212,16 @@ export async function renderTitle({ params, query, signal }) {
   const releases = `
     <div class="panel flush">
       <div class="panel-head">
-        <h2>Versiones disponibles</h2>
+        <h2>Releases disponibles</h2>
         <div class="right row" style="gap:8px">
-          <button class="btn btn-sm" data-action="manual-search" data-id="${id}" data-title="${esc(item.title || '')}">Buscar manualmente</button>
+          <button class="btn btn-sm" data-action="manual-search" data-id="${id}" data-title="${esc(item.title || '')}">Búsqueda interactiva</button>
         </div>
       </div>
       ${data.releases.length ? `<div class="table-wrap"><table class="table--stack releases-table">
         
-        <thead><tr><th>Versión</th><th>Calidad</th><th class="num">Score</th><th class="num">Tamaño</th><th class="num">Seeds</th><th>Salud</th>${showProgress ? '<th>Progreso</th>' : ''}<th></th></tr></thead>
+        <thead><tr><th>Release</th><th>Calidad</th><th class="num">Score</th><th class="num">Tamaño</th><th class="num">Seeds</th><th>Salud</th>${showProgress ? '<th>Progreso</th>' : ''}<th></th></tr></thead>
         <tbody>${data.releases.map((release) => releaseRow(release, showProgress)).join('')}</tbody>
-      </table></div>` : empty('Sin versiones', 'Busca fuentes para capturar candidatos.', `<button class="btn btn-sm" data-action="manual-search" data-id="${id}" data-title="${esc(item.title || '')}">Buscar manualmente</button>`)}
+      </table></div>` : empty('Sin releases', 'Lanza una búsqueda para capturar candidatos.', `<button class="btn btn-sm" data-action="manual-search" data-id="${id}" data-title="${esc(item.title || '')}">Búsqueda interactiva</button>`)}
     </div>
   `;
 
@@ -305,14 +306,14 @@ export async function renderTitle({ params, query, signal }) {
             <span class="tiny faint">${fmtInt(data.collection.parts_count || 0)} películas</span>
           </a>` : ''}
           <div class="detail-actions">
-            ${!od.library_added && !item.monitored ? `<button class="btn btn-primary" data-action="library-title" data-id="${item.id}" data-key="${esc(item.key)}" data-title="${esc(item.title || '')}" data-releases="${data.releases.length}">${icon('plus')} Catalogar en TOD</button>` : ''}
-            ${od.library_added && !od.published && item.monitored ? `<button class="btn btn-ghost" data-action="unmonitor-title" data-id="${item.id}">Dejar de seguir</button>` : ''}
-            ${od.library_added && !od.published && !item.monitored && !od.has_file && !od.downloaded ? `<button class="btn" data-action="monitor-title" data-id="${item.id}">Seguir</button>` : ''}
+            ${!od.library_added && !item.monitored ? `<button class="btn btn-primary" data-action="library-title" data-id="${item.id}" data-key="${esc(item.key)}" data-title="${esc(item.title || '')}" data-releases="${data.releases.length}">${icon('plus')} Añadir a biblioteca</button>` : ''}
+            ${od.library_added && !od.published && item.monitored ? `<button class="btn btn-ghost" data-action="unmonitor-title" data-id="${item.id}">Dejar de monitorizar</button>` : ''}
+            ${od.library_added && !od.published && !item.monitored && !od.has_file && !od.downloaded ? `<button class="btn" data-action="monitor-title" data-id="${item.id}">Monitorizar</button>` : ''}
             ${!od.downloaded && data.releases.length ? `<button class="btn" data-action="download-now" data-key="${esc(item.key)}">${icon('download')} Descargar ahora</button>` : ''}
-            <button class="btn btn-ghost" data-action="manual-search" data-id="${item.id}" data-title="${esc(item.title || '')}">${icon('search')} Buscar fuentes</button>
-            <button class="btn btn-ghost" data-action="sync-title" data-id="${item.id}">${icon('search')} Buscar y añadir</button>
+            <button class="btn btn-ghost" data-action="manual-search" data-id="${item.id}" data-title="${esc(item.title || '')}">${icon('search')} Búsqueda interactiva</button>
+            <button class="btn btn-ghost" data-action="sync-title" data-id="${item.id}">${icon('search')} Búsqueda automática</button>
             ${item.tmdb ? `<a class="btn btn-ghost" href="${esc(data.tmdb_url || '#')}" target="_blank" rel="noreferrer">${icon('external')} TMDB</a>` : ''}
-            ${od.published ? `<button class="btn btn-sm btn-ghost danger-action" data-action="unpublish-title" data-id="${item.id}">Quitar de TOD</button>` : ''}
+            ${od.published ? `<button class="btn btn-sm btn-ghost danger-action" data-action="unpublish-title" data-id="${item.id}">Quitar de biblioteca</button>` : ''}
           </div>
         </div>
       </div>
@@ -324,7 +325,7 @@ export async function renderTitle({ params, query, signal }) {
       <div class="title-main">
         <div class="tabs" role="tablist">
           <button class="${tab === 'resumen' ? 'active' : ''}" data-action="detail-tab" data-tab="resumen" role="tab" aria-selected="${tab === 'resumen'}">Resumen</button>
-          <button class="${tab === 'fuentes' ? 'active' : ''}" data-action="detail-tab" data-tab="fuentes" role="tab" aria-selected="${tab === 'fuentes'}">Fuentes <b>${data.releases.length}</b></button>
+          <button class="${tab === 'fuentes' ? 'active' : ''}" data-action="detail-tab" data-tab="fuentes" role="tab" aria-selected="${tab === 'fuentes'}">Releases <b>${data.releases.length}</b></button>
           <button class="${tab === 'ficheros' ? 'active' : ''}" data-action="detail-tab" data-tab="ficheros" role="tab" aria-selected="${tab === 'ficheros'}">Ficheros <b>${fileCount}</b></button>
           <button class="${tab === 'historial' ? 'active' : ''}" data-action="detail-tab" data-tab="historial" role="tab" aria-selected="${tab === 'historial'}">Historial <b>${data.events.length}</b></button>
         </div>

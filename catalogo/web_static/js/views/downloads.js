@@ -122,7 +122,7 @@ export async function renderDownloads({ query, signal }) {
     api('/api/seed', { signal }).catch(() => null),
   ]);
   const canDelete = Boolean(seed?.defaults?.allow_delete);
-  setHeader('Descargas');
+  setHeader('Cola');
 
   const allGroups = groupItems(data.items || []).filter((group) => {
     const haystack = `${group.title} ${group.items.map((item) => item.name || '').join(' ')} ${group.keyName || ''}`.toLowerCase();

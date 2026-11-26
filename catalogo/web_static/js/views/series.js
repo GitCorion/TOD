@@ -26,7 +26,7 @@ function episodeStatus(ep) {
       ? status('Fuente lista, sin descargar', 'info')
       : status('Buscando fuente', 'info');
   }
-  if (!ep.in_catalog) return status('Sin catalogar', 'muted');
+  if (!ep.in_catalog) return status('Sin añadir', 'muted');
   return hasSource ? status('Fuente lista', 'info') : status('Sin fuente', 'muted');
 }
 
@@ -55,7 +55,7 @@ function seriesState(totals) {
     return status('Sin fuente', 'warn');
   }
   if (Number(totals.incomplete || 0) > 0 || Number(totals.monitored || 0) > 0) {
-    return status('En seguimiento', 'info');
+    return status('Monitorizada', 'info');
   }
   return status('Sin fuente', 'muted');
 }
@@ -80,14 +80,14 @@ export async function renderSeries({ params, query, signal }) {
     && (totals.catalog_aired || 0) >= aired;
   const notAdded = Math.max(0, aired - (totals.catalog_aired || 0));
   const seriesSummary = [
-    totals.library ? `${fmtInt(totals.library)} en Radarr/Sonarr` : '',
-    totals.monitored_aired ? `${fmtInt(totals.monitored_aired)} en seguimiento` : '',
+    totals.library ? `${fmtInt(totals.library)} en biblioteca` : '',
+    totals.monitored_aired ? `${fmtInt(totals.monitored_aired)} monitorizados` : '',
     totals.incomplete ? `${fmtInt(totals.incomplete)} sin fuente` : '',
-    notAdded ? `${fmtInt(notAdded)} sin catalogar` : '',
+    notAdded ? `${fmtInt(notAdded)} sin añadir` : '',
     totals.upcoming ? `${fmtInt(totals.upcoming)} sin estrenar` : '',
   ].filter(Boolean).join(', ');
   const seriesMode = totals.library || totals.monitored ? 'update' : 'add';
-  const seriesAction = totalRequested(totals) ? 'Catalogar episodios que faltan' : 'Catalogar serie';
+  const seriesAction = totalRequested(totals) ? 'Añadir episodios faltantes' : 'Añadir serie';
   const seriesTrackable = Math.max(0, Number(totals.catalog_episodes || 0) - Number(totals.library || 0));
   const seriesFollowed = Math.min(seriesTrackable, Number(totals.monitored || 0));
   const seasonEpisodes = seasonData?.episodes || [];
@@ -97,8 +97,8 @@ export async function renderSeries({ params, query, signal }) {
     && (seasonData?.catalog_aired || 0) >= (seasonData?.aired || 0);
   const seasonMode = seasonData?.library || seasonData?.monitored ? 'update' : 'add';
   const seasonAction = seasonData?.library || seasonData?.monitored
-    ? 'Catalogar episodios que faltan'
-    : 'Catalogar temporada';
+    ? 'Añadir episodios faltantes'
+    : 'Añadir temporada';
   setHeader(series.title || 'Serie');
   document.title = `${series.title || 'Serie'}, TOD`;
 
@@ -110,9 +110,9 @@ export async function renderSeries({ params, query, signal }) {
     const tag = `T${String(ep.season).padStart(2, '0')}E${String(ep.episode).padStart(2, '0')}`;
     const name = ep.name || `Episodio ${ep.episode}`;
     const actions = ep.in_catalog
-      ? `${!ep.library_added && !ep.monitored ? `<button class="btn btn-sm btn-ghost" data-action="library-title" data-id="${ep.id}" data-key="${esc(ep.key)}" data-title="${esc(name)}" data-releases="${ep.releases || 0}">Catalogar</button>` : ''}
-         ${!ep.published && !ep.monitored ? `<button class="btn btn-sm btn-ghost" data-action="monitor-title" data-id="${ep.id}">Seguir</button>` : ''}
-         ${!ep.published && ep.monitored ? `<button class="btn btn-sm btn-ghost" data-action="unmonitor-title" data-id="${ep.id}">Dejar de seguir</button>` : ''}
+      ? `${!ep.library_added && !ep.monitored ? `<button class="btn btn-sm btn-ghost" data-action="library-title" data-id="${ep.id}" data-key="${esc(ep.key)}" data-title="${esc(name)}" data-releases="${ep.releases || 0}">Añadir</button>` : ''}
+         ${!ep.published && !ep.monitored ? `<button class="btn btn-sm btn-ghost" data-action="monitor-title" data-id="${ep.id}">Monitorizar</button>` : ''}
+         ${!ep.published && ep.monitored ? `<button class="btn btn-sm btn-ghost" data-action="unmonitor-title" data-id="${ep.id}">Dejar de monitorizar</button>` : ''}
          ${!ep.downloaded && !ep.published ? `<button class="btn btn-sm" data-action="download-now" data-key="${esc(ep.key)}">Descargar ahora</button>` : ''}
          <a class="btn btn-sm btn-ghost" href="#/title/${ep.id}">Abrir</a>`
       : '<span class="faint">—</span>';
@@ -125,7 +125,7 @@ export async function renderSeries({ params, query, signal }) {
           ${still(ep.still_path, name)}
           <div class="cell-title">
             <strong>${esc(name)}</strong>
-            <small>${tag}, ${esc(fmtShortDate(ep.air_date))}${ep.library_added ? ', En Sonarr' : ''}</small>
+            <small>${tag}, ${esc(fmtShortDate(ep.air_date))}${ep.library_added ? ', En biblioteca' : ''}</small>
           </div>
         </a>
       </td>
@@ -142,7 +142,7 @@ export async function renderSeries({ params, query, signal }) {
     const incomplete = (entry.episodes || []).filter((episode) => episode.incomplete).length;
     const upcoming = (entry.episodes || []).filter((episode) => episode.available === false).length;
     const note = [
-      missing ? `${missing} sin catalogar` : '',
+      missing ? `${missing} sin añadir` : '',
       incomplete ? `${incomplete} sin fuente` : '',
       upcoming ? `${upcoming} sin estrenar` : '',
     ].filter(Boolean).join(', ');
@@ -175,7 +175,7 @@ export async function renderSeries({ params, query, signal }) {
       <select class="input input-sm" data-ss="tag_id"><option value="">Ninguna</option>${tagOpts}</select>
     </label>
     <button class="btn btn-sm btn-primary" data-action="series-settings-save" data-tmdb="${tmdb}" style="align-self:end">Guardar ajustes</button>
-    <label class="field" style="margin-left:auto"><span>Preset seguimiento</span>
+    <label class="field" style="margin-left:auto"><span>Preset de monitorización</span>
       <select class="input input-sm" data-change="series-preset" data-tmdb="${tmdb}">
         <option value="">— Aplicar preset —</option>
         <option value="all">Todos los episodios</option>
@@ -207,11 +207,11 @@ export async function renderSeries({ params, query, signal }) {
           ${ss.series_status ? `<div class="tiny faint" style="margin-top:4px">Estado: ${esc(ss.series_status)}${ss.genres ? ` · ${esc(ss.genres)}` : ''}</div>` : ''}
           <div class="detail-actions">
             ${allAdded ? '' : `<button class="btn btn-primary" data-action="library-series" data-tmdb="${tmdb}" data-title="${esc(series.title || '')}" data-mode="${seriesMode}">${icon('plus')} ${seriesAction}</button>`}
-            <button class="btn" data-action="sync-series" data-tmdb="${tmdb}">${icon('search')} Buscar y añadir</button>
-            ${seriesTrackable && seriesFollowed < seriesTrackable ? `<button class="btn btn-ghost" data-action="monitor-series" data-tmdb="${tmdb}">${icon('plus')} Seguir serie</button>` : ''}
-            ${seriesFollowed > 0 ? `<button class="btn btn-ghost danger-action" data-action="unmonitor-series" data-tmdb="${tmdb}">Dejar de seguir serie</button>` : ''}
+            <button class="btn" data-action="sync-series" data-tmdb="${tmdb}">${icon('search')} Búsqueda automática</button>
+            ${seriesTrackable && seriesFollowed < seriesTrackable ? `<button class="btn btn-ghost" data-action="monitor-series" data-tmdb="${tmdb}">${icon('plus')} Monitorizar serie</button>` : ''}
+            ${seriesFollowed > 0 ? `<button class="btn btn-ghost danger-action" data-action="unmonitor-series" data-tmdb="${tmdb}">Dejar de monitorizar</button>` : ''}
             <a class="btn btn-ghost" href="${esc(data.tmdb_url || '#')}" target="_blank" rel="noreferrer">${icon('external')} TMDB</a>
-            ${totals.library ? `<button class="btn btn-sm btn-ghost danger-action" data-action="unpublish-series" data-tmdb="${tmdb}">Quitar de TOD</button>` : ''}
+            ${totals.library ? `<button class="btn btn-sm btn-ghost danger-action" data-action="unpublish-series" data-tmdb="${tmdb}">Quitar de biblioteca</button>` : ''}
           </div>
         </div>
       </div>
@@ -224,10 +224,10 @@ export async function renderSeries({ params, query, signal }) {
 
     <div class="record-line section">
       <span><b>${fmtInt(totals.episodes || 0)}</b> episodios</span>
-      <span><b>${fmtInt(totals.library || 0)}</b> en Radarr/Sonarr</span>
-      <span><b>${fmtInt(totals.monitored_aired || 0)}</b> en seguimiento</span>
+      <span><b>${fmtInt(totals.library || 0)}</b> en biblioteca</span>
+      <span><b>${fmtInt(totals.monitored_aired || 0)}</b> monitorizados</span>
       <span><b>${fmtInt(totals.incomplete || 0)}</b> sin fuente</span>
-      <span><b>${fmtInt(notAdded)}</b> sin catalogar</span>
+      <span><b>${fmtInt(notAdded)}</b> sin añadir</span>
       ${totals.upcoming ? `<span><b>${fmtInt(totals.upcoming)}</b> sin estrenar</span>` : ''}
       ${totals.specials ? `<span><b>${fmtInt(totals.specials)}</b> especiales</span>` : ''}
     </div>
@@ -237,10 +237,10 @@ export async function renderSeries({ params, query, signal }) {
         <div class="chips">${seasonChips}</div>
         <div class="right row" style="gap:6px">
           ${seasonAdded ? '' : `<button class="btn btn-sm btn-ghost" data-action="library-season" data-season="${currentSeason}" data-tmdb="${tmdb}" data-title="${esc(series.title || '')}" data-mode="${seasonMode}">${icon('plus', 'sm')} ${seasonAction}</button>`}
-          ${seasonTrackable && seasonFollowed < seasonTrackable ? `<button class="btn btn-sm btn-ghost" data-action="monitor-season" data-season="${currentSeason}" data-tmdb="${tmdb}">${icon('plus', 'sm')} Seguir temporada</button>` : ''}
-          ${seasonFollowed > 0 ? `<button class="btn btn-sm btn-ghost danger-action" data-action="unmonitor-season" data-season="${currentSeason}" data-tmdb="${tmdb}">Dejar de seguir temporada</button>` : ''}
-          <button class="btn btn-sm btn-ghost" data-action="sync-season" data-season="${currentSeason}">${icon('search', 'sm')} Buscar y añadir</button>
-          <button class="btn btn-sm btn-ghost" data-action="manual-search-season" data-season="${currentSeason}">${icon('search', 'sm')} Buscar manualmente</button>
+          ${seasonTrackable && seasonFollowed < seasonTrackable ? `<button class="btn btn-sm btn-ghost" data-action="monitor-season" data-season="${currentSeason}" data-tmdb="${tmdb}">${icon('plus', 'sm')} Monitorizar temporada</button>` : ''}
+          ${seasonFollowed > 0 ? `<button class="btn btn-sm btn-ghost danger-action" data-action="unmonitor-season" data-season="${currentSeason}" data-tmdb="${tmdb}">Dejar de monitorizar</button>` : ''}
+          <button class="btn btn-sm btn-ghost" data-action="sync-season" data-season="${currentSeason}">${icon('search', 'sm')} Búsqueda automática</button>
+          <button class="btn btn-sm btn-ghost" data-action="manual-search-season" data-season="${currentSeason}">${icon('search', 'sm')} Búsqueda interactiva</button>
         </div>
       </div>
       <div class="panel-body" style="padding:0">
@@ -248,7 +248,7 @@ export async function renderSeries({ params, query, signal }) {
           <span class="tiny muted">${esc(seasonLabel(seasonData || { season: currentSeason }))}</span>
           <span class="row tiny faint" style="gap:14px">
             <span>${fmtInt(seasonData?.episode_count || 0)} episodios</span>
-            <span>${fmtInt(seasonData?.library || 0)} en Radarr/Sonarr</span>
+            <span>${fmtInt(seasonData?.library || 0)} en biblioteca</span>
             ${seasonData?.incomplete ? `<span class="warn-text">${fmtInt(seasonData.incomplete)} sin fuente</span>` : ''}
             ${seasonData?.upcoming ? `<span>${fmtInt(seasonData.upcoming)} sin estrenar</span>` : ''}
           </span>

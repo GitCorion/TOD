@@ -7,10 +7,10 @@ function partState(part) {
   if (part.published) return status('Disponible', 'ok');
   if (part.downloaded) return status('Descargado', 'ok');
   if (part.library_added && part.monitored && part.available === false) return status('Sin estrenar', 'muted');
-  if (part.library_added && part.monitored) return `${status('En Radarr/Sonarr', 'info')} ${status('En seguimiento', 'info')}`;
-  if (part.library_added) return status('En Radarr/Sonarr', 'info');
-  if (part.monitored) return status('En seguimiento', 'info');
-  if (!part.in_catalog) return status('Sin catalogar', 'muted');
+  if (part.library_added && part.monitored) return `${status('En biblioteca', 'info')} ${status('Monitorizada', 'info')}`;
+  if (part.library_added) return status('En biblioteca', 'info');
+  if (part.monitored) return status('Monitorizada', 'info');
+  if (!part.in_catalog) return status('Sin añadir', 'muted');
   if (part.publication === 'pendiente') return status('Sin verificar', 'warn');
   return status('Sin fuente', 'muted');
 }
@@ -37,7 +37,7 @@ export async function renderCollection({ params, signal }) {
       action = `<button class="btn btn-sm" data-action="manual-search" data-id="${part.asset_id}" data-title="${esc(part.title)}">${icon('search', 'sm')} Buscar fuentes</button>
                 <a class="btn btn-sm btn-ghost" href="${href}">Abrir</a>`;
     } else {
-      action = `<button class="btn btn-sm btn-primary" data-action="library-title" data-id="${part.asset_id}" data-key="${esc(part.key)}" data-title="${esc(part.title)}" data-releases="${part.publication === 'pendiente' ? 1 : 0}">${icon('plus', 'sm')} Catalogar</button>
+      action = `<button class="btn btn-sm btn-primary" data-action="library-title" data-id="${part.asset_id}" data-key="${esc(part.key)}" data-title="${esc(part.title)}" data-releases="${part.publication === 'pendiente' ? 1 : 0}">${icon('plus', 'sm')} Añadir</button>
                 <a class="btn btn-sm btn-ghost" href="${href}">Abrir</a>`;
     }
     return `<article class="media-card" ${href ? `data-href="${href}" tabindex="0" role="link"` : ''}>
@@ -62,8 +62,8 @@ export async function renderCollection({ params, signal }) {
         <div class="row">
           ${badge('saga', 'mono')}
           ${status(`${fmtInt(parts.length)} películas`, 'muted')}
-          ${status(`${fmtInt(added)} en Radarr/Sonarr`, 'info')}
-          ${monitored ? status(`${fmtInt(monitored)} en seguimiento`, 'info') : ''}
+          ${status(`${fmtInt(added)} en biblioteca`, 'info')}
+          ${monitored ? status(`${fmtInt(monitored)} monitorizadas`, 'info') : ''}
           ${noSource ? status(`${fmtInt(noSource)} sin fuente`, 'warn') : ''}
         </div>
         ${data.overview ? `<p class="overview">${esc(data.overview)}</p>` : ''}

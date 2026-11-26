@@ -268,12 +268,12 @@ const SECTION_FOR_VIEW = {
 
 const SECTION_TABS = {
   catalog: [
-    { label: 'Catálogo', href: '#/catalog', views: ['catalog', 'title', 'series', 'collection'] },
-    { label: 'Seguimiento', href: '#/monitor', views: ['monitor'], count: 'pending' },
+    { label: 'Biblioteca', href: '#/catalog', views: ['catalog', 'title', 'series', 'collection'] },
+    { label: 'Buscados', href: '#/monitor', views: ['monitor'], count: 'pending' },
     { label: 'Calendario', href: '#/calendar', views: ['calendar'] },
   ],
   activity: [
-    { label: 'Descargas', href: '#/downloads', views: ['downloads'] },
+    { label: 'Cola', href: '#/downloads', views: ['downloads'] },
     { label: 'Tareas', href: '#/jobs', views: ['jobs', 'history'], count: 'jobs' },
     { label: 'Siembra', href: '#/seeds', views: ['seeds'] },
     { label: 'Blocklist', href: '#/blocklist', views: ['blocklist'] },

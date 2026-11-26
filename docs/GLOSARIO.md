@@ -1,17 +1,35 @@
 # Glosario de la interfaz
 
-La interfaz habla de lo que ve el usuario, no de cómo lo llama el motor.
-Estos son los únicos términos que deberían aparecer en pantalla.
+La interfaz adopta la terminología familiar de **Radarr** y **Sonarr** adaptada al
+funcionamiento bajo demanda de **TOD** (reproducción mediante ficheros `.strm` en
+Jellyfin sin descarga previa obligatoria).
+
+Estos son los términos oficiales que deben aparecer en pantalla:
 
 | En la interfaz | Qué significa | Nombre interno |
 |---|---|---|
-| **Disponible** | Tiene su `.strm` y fuente viva o fichero; se puede reproducir. | `publicado` |
-| **Pendiente** | Hay una fuente o un fichero, pero todavía no existe el `.strm`. | `pendiente` |
-| **Sin fuente** | No hay ningún release que se pueda reproducir. | `sin_fuente` |
-| **En seguimiento** | TOD buscará fuentes para ese título y lo añadirá cuando aparezcan. | `monitored` |
-| **Sin estrenar** | El episodio aún no se ha emitido; no cuenta como ausente ni incompleto. | `available=false` |
-| **Fuente** | Un release o torrent que TOD puede reproducir, o que Radarr/Sonarr está descargando. | `release` |
-| **Carpeta de los `.strm`** | Carpeta donde TOD escribe los ficheros que lee Jellyfin. | `catalog_library` |
+| **Disponible** | Tiene su `.strm` y fuente viva o fichero; se puede reproducir en Jellyfin. | `publicado` |
+| **Pendiente de .strm** | Tiene fuente viva o fichero local, pero todavía falta generar su `.strm`. | `pendiente` |
+| **Sin fuente** | No hay ningún release vivo ni fichero que se pueda reproducir. | `sin_fuente` |
+| **Monitorizado** | TOD buscará releases automáticamente y generará el `.strm` cuando aparezcan. | `monitored` |
+| **Sin estrenar** | El episodio o película aún no se ha emitido/estrenado; no cuenta como faltante. | `available=false` |
+| **En biblioteca** | El título forma parte de la biblioteca gestionada por TOD. | `library_added` |
+| **En Radarr/Sonarr** | Existe un fichero real indexado desde Radarr o Sonarr (solo lectura). | `has_file` |
+| **Release** | Un candidato torrent concreto (en tablas de búsqueda y detalle). | `release` |
+| **Fuente** | Indicador general de disponibilidad reproducible (*Sin fuente*, *Fuente viva*). | `source` |
+| **Buscados** | Sección estilo *Wanted* con *Faltantes*, *Mejorables* y *Próximos*. | `monitor` |
+| **Cola** | Descargas y siembras activas en qBittorrent. | `downloads` |
+| **Blocklist** | Releases bloqueados manualmente o por fallos para no volver a usarlos. | `blocklist` |
+| **Carpeta de los .strm** | Carpeta donde TOD escribe los ficheros que lee Jellyfin. | `catalog_library` |
+
+## Búsqueda y acciones sobre releases
+
+- **Búsqueda automática**: busca e indexa releases según el perfil del título.
+- **Búsqueda interactiva**: abre el listado de releases para elegir manualmente.
+- **Usar por defecto**: fija un release concreto como preferido para el `.strm`.
+- **Preparar**: descarga/pre-cachea el release en qBittorrent para reproducirlo.
+- **Forzar**: prepara un release aunque esté rechazado por el perfil de calidad.
+- **Añadir a Blocklist**: veta un release para que TOD no lo use automáticamente.
 
 ## Trackers
 
@@ -22,18 +40,12 @@ Estos son los únicos términos que deberían aparecer en pantalla.
 
 ## Reglas de escritura
 
-- No usar **publicar**, **publicación**, **publicado** ni **monitorizar** en la
-  interfaz. Son nombres del motor y no explican nada al usuario.
-- Para el resultado visible, decir **Disponible**. Para lo que tiene fuente pero
-  no tiene acceso, **Pendiente**. Un `.strm` sin nada que reproducir es una
-  inconsistencia transitoria: se muestra **Sin fuente** y la reconciliación lo
-  retira. Para un episodio futuro, **Sin estrenar**.
-- Para el seguimiento automático, decir **En seguimiento**, **Seguir** y
-  **Dejar de seguir**. Los **especiales** se cuentan aparte y no como episodios
-  faltantes.
-- `.strm` solo aparece cuando se habla del fichero en sí (por ejemplo, la
-  carpeta que lee Jellyfin). Para el estado se habla de **Disponible** o
-  **Pendiente**; Jellyfin se nombra cuando se habla de la integración, la carpeta
-  o la configuración.
+- No usar **publicar**, **publicación**, **publicado**, **catalogar**,
+  **puntero virtual** ni **seguimiento** en la interfaz.
+- Para la monitorización automática, usar **Monitorizado**, **Monitorizar** y
+  **Dejar de monitorizar**. Los **especiales** se cuentan aparte y no como
+  episodios faltantes.
+- En tareas y ajustes, evitar `dry-run` en crudo; usar **Modo simulación (sin
+  cambios)** y **Aplicar cambios reales**.
 - Jellyfin, Radarr, Sonarr, qBittorrent, Prowlarr, Jackett y TMDB se escriben
   con su mayúscula oficial.

@@ -2,7 +2,7 @@ const CURRENT_YEAR = new Date().getFullYear();
 
 const DOWNLOAD = {
   descargando: { label: 'Descargando', tone: 'info' },
-  sembrando: { label: 'Descargado', tone: 'ok' },
+  sembrando: { label: 'Sembrando', tone: 'ok' },
   pausado: { label: 'Pausado', tone: 'warn' },
   error: { label: 'Error', tone: 'bad' },
   sin_descarga: { label: 'Sin descarga', tone: 'muted' },
@@ -10,18 +10,18 @@ const DOWNLOAD = {
 
 const PUBLICATION = {
   publicado: { label: 'Disponible', tone: 'ok' },
-  pendiente: { label: 'Pendiente', tone: 'info' },
+  pendiente: { label: 'Pendiente de .strm', tone: 'info' },
   sin_fuente: { label: 'Sin fuente', tone: 'muted' },
 };
 
 /**
  * El estado que ve el usuario. Es el único eje principal: el resto
- * (origen, Radarr/Sonarr, seguimiento, descarga) son datos secundarios.
+ * (origen, Radarr/Sonarr, monitorización, descarga) son datos secundarios.
  */
 export const WATCH = {
   ready: { label: 'Disponible', tone: 'ok' },
-  pending: { label: 'Pendiente', tone: 'info' },
-  monitoring: { label: 'En seguimiento', tone: 'info' },
+  pending: { label: 'Pendiente de .strm', tone: 'info' },
+  monitoring: { label: 'Monitorizado', tone: 'info' },
   unavailable: { label: 'Sin fuente', tone: 'muted' },
 };
 
@@ -41,11 +41,11 @@ const ORIGIN = {
   import: 'Importación',
   link: 'Enlace pegado',
   torrent: 'Torrent manual',
-  backfill: 'Fondo antiguo',
+  backfill: 'Búsqueda histórica',
   qbit: 'qBittorrent',
   collection: 'Saga',
-  auto: 'Seguimiento',
-  legacy: 'Catálogo anterior',
+  auto: 'Monitorización',
+  legacy: 'Catálogo previo',
   mixed: 'Varios orígenes',
 };
 
@@ -64,56 +64,56 @@ const JOB_STATE = {
 export const JOB_LABELS = {
   health: 'Verificar salud',
   'attention-check': 'Comprobación de estado',
-  'sync-sources': 'Buscar fuentes',
+  'sync-sources': 'Buscar releases',
   'rss-sync': 'Novedades RSS',
-  backfill: 'Fondo antiguo',
-  'export-strm': 'Exportar .strm',
+  backfill: 'Búsqueda histórica',
+  'export-strm': 'Generar .strm',
   'qbit-sync': 'Sincronizar qBittorrent',
   repair: 'Reparar errores',
   'clean-broken': 'Limpiar torrents rotos',
-  'move-completed': 'Mover a archivo',
+  'move-completed': 'Mover completados a archivo',
   abandon: 'Abandonar descargas',
   reseed: 'Reponer borrados',
   evict: 'Liberar espacio',
-  seeding: 'Ajustar siembra',
-  'prune-library': 'Limpiar Radarr/Sonarr',
-  'sync-library': 'Sincronizar Radarr/Sonarr',
+  seeding: 'Mantener siembra mínima',
+  'prune-library': 'Limpiar .strm de Radarr/Sonarr',
+  'sync-library': 'Escanear ficheros de Radarr/Sonarr',
   'arr-mirror': 'Espejo Radarr/Sonarr',
   metadata: 'Actualizar metadatos',
-  monitor: 'Buscar fuentes en seguimiento',
+  monitor: 'Buscar monitorizados',
   'fallback-sweep': 'Respaldo de Radarr/Sonarr',
-  'qbit-limits': 'Límites qBittorrent',
+  'qbit-limits': 'Límites de qBittorrent',
   'cleanup-leases': 'Liberar reproducciones',
-  'publish-now': 'Añadir',
+  'publish-now': 'Generar acceso .strm',
   'download-now': 'Descargar ahora',
-  'sync-pending': 'Buscar fuentes pendientes',
-  'worker-cycle': 'Mantenimiento',
-  bridge: 'Enviar a Radarr/Sonarr',
+  'sync-pending': 'Buscar releases pendientes',
+  'worker-cycle': 'Ciclo de mantenimiento',
+  bridge: 'Puente a Radarr/Sonarr',
   'restore-strm': 'Reconciliar .strm',
 };
 
 export const EVENT_LABELS = {
   'web.add_movie': 'Alta de película',
   'web.add_series': 'Alta de serie',
-  'web.ondemand_acquire': 'Añadir / descargar',
-  'web.ondemand_publish': 'Añadir',
+  'web.ondemand_acquire': 'Generar .strm / descargar',
+  'web.ondemand_publish': 'Generar acceso .strm',
   'web.ondemand_download': 'Descargar ahora',
   'web.intake_import': 'Importación de lista',
   'web.ondemand_limit': 'Cambio de límite',
-  'web.manual_search': 'Búsqueda manual de fuentes',
-  'web.collection_add': 'Añadir colección',
-  'web.title_monitor': 'Título en seguimiento',
-  'web.title_library': 'Añadir título',
-  'web.series_library': 'Añadir serie',
-  'web.library_remove': 'Quitar de TOD',
-  'web.series_unpublish': 'Quitar serie de TOD',
+  'web.manual_search': 'Búsqueda interactiva',
+  'web.collection_add': 'Añadir saga',
+  'web.title_monitor': 'Monitorización cambiada',
+  'web.title_library': 'Añadir a biblioteca',
+  'web.series_library': 'Añadir serie a biblioteca',
+  'web.library_remove': 'Quitar de la biblioteca',
+  'web.series_unpublish': 'Quitar serie de la biblioteca',
   'web.sync_pending': 'Búsqueda de pendientes',
   'web.indexer_toggle': 'Pausar o activar indexer',
   'web.job': 'Tarea lanzada',
   'web.job_cancel': 'Tarea cancelada',
   'web.qbit_action': 'Acción en qBittorrent',
   'web.tracker_block': 'Bloqueo de tracker',
-  'web.title_sync': 'Búsqueda de fuentes',
+  'web.title_sync': 'Búsqueda automática',
   'web.qbit_limits': 'Límites de qBittorrent',
   'web.settings_save': 'Configuración guardada',
   'web.integration_test': 'Prueba de integración',
@@ -124,8 +124,8 @@ export const EVENT_LABELS = {
   'web.seed_finish': 'Compromiso de siembra cerrado',
   'web.language': 'Preferencia de idioma',
   'web.attention_check': 'Comprobación de estado',
-  'web.set_target': 'Versión fijada',
-  'web.release_health': 'Salud de la versión',
+  'web.set_target': 'Release fijado por defecto',
+  'web.release_health': 'Salud del release',
   'web.intake_torrent': 'Torrent manual añadido',
   'web.prepare': 'Preparación de reproducción',
 };
@@ -225,8 +225,8 @@ export function qbitState(rawValue) {
 export function availabilityStatus(value) {
   const map = {
     local: { label: 'Local', tone: 'ok' },
-    library: { label: 'Radarr/Sonarr', tone: 'ok' },
-    cloud: { label: 'archivo', tone: 'info' },
+    library: { label: 'En Radarr/Sonarr', tone: 'ok' },
+    cloud: { label: 'Nube (archivo)', tone: 'info' },
     alive: { label: 'Fuente viva', tone: 'info' },
     unverified: { label: 'Sin verificar', tone: 'warn' },
     none: { label: 'Sin fuente', tone: 'muted' },
@@ -238,7 +238,7 @@ export function availabilityStatus(value) {
 export function healthStatus(value) {
   const map = {
     alive: { label: 'Vivo', tone: 'ok' },
-    stale: { label: 'Viejo', tone: 'warn' },
+    stale: { label: 'Antiguo', tone: 'warn' },
     dead: { label: 'Muerto', tone: 'bad' },
     blocked: { label: 'Bloqueado', tone: 'bad' },
     unknown: { label: 'Sin verificar', tone: 'muted' },
@@ -247,9 +247,9 @@ export function healthStatus(value) {
 }
 
 export const TASK_CATEGORIES = [
-  { key: 'captura', label: 'Captura y fuentes' },
-  { key: 'biblioteca', label: 'Radarr/Sonarr' },
-  { key: 'siembra', label: 'Descargas y siembra' },
+  { key: 'captura', label: 'Captura y releases' },
+  { key: 'biblioteca', label: 'Biblioteca y Radarr/Sonarr' },
+  { key: 'siembra', label: 'Cola y siembra' },
   { key: 'sistema', label: 'Sistema' },
 ];
 
@@ -258,49 +258,49 @@ export const TASKS = [
     kind: 'health', title: 'Verificar salud', category: 'captura',
     desc: 'Consulta Prowlarr en vivo y actualiza seeders, peers y estado.',
     fields: [
-      { name: 'limit', label: 'Versiones', type: 'number', value: 25, min: 1 },
+      { name: 'limit', label: 'Releases', type: 'number', value: 25, min: 1 },
       { name: 'delay', label: 'Pausa (s)', type: 'number', value: 1, step: 0.1 },
       { name: 'tracker', label: 'Tracker (opcional)', type: 'text' },
       { name: 'key', label: 'Clave (opcional)', type: 'text' },
-      { name: 'dry_run', label: 'Solo previsualizar', type: 'checkbox', value: false },
+      { name: 'dry_run', label: 'Modo simulación (sin cambios)', type: 'checkbox', value: false },
     ],
   },
   {
-    kind: 'sync-sources', title: 'Buscar fuentes', category: 'captura',
-    desc: 'Busca versiones en Prowlarr y Jackett para títulos sin fuente.',
+    kind: 'sync-sources', title: 'Buscar releases', category: 'captura',
+    desc: 'Busca releases en Prowlarr y Jackett para títulos sin fuente.',
     fields: [
       { name: 'year', label: 'Año', type: 'number', value: CURRENT_YEAR, min: 1900, max: 2100 },
       { name: 'kind', label: 'Tipo', type: 'select', value: 'movie', options: [['movie', 'Películas'], ['series', 'Series']] },
       { name: 'limit', label: 'Títulos', type: 'number', value: 10, min: 1 },
       { name: 'delay', label: 'Pausa (s)', type: 'number', value: 8, step: 0.5 },
       { name: 'min_seeders', label: 'Mín. seeds', type: 'number', value: 1, min: 0 },
-      { name: 'dry_run', label: 'Solo previsualizar', type: 'checkbox', value: false },
+      { name: 'dry_run', label: 'Modo simulación (sin cambios)', type: 'checkbox', value: false },
     ],
   },
   {
     kind: 'rss-sync', title: 'Novedades RSS', category: 'captura',
-    desc: 'Ingesta lo último de Prowlarr/Jackett y añade los seguimientos encontrados.',
+    desc: 'Ingesta lo último de Prowlarr/Jackett y añade los monitorizados encontrados.',
     fields: [
       { name: 'limit', label: 'Resultados', type: 'number', value: 200, min: 1 },
       { name: 'delay', label: 'Pausa (s)', type: 'number', value: 0.2, step: 0.1 },
-      { name: 'export', label: 'Exportar .strm', type: 'checkbox', value: true },
-      { name: 'dry_run', label: 'Solo previsualizar', type: 'checkbox', value: false },
+      { name: 'export', label: 'Generar .strm', type: 'checkbox', value: true },
+      { name: 'dry_run', label: 'Modo simulación (sin cambios)', type: 'checkbox', value: false },
     ],
   },
   {
-    kind: 'backfill', title: 'Fondo antiguo', category: 'captura',
+    kind: 'backfill', title: 'Búsqueda histórica', category: 'captura',
     desc: 'Elige el año con más pendientes y captura un lote de 250.',
     fields: [
       { name: 'limit', label: 'Títulos', type: 'number', value: 250, min: 1 },
       { name: 'delay', label: 'Pausa (s)', type: 'number', value: 8, step: 0.5 },
       { name: 'years', label: 'Años (coma)', type: 'text', value: [CURRENT_YEAR, CURRENT_YEAR-1, CURRENT_YEAR-2, CURRENT_YEAR-3, CURRENT_YEAR-4, CURRENT_YEAR-5, CURRENT_YEAR-6].join(',') },
-      { name: 'export', label: 'Exportar .strm', type: 'checkbox', value: true },
-      { name: 'dry_run', label: 'Solo previsualizar', type: 'checkbox', value: true },
+      { name: 'export', label: 'Generar .strm', type: 'checkbox', value: true },
+      { name: 'dry_run', label: 'Modo simulación (sin cambios)', type: 'checkbox', value: true },
     ],
   },
   {
-    kind: 'export-strm', title: 'Crear accesos', category: 'biblioteca',
-    desc: 'Genera los ficheros estables de acceso.',
+    kind: 'export-strm', title: 'Generar .strm', category: 'biblioteca',
+    desc: 'Genera los ficheros .strm de acceso para Jellyfin.',
     fields: [
       { name: 'year', label: 'Año (vacío = todo)', type: 'number', value: CURRENT_YEAR, min: 1900 },
       { name: 'kind', label: 'Tipo', type: 'select', value: 'movie', options: [['', 'Todo'], ['movie', 'Películas'], ['series', 'Series']] },
@@ -312,7 +312,7 @@ export const TASKS = [
   },
   {
     kind: 'metadata', title: 'Actualizar metadatos', category: 'biblioteca',
-    desc: 'Rellena póster, sinopsis y nota desde TMDB para el catálogo.',
+    desc: 'Rellena póster, sinopsis y nota desde TMDB para la biblioteca.',
     fields: [
       { name: 'limit', label: 'Títulos (0 = todos)', type: 'number', value: 0, min: 0 },
       { name: 'workers', label: 'Peticiones simultáneas', type: 'number', value: 6, min: 1, max: 16 },
@@ -321,8 +321,8 @@ export const TASKS = [
     ],
   },
   {
-    kind: 'monitor', title: 'Buscar fuentes en seguimiento', category: 'biblioteca',
-    desc: 'Busca títulos ya estrenados o emitidos. Los futuros esperan su fecha.',
+    kind: 'monitor', title: 'Buscar monitorizados', category: 'biblioteca',
+    desc: 'Busca títulos monitorizados ya estrenados. Los futuros esperan su fecha.',
     fields: [
       { name: 'limit', label: 'Títulos', type: 'number', value: 50, min: 1 },
       { name: 'delay', label: 'Pausa (s)', type: 'number', value: 2, step: 0.5 },
@@ -334,8 +334,8 @@ export const TASKS = [
     fields: [],
   },
   {
-    kind: 'arr-mirror', title: 'Importar altas de Radarr/Sonarr (Espejo)', category: 'biblioteca',
-    desc: 'Trae películas/series nuevas desde Radarr/Sonarr, busca fuentes y crea sus .strm.',
+    kind: 'arr-mirror', title: 'Espejo Radarr/Sonarr', category: 'biblioteca',
+    desc: 'Trae películas/series nuevas desde Radarr/Sonarr, busca releases y genera sus .strm.',
     fields: [
       { name: 'source_limit', label: 'Títulos a buscar', type: 'number', value: 50, min: 0 },
       { name: 'publish_limit', label: 'Títulos a preparar', type: 'number', value: 200, min: 0 },
@@ -343,10 +343,10 @@ export const TASKS = [
     ],
   },
   {
-    kind: 'prune-library', title: 'Limpiar Radarr/Sonarr', category: 'biblioteca',
-    desc: 'Borra .strm de títulos que ya están en Radarr/Sonarr.',
+    kind: 'prune-library', title: 'Limpiar .strm de Radarr/Sonarr', category: 'biblioteca',
+    desc: 'Borra .strm de títulos que ya tienen fichero en Radarr/Sonarr.',
     fields: [
-      { name: 'execute', label: 'Ejecutar de verdad (no dry-run)', type: 'checkbox', value: false },
+      { name: 'execute', label: 'Aplicar cambios reales', type: 'checkbox', value: false },
     ],
     danger: true,
   },
@@ -355,7 +355,7 @@ export const TASKS = [
     desc: 'Indexa torrents, ficheros y vínculos con Radarr/Sonarr.',
     fields: [
       { name: 'check_exists', label: 'Comprobar ficheros', type: 'checkbox', value: true },
-      { name: 'dry_run', label: 'Solo previsualizar', type: 'checkbox', value: false },
+      { name: 'dry_run', label: 'Modo simulación (sin cambios)', type: 'checkbox', value: false },
     ],
   },
   {
@@ -363,17 +363,17 @@ export const TASKS = [
     desc: 'Recheck y reanuda torrents con error local.',
     fields: [
       { name: 'limit', label: 'Torrents', type: 'number', value: 5, min: 1 },
-      { name: 'execute', label: 'Ejecutar de verdad (no dry-run)', type: 'checkbox', value: false },
+      { name: 'execute', label: 'Aplicar cambios reales', type: 'checkbox', value: false },
     ],
   },
   {
-    kind: 'move-completed', title: 'Mover a archivo', category: 'siembra',
+    kind: 'move-completed', title: 'Mover completados a archivo', category: 'siembra',
     desc: 'Mueve los torrents on-demand completados al archivo siguiendo sembrando.',
     fields: [
       { name: 'limit', label: 'Torrents', type: 'number', value: 10, min: 1 },
       { name: 'grace', label: 'Gracia (s)', type: 'number', value: 300, min: 0 },
       { name: 'target', label: 'Destino (vacío = configurado)', type: 'text' },
-      { name: 'execute', label: 'Ejecutar de verdad (no dry-run)', type: 'checkbox', value: false },
+      { name: 'execute', label: 'Aplicar cambios reales', type: 'checkbox', value: false },
     ],
     danger: true,
   },
@@ -382,7 +382,7 @@ export const TASKS = [
     desc: 'Fuerza la siembra hasta horas/ratio; después suelta y qBittorrent decide.',
     fields: [
       { name: 'limit', label: 'Torrents', type: 'number', value: 50, min: 1 },
-      { name: 'dry_run', label: 'Solo previsualizar', type: 'checkbox', value: false },
+      { name: 'dry_run', label: 'Modo simulación (sin cambios)', type: 'checkbox', value: false },
     ],
   },
   {
@@ -391,13 +391,13 @@ export const TASKS = [
     fields: [],
   },
   {
-    kind: 'qbit-limits', title: 'Límites qBittorrent', category: 'sistema',
+    kind: 'qbit-limits', title: 'Límites de qBittorrent', category: 'sistema',
     desc: 'Aplica límites de descarga por categoría.',
     fields: [
       { name: 'radarr_kbps', label: 'Radarr KiB/s', type: 'number', value: 2500, min: 0 },
       { name: 'sonarr_kbps', label: 'Sonarr KiB/s', type: 'number', value: 2500, min: 0 },
       { name: 'ondemand_kbps', label: 'On-demand KiB/s', type: 'number', value: 0, min: 0 },
-      { name: 'dry_run', label: 'Solo previsualizar', type: 'checkbox', value: false },
+      { name: 'dry_run', label: 'Modo simulación (sin cambios)', type: 'checkbox', value: false },
     ],
   },
 ];

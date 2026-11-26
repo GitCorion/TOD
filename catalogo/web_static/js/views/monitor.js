@@ -37,7 +37,7 @@ export async function renderMonitor({ query, signal }) {
     kind: query.get('kind') || '',
     page: Math.max(1, Number(query.get('page')) || 1),
   };
-  setHeader('Seguimiento');
+  setHeader('Buscados');
 
   if (tab === 'cutoff') {
     const params = new URLSearchParams({ kind: filters.kind, limit: '200' });
@@ -70,7 +70,7 @@ export async function renderMonitor({ query, signal }) {
     }).join('');
 
     $('#view').innerHTML = `
-      <div class="breadcrumb"><a href="#/catalog">Biblioteca</a>${icon('chevron')}<span>Seguimiento</span></div>
+      <div class="breadcrumb"><a href="#/catalog">Biblioteca</a>${icon('chevron')}<span>Buscados</span></div>
       <div class="tabs section" role="tablist">
         <button class="" data-action="catalog-filter" data-key="tab" data-value="missing" role="tab">Faltantes</button>
         <button class="active" data-action="catalog-filter" data-key="tab" data-value="cutoff" role="tab">Mejorables <b>${fmtInt(items.length)}</b></button>
@@ -89,12 +89,12 @@ export async function renderMonitor({ query, signal }) {
             <option value="series" ${filters.kind === 'series' ? 'selected' : ''}>Series</option>
           </select>
         </label>
-        <button class="btn btn-primary" data-action="wanted-upgrade-cutoff">${icon('refresh', 'sm')} Actualizar punteros virtuales</button>
+        <button class="btn btn-primary" data-action="wanted-upgrade-cutoff">${icon('refresh', 'sm')} Aplicar mejoras de perfil</button>
       </div>
       <div class="panel flush section">
         <div class="panel-head">
-          <h2>Calidad mejorable</h2>
-          <span class="right tiny faint">Mejora la fuente predeterminada sin descargar torrents hasta reproducir</span>
+          <h2>Calidad por debajo del objetivo</h2>
+          <span class="right tiny faint">Actualiza el release seleccionado por defecto sin descargar hasta reproducir</span>
         </div>
         ${rows ? `<div class="table-wrap"><table class="table--stack">
           <thead><tr><th>Título</th><th>Perfil</th><th>Calidad actual</th><th>Objetivo</th><th class="num">Puntos</th><th></th></tr></thead>
@@ -155,7 +155,7 @@ export async function renderMonitor({ query, signal }) {
   }).join('');
 
   $('#view').innerHTML = `
-    <div class="breadcrumb"><a href="#/catalog">Biblioteca</a>${icon('chevron')}<span>Seguimiento</span></div>
+    <div class="breadcrumb"><a href="#/catalog">Biblioteca</a>${icon('chevron')}<span>Buscados</span></div>
 
     <div class="tabs section" role="tablist">
       <button class="${tab === 'missing' ? 'active' : ''}" data-action="catalog-filter" data-key="tab" data-value="missing" role="tab">Faltantes <b>${fmtInt(summary.missing || 0)}</b></button>
@@ -166,7 +166,7 @@ export async function renderMonitor({ query, signal }) {
     <div class="toolbar">
       <label class="field grow">
         <span>Buscar</span>
-        <input data-input="monitor-q" value="${esc(filters.q)}" placeholder="Título, serie o clave" autocomplete="off" aria-label="Buscar en seguimiento">
+        <input data-input="monitor-q" value="${esc(filters.q)}" placeholder="Título, serie o clave" autocomplete="off" aria-label="Buscar en buscados">
       </label>
       <label class="field">
         <span>Tipo</span>
@@ -176,30 +176,30 @@ export async function renderMonitor({ query, signal }) {
           <option value="series" ${filters.kind === 'series' ? 'selected' : ''}>Series</option>
         </select>
       </label>
-      <button class="btn btn-primary" data-action="monitor-run">${icon('search')} Buscar disponibles</button>
+      <button class="btn btn-primary" data-action="monitor-run">${icon('search')} Buscar faltantes</button>
       <button class="btn btn-icon" data-action="monitor-refresh" aria-label="Actualizar" title="Actualizar">${icon('refresh')}</button>
     </div>
 
     ${tab !== 'upcoming' ? `<div class="panel section" style="padding:12px 14px">
       <div class="row between">
-        <div class="chips" role="tablist" aria-label="Estado del seguimiento">
+        <div class="chips" role="tablist" aria-label="Estado de monitorización">
           ${chips.map(([value, label, count]) => `<button class="chip ${filters.state === value ? 'active' : ''}" data-action="monitor-filter" data-value="${value}" role="tab" aria-selected="${filters.state === value}">${esc(label)} <b>${fmtInt(count)}</b></button>`).join('')}
         </div>
-        <span class="tiny faint">${fmtInt(summary.total || 0)} en seguimiento${data.titles ? ` (${fmtInt(data.titles)} títulos)` : ''}</span>
+        <span class="tiny faint">${fmtInt(summary.total || 0)} monitorizados${data.titles ? ` (${fmtInt(data.titles)} títulos)` : ''}</span>
       </div>
     </div>` : ''}
 
     <div class="panel flush section">
       <div class="panel-head">
-        <h2>${tab === 'upcoming' ? 'Próximos estrenos en seguimiento' : 'Cola de seguimiento'}</h2>
+        <h2>${tab === 'upcoming' ? 'Próximos estrenos monitorizados' : 'Títulos monitorizados sin acceso'}</h2>
         <span class="right tiny faint">RSS cada 30 min, barrido diario 04:20</span>
       </div>
       ${rows ? `<div class="table-wrap"><table class="table--stack">
-        <thead><tr><th>Título</th><th>Estado</th><th>Disponibilidad</th><th>Fuentes</th><th>Última búsqueda</th><th></th></tr></thead>
+        <thead><tr><th>Título</th><th>Estado</th><th>Disponibilidad</th><th>Releases</th><th>Última búsqueda</th><th></th></tr></thead>
         <tbody>${rows}</tbody>
       </table></div>` : `<div class="pad">${empty(
-        filters.q || filters.state || filters.kind ? 'Sin resultados con esos filtros' : 'No hay títulos en seguimiento',
-        'Los títulos en seguimiento que aún no tienen acceso aparecen aquí hasta que se encuentra una fuente.',
+        filters.q || filters.state || filters.kind ? 'Sin resultados con esos filtros' : 'No hay títulos monitorizados pendientes',
+        'Los títulos monitorizados que aún no tienen acceso aparecen aquí hasta que se encuentra un release.',
       )}</div>`}
     </div>
 

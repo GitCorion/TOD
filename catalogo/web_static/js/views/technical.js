@@ -65,7 +65,7 @@ export async function renderTechnical({ query, signal }) {
       </select></label>
       <label class="field"><span>Disponibilidad</span><select name="availability">
         <option value="">Todo</option>
-        ${[['live', 'Con fuente viva'], ['none', 'Sin release'], ['unverified', 'Sin verificar'], ['local', 'Local'], ['cloud', 'archivo'], ['library', 'Radarr/Sonarr'], ['downloading', 'Descargando']].map(([value, label]) => `<option value="${value}" ${filters.availability === value ? 'selected' : ''}>${label}</option>`).join('')}
+        ${[['live', 'Con fuente viva'], ['none', 'Sin release'], ['unverified', 'Sin verificar'], ['local', 'Local'], ['cloud', 'Nube (archivo)'], ['library', 'En Radarr/Sonarr'], ['downloading', 'Descargando']].map(([value, label]) => `<option value="${value}" ${filters.availability === value ? 'selected' : ''}>${label}</option>`).join('')}
       </select></label>
       <label class="field"><span>Estado</span><select name="status">
         <option value="">Todo</option>

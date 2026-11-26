@@ -98,12 +98,12 @@ export async function renderDashboard({ signal }) {
         <span class="hint">${hasData ? `${fmtInt(movies.published || 0)} películas, ${fmtInt(series.published || 0)} series` : 'Sin datos del servidor'}</span>
         <span class="hint">${hasData ? `${fmtInt(catalog.episodes || 0)} episodios en total` : ''}</span>
       </a>
-      <a class="kpi ${pendingCount ? 'amber' : ''}" href="#/catalog?publication=pendiente" title="Tienen una fuente reproducible; solo falta crear su acceso.">
-        <span class="label">Pendiente</span>
+      <a class="kpi ${pendingCount ? 'amber' : ''}" href="#/catalog?publication=pendiente" title="Tienen fuente o fichero local; falta generar su acceso .strm.">
+        <span class="label">Pendiente de .strm</span>
         <span class="value">${num(pendingCount)}</span>
-        <span class="hint">${hasData ? 'con fuente, sin añadir' : 'Sin datos del servidor'}</span>
+        <span class="hint">${hasData ? 'con fuente, sin acceso .strm' : 'Sin datos del servidor'}</span>
       </a>
-      <a class="kpi ${downloads.error ? 'red' : downloads.downloading ? 'amber' : ''}" href="#/downloads" title="Ver descargas en qBittorrent.">
+      <a class="kpi ${downloads.error ? 'red' : downloads.downloading ? 'amber' : ''}" href="#/downloads" title="Ver cola de descargas en qBittorrent.">
         <span class="label">Descargando</span>
         <span class="value">${num(downloads.downloading || 0)}</span>
         <span class="hint">${hasData ? `${fmtInt(downloads.seeding || 0)} sembrando, ${fmtInt(downloads.paused || 0)} pausadas` : 'Sin datos de qBittorrent'}</span>
@@ -149,7 +149,7 @@ export async function renderDashboard({ signal }) {
         </form>
 
         <div class="panel">
-          <div class="panel-head"><h2>Descargas</h2><a class="right tiny faint" href="#/downloads">Ver todas</a></div>
+          <div class="panel-head"><h2>Cola de descargas</h2><a class="right tiny faint" href="#/downloads">Ver cola</a></div>
           <div class="panel-body" style="padding:2px 12px 4px">
             <div class="kv"><span>Descargando</span><span>${num(downloads.downloading || 0)}</span></div>
             <div class="kv"><span>Sembrando</span><span>${num(downloads.seeding || 0)}</span></div>

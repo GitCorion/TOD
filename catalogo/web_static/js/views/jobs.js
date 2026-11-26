@@ -11,8 +11,8 @@ function paramsSummary(job) {
   if (params.limit) parts.push(`límite ${params.limit}`);
   if (params.year) parts.push(`año ${params.year}`);
   if (params.kind) parts.push(params.kind === 'series' ? 'series' : 'películas');
-  if (params.dry_run) parts.push('dry-run');
-  if (params.execute) parts.push('ejecución real');
+  if (params.dry_run) parts.push('simulación');
+  if (params.execute) parts.push('aplicar cambios');
   return parts.join(', ');
 }
 
@@ -32,7 +32,7 @@ export async function renderJobs({ signal }) {
         ${tasks.map((task) => `<div class="task">
           <h3>${task.danger ? '<span class="danger-dot" title="Puede modificar o borrar datos"></span>' : ''}${esc(task.title)}</h3>
           <p>${esc(task.desc)}</p>
-          <div class="foot"><button class="btn btn-sm btn-ghost" data-action="open-task" data-kind="${task.kind}">${icon('wrench', 'sm')} Configurar</button>${task.danger ? '<span class="tiny faint">revisa el dry-run</span>' : ''}</div>
+          <div class="foot"><button class="btn btn-sm btn-ghost" data-action="open-task" data-kind="${task.kind}">${icon('wrench', 'sm')} Configurar</button>${task.danger ? '<span class="tiny faint">revisa el modo simulación</span>' : ''}</div>
         </div>`).join('')}
       </div>
     </div>`;

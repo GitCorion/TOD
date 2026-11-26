@@ -32,7 +32,7 @@ export async function renderBlocklist({ signal }) {
       <td data-label="Expira" class="tiny faint nowrap">${item.until ? fmtDate(item.until) : '—'}</td>
       <td class="actions" data-label="">
         <button class="btn btn-sm btn-ghost" data-action="blocklist-remove" data-release="${item.release_id}">
-          ${icon('refresh', 'sm')} Liberar
+          ${icon('refresh', 'sm')} Quitar
         </button>
       </td>
     </tr>`;
@@ -41,19 +41,19 @@ export async function renderBlocklist({ signal }) {
   $('#view').innerHTML = `
     <div class="panel flush section">
       <div class="panel-head">
-        <h2>Fuentes vetadas (Blocklist)</h2>
-        <span class="right tiny faint">${fmtInt(items.length)} bloqueadas</span>
+        <h2>Blocklist (releases bloqueados)</h2>
+        <span class="right tiny faint">${fmtInt(items.length)} bloqueados</span>
       </div>
       ${rows ? `<div class="table-wrap"><table class="table--stack">
-        <thead><tr><th>Título / Versión</th><th>Tracker</th><th>Calidad</th><th>Motivo</th><th>Expira</th><th></th></tr></thead>
+        <thead><tr><th>Título / Release</th><th>Tracker</th><th>Calidad</th><th>Motivo</th><th>Expira</th><th></th></tr></thead>
         <tbody>${rows}</tbody>
-      </table></div>` : `<div class="pad">${empty('Sin fuentes en blocklist', 'Las fuentes rechazadas automáticamente por fallos o vetadas manualmente aparecerán aquí.')}</div>`}
+      </table></div>` : `<div class="pad">${empty('Sin releases en Blocklist', 'Los releases rechazados automáticamente por fallos o bloqueados manualmente aparecerán aquí.')}</div>`}
     </div>
   `;
 }
 
 export async function removeBlocklistItem(releaseId) {
   await apiPost(`/api/blocklist/${releaseId}/delete`, {});
-  toast('Fuente liberada de la blocklist', 'ok');
+  toast('Release quitado de la Blocklist', 'ok');
   await route({ preserveScroll: true });
 }

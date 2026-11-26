@@ -26,12 +26,12 @@ function itemColorClass(item, todayStr) {
 function itemStatusBadge(item, todayStr) {
   const dt = (item.release_date || item.air_date || '').slice(0, 10);
   if (item.published) return status('Disponible', 'ok');
-  if (item.library_added) return status('En Radarr/Sonarr', 'info');
+  if (item.library_added) return status('En biblioteca', 'info');
   if (item.monitored) {
     if (dt && dt <= todayStr) return item.has_alive ? status('Fuente lista', 'info') : status('Sin fuente', 'warn');
-    return status('Pendiente emisión', 'info');
+    return status('Sin estrenar', 'info');
   }
-  return '<span class="tiny faint">Sin catalogar</span>';
+  return '<span class="tiny faint">Sin añadir</span>';
 }
 
 function weekRange(offset = 0) {
@@ -135,7 +135,7 @@ export async function renderCalendar({ query, signal }) {
           const href = item.kind === 'series' && item.tmdb ? `#/series/${item.tmdb}` : `#/title/${item.id}`;
           return `<a class="media-row" href="${href}">
             <span class="poster">${poster(item.poster_path, item.title, { size: 'w92' })}</span>
-            <div class="info"><strong>${esc(item.title || '—')}</strong><small>${esc(tag(item))}${item.episode_title ? ` · ${esc(item.episode_title)}` : ''}${item.monitored ? ', en seguimiento' : ''}</small></div>
+            <div class="info"><strong>${esc(item.title || '—')}</strong><small>${esc(tag(item))}${item.episode_title ? ` · ${esc(item.episode_title)}` : ''}${item.monitored ? ', monitorizado' : ''}</small></div>
             ${itemStatusBadge(item, todayStr)}
             ${icon('chevron', 'sm')}
           </a>`;
@@ -169,7 +169,7 @@ export async function renderCalendar({ query, signal }) {
         </select>
         <label class="inline check tiny">
           <input type="checkbox" data-action="catalog-filter" data-key="monitored" data-value="${monitoredOnly ? '' : '1'}" ${monitoredOnly ? 'checked' : ''}>
-          Solo en seguimiento
+          Solo monitorizados
         </label>
         <span class="tiny faint">${items.length} eventos</span>
       </div>

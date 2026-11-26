@@ -438,8 +438,8 @@ export async function renderAdd({ query, params, signal }) {
         <button type="submit" class="btn btn-primary" id="addSubmit">Buscar</button>
       </div>
       <div class="add-search-options">
-        <label class="inline check" title="Si ahora no hay fuente, TOD la buscará y añadirá el título cuando aparezca">
-          <input type="checkbox" id="addFollow" checked> Seguir buscando fuente
+        <label class="inline check" title="Si ahora no hay fuente, TOD buscará releases automáticamente cuando aparezcan">
+          <input type="checkbox" id="addFollow" checked> Monitorizar (buscar automáticamente si no hay fuente)
         </label>
         <div class="row">
           <button type="button" class="btn btn-sm btn-ghost" data-action="torrent-pick">

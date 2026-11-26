@@ -42,7 +42,7 @@ export function renderRichReleaseRow(release, { showProgress = false, showTracke
   ].filter(Boolean).join(' · ');
 
   return `<tr class="${release.allowed === false ? 'row-rejected' : ''}">
-    <td data-label="Versión">
+    <td data-label="Release">
       <div class="cell-title">
         <strong title="${esc(release.title || '')}">${esc(release.title || '—')}</strong>
         <small>
@@ -67,10 +67,10 @@ export function renderRichReleaseRow(release, { showProgress = false, showTracke
     ${showProgress ? `<td data-label="Progreso">${progress}</td>` : ''}
     <td class="actions" data-label="">
       ${trackerHref ? `<a class="btn btn-sm btn-ghost" href="${trackerHref}" target="_blank" rel="noopener noreferrer">${icon('external', 'sm')} Ficha</a>` : ''}
-      <button class="btn btn-sm btn-ghost" data-action="release-target" data-release="${release.id}">Fijar</button>
+      <button class="btn btn-sm btn-ghost" data-action="release-target" data-release="${release.id}" title="Usar este release por defecto para el .strm">Usar por defecto</button>
       <button class="btn btn-sm btn-ghost" data-action="release-health" data-release="${release.id}">Verificar</button>
-      <button class="btn btn-sm ${release.allowed === false ? 'btn-ghost' : 'btn-primary'}" data-action="release-prepare" data-release="${release.id}" title="${release.allowed === false ? 'Forzar preparación (Override)' : 'Preparar reproducción'}">${release.allowed === false ? 'Forzar' : 'Preparar'}</button>
-      <button class="btn btn-sm btn-ghost danger-action" data-action="release-blocklist" data-release="${release.id}" title="Vetar fuente en blocklist">${icon('trash', 'sm')}</button>
+      <button class="btn btn-sm ${release.allowed === false ? 'btn-ghost' : 'btn-primary'}" data-action="release-prepare" data-release="${release.id}" title="${release.allowed === false ? 'Forzar descarga/preparación (ignorar rechazo de perfil)' : 'Preparar reproducción en qBittorrent'}">${release.allowed === false ? 'Forzar' : 'Preparar'}</button>
+      <button class="btn btn-sm btn-ghost danger-action" data-action="release-blocklist" data-release="${release.id}" title="Añadir a Blocklist">${icon('trash', 'sm')}</button>
     </td>
   </tr>`;
 }
@@ -104,11 +104,11 @@ export async function openMassEditModal() {
           ${folders.map((f) => `<option value="${f.id}">${esc(f.name)} (${esc(f.path)})</option>`).join('')}
         </select>
       </label>
-      <label class="field"><span>Seguimiento</span>
+      <label class="field"><span>Monitorización</span>
         <select name="monitor_action" class="input">
           <option value="__keep__">— No cambiar —</option>
-          <option value="monitored:1">Seguir</option>
-          <option value="monitored:0">Dejar de seguir</option>
+          <option value="monitored:1">Monitorizar</option>
+          <option value="monitored:0">Dejar de monitorizar</option>
           <option value="preset:all">Series: Todos</option>
           <option value="preset:future">Series: Solo futuros</option>
           <option value="preset:missing">Series: Solo faltantes</option>
@@ -193,7 +193,7 @@ export async function runSeasonManualSearch(tmdb, season, query = '') {
         <span class="tiny faint">${esc(data.title || '')} · Temporada ${season}</span>
       </div>
       ${rows ? `<div class="table-wrap"><table class="table--stack">
-        <thead><tr><th>Versión</th><th>Calidad</th><th class="num">Score</th><th class="num">Tamaño</th><th class="num">Seeds</th><th>Salud</th><th></th></tr></thead>
+        <thead><tr><th>Release</th><th>Calidad</th><th class="num">Score</th><th class="num">Tamaño</th><th class="num">Seeds</th><th>Salud</th><th></th></tr></thead>
         <tbody>${rows}</tbody>
       </table></div>` : empty('Sin candidatos', 'Prueba ajustando el texto de búsqueda.')}`;
     openModal(
@@ -211,14 +211,14 @@ export async function handleArrViewAction(action, element) {
   if (action === 'release-blocklist') {
     const rid = element.dataset.release;
     const ok = await confirmModal({
-      title: 'Bloquear fuente',
+      title: 'Añadir a Blocklist',
       message: 'TOD dejará de usar y mostrar este release automáticamente.',
-      confirm: 'Vetar fuente',
+      confirm: 'Añadir a Blocklist',
       danger: true,
     });
     if (!ok) return true;
     await apiPost(`/api/releases/${rid}/blocklist`, { reason: 'manual' });
-    toast('Fuente añadida a la blocklist', 'ok');
+    toast('Release añadido a la Blocklist', 'ok');
     element.closest('tr')?.remove();
     return true;
   }
@@ -322,7 +322,7 @@ export async function handleArrViewAction(action, element) {
     element.disabled = true;
     try {
       const res = await apiPost('/api/monitor/upgrade-cutoff', {});
-      toast(`Punteros actualizados (${fmtInt(res.upgraded || 0)} mejoras virtuales sin descargas)`, 'ok');
+      toast(`Selección de releases actualizada (${fmtInt(res.upgraded || 0)} mejoras aplicadas sin descargas)`, 'ok');
       await route({ preserveScroll: true });
     } finally {
       element.disabled = false;

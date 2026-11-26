@@ -246,7 +246,7 @@ export async function renderCatalog({ query, signal }) {
   const downloadChips = [
     { label: 'Todas', value: '', count: null },
     { label: 'Descargando', value: 'descargando', count: facets.download?.descargando || 0 },
-    { label: 'Descargado', value: 'descargado', count: facets.download?.descargado || 0 },
+    { label: 'Sembrando', value: 'descargado', count: facets.download?.descargado || 0 },
     { label: 'Pausado', value: 'pausado', count: facets.download?.pausado || 0 },
     { label: 'Error', value: 'error', count: facets.download?.error || 0 },
     { label: 'Sin descarga', value: 'sin_descarga', count: facets.download?.sin_descarga || 0 },
@@ -256,13 +256,13 @@ export async function renderCatalog({ query, signal }) {
   const bulkCopy = filters.publication === 'sin_fuente'
     ? {
         title: `${fmtInt(data.total || 0)} títulos sin fuente viva`,
-        text: 'TOD buscará candidatos en Prowlarr y Jackett para cada película y episodio.',
-        button: `Buscar fuentes (${fmtInt(data.total || 0)})`,
+        text: 'TOD buscará releases en Prowlarr y Jackett para cada película y episodio.',
+        button: `Buscar releases (${fmtInt(data.total || 0)})`,
       }
     : {
-        title: `${fmtInt(data.total || 0)} títulos con fuente listos para publicar`,
-        text: 'Tienen fuente válida o fichero local pero aún no tienen .strm en Jellyfin.',
-        button: `Publicar los ${fmtInt(data.total || 0)}`,
+        title: `${fmtInt(data.total || 0)} títulos listos para añadir a Jellyfin`,
+        text: 'Tienen fuente válida o fichero local pero aún no tienen acceso .strm en Jellyfin.',
+        button: `Generar .strm para los ${fmtInt(data.total || 0)}`,
       };
 
   const originChips = Object.entries(facets.origin || {})
@@ -280,11 +280,11 @@ export async function renderCatalog({ query, signal }) {
     filters.audio ? { label: `Audio: ${filters.audio}`, key: 'audio' } : null,
     filters.privacy ? { label: filters.privacy === 'private' ? 'Solo privados' : 'Solo públicos', key: 'privacy' } : null,
     filters.tracker ? { label: `Tracker: ${filters.tracker}`, key: 'tracker' } : null,
-    filters.tag ? { label: `Tag: ${filters.tag}`, key: 'tag' } : null,
+    filters.tag ? { label: `Etiqueta: ${filters.tag}`, key: 'tag' } : null,
     filters.genre ? { label: `Género: ${filters.genre}`, key: 'genre' } : null,
     filters.root_folder ? { label: `Carpeta: ${(rfData.items || []).find((r) => String(r.id) === String(filters.root_folder))?.name || filters.root_folder}`, key: 'root_folder' } : null,
-    filters.monitored === '1' ? { label: 'En seguimiento', key: 'monitored' } : null,
-    filters.monitored === '0' ? { label: 'Sin seguimiento', key: 'monitored' } : null,
+    filters.monitored === '1' ? { label: 'Monitorizados', key: 'monitored' } : null,
+    filters.monitored === '0' ? { label: 'Sin monitorizar', key: 'monitored' } : null,
     filters.incomplete ? { label: 'Solo incompletos', action: 'catalog-incomplete' } : null,
     filters.cutoff_unmet ? { label: 'Mejorables', key: 'cutoff_unmet' } : null,
   ].filter(Boolean);
@@ -438,11 +438,11 @@ export async function renderCatalog({ query, signal }) {
                 </div>
               </div>` : ''}
               <div class="filter-line">
-                <span class="filter-name">Seguimiento</span>
+                <span class="filter-name">Monitorización</span>
                 <div class="seg seg-quiet">
                   <button class="seg-item ${filters.incomplete ? 'active' : ''}" data-action="catalog-incomplete">Incompletos <b>${fmtInt(facets.incomplete || 0)}</b></button>
                   <button class="seg-item ${filters.cutoff_unmet ? 'active' : ''}" data-action="catalog-filter" data-key="cutoff_unmet" data-value="${filters.cutoff_unmet ? '' : '1'}">Mejorables <b>${fmtInt(facets.cutoff_unmet || 0)}</b></button>
-                  <button class="seg-item ${filters.monitored === '1' ? 'active' : ''}" data-action="catalog-filter" data-key="monitored" data-value="${filters.monitored === '1' ? '' : '1'}">En seguimiento</button>
+                  <button class="seg-item ${filters.monitored === '1' ? 'active' : ''}" data-action="catalog-filter" data-key="monitored" data-value="${filters.monitored === '1' ? '' : '1'}">Monitorizados</button>
                 </div>
               </div>
               <div class="filter-foot">
