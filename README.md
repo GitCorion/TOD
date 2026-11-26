@@ -30,26 +30,26 @@ Las URLs y API keys se introducen en la web y TOD aplica el resto. En Docker,
 
 - **Buscar y añadir** películas y series desde TMDB.
 - **Añadir desde una sola caja**: un título, un enlace de TMDB, un ID o una
-  lista. Se puede marcar «Añadir a Seguimiento» y el resultado queda registrado.
+  lista. Se puede marcar «Monitorizar» y el resultado queda registrado.
   También puedes subir un `.torrent` manual a qBittorrent.
 - **Crear entradas multiversión en Jellyfin**: un `.strm` principal y una
-  variante por versión reproducible.
+  variante por release reproducible.
 - **Reproducir bajo demanda** desde qBittorrent con rangos HTTP reales (206).
 - **Sembrar con reglas** por tracker: mínimo de horas y ratio con force-start.
   Al cumplirse, TOD lo suelta y, por defecto, qBittorrent decide si borra el torrent. El borrado desde TOD es una opción desactivada.
-- **Descubrir fuentes** en Prowlarr, Jackett o ambos, sin listas de trackers escritas a mano.
+- **Descubrir releases** en Prowlarr, Jackett o ambos, sin listas de trackers escritas a mano.
 - **Leer Radarr/Sonarr por API**, nunca tocando sus bases de datos.
-- **Seguir por defecto** lo que no está en Radarr/Sonarr. En cuanto TOD crea
-  su `.strm`, cierra el seguimiento y deja de buscar.
-- **Automatizar** RSS, seguimiento, backfill, puente, restauración y límites de qBittorrent.
+- **Monitorizar por defecto** lo que no está en Radarr/Sonarr. En cuanto TOD
+  genera su `.strm`, cierra la monitorización y deja de buscar.
+- **Automatizar** RSS, monitorización, búsqueda histórica, puente, reconciliación y límites de qBittorrent.
 - **Ver qué necesita atención** en Inicio, con el motivo y un enlace al ajuste exacto.
-- **Configurar integraciones, directorios y tareas** desde
+- **Configurar integraciones, rutas y tareas** desde
   **Sistema → Configuración**, con pruebas de conexión.
 
 ## Cómo funciona
 
 ```text
-Jellyfin ──.strm──▶ TOD :8773 ──▶ fichero local / archivo
+Jellyfin ──.strm──▶ TOD :8773 ──▶ fichero local / nube (archivo)
                          │
                          ├──▶ qBittorrent (descarga y seed)
                          ├──▶ Prowlarr    (indexers)
@@ -187,7 +187,7 @@ pendiente. Si TOD detecta Docker, el asistente propone las URLs internas
    solo sirve para avisos de escaneo y para detectar la sesión activa.
 4. En Jellyfin, añade `/media/catalogo/movies` como **Películas** y
    `/media/catalogo/series` como **Series**.
-5. En TOD, revisa **Configuración → Directorios**.
+5. En TOD, revisa **Configuración → General y Rutas**.
 
 Los detalles de volúmenes, claves y primer arranque están en
 [docs/DOCKER.md](docs/DOCKER.md).
@@ -249,14 +249,14 @@ auditoría, con enlaces a la sección que los arregla.
 
 **Sistema → Configuración** incluye:
 
-- **Integraciones** con prueba de conexión y el motivo concreto de cada fallo.
-- **Directorios** con comprobación de existencia, escritura y espacio. Las
+- **Integraciones e Indexers** con prueba de conexión y el motivo concreto de cada fallo.
+- **General y Rutas** con comprobación de existencia, escritura y espacio. Las
   bibliotecas de Radarr (películas) y Sonarr (series) se configuran por separado.
 - **Reproducción**: descargas simultáneas, tamaño máximo y URL base de `.strm`.
 - **Idioma**: cualquier idioma, castellano primero (V.O. como respaldo) o solo castellano.
   En títulos originalmente españoles manda el país de origen: castellano en
   España y latino en Latinoamérica; el doblaje latino del resto queda fuera.
-- **Trackers y siembra**: mínimo de días/ratio, force-start y políticas por
+- **Trackers y Siembra**: mínimo de días/ratio, force-start y políticas por
   tracker. Desde aquí se permite o bloquea la descarga de cada tracker y se
   puede borrar, opcionalmente, los `.strm` que dependen de él. El `.strm`
   principal solo se borra si el título se queda sin otra fuente ni fichero local.

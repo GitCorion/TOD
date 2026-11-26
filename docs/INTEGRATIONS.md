@@ -4,8 +4,8 @@ TOD configura cada servicio desde **Sistema → Configuración**. Cada bloque
 tiene un botón **Probar** que no guarda nada.
 
 Prowlarr y Jackett son dos fuentes válidas de indexers. TOD puede consultar
-ambas; Jackett no es un fallback público. La comprobación de salud, el RSS y el
-backfill usan la API de Prowlarr.
+ambas; Jackett no es un fallback público. La comprobación de salud, el RSS y la
+búsqueda histórica usan la API de Prowlarr.
 
 ## qBittorrent
 
@@ -103,16 +103,16 @@ necesita la URL y la API key. Si no se usan, se pueden dejar vacíos.
 Necesario para buscar títulos, pósters, sinopsis y colecciones. Se configura
 con la API key de TMDB (v3).
 
-## Directorios
+## Rutas y directorios
 
 | Ajuste | Uso |
 |---|---|
-| Carpeta de los `.strm` | donde TOD escribe los `.strm` que lee Jellyfin |
-| Biblioteca de películas | raíz de Radarr (solo lectura) |
-| Biblioteca de series | raíz de Sonarr (solo lectura) |
-| Raíz común | opcional, si ambas comparten carpeta padre |
-| Descargas de qBittorrent | raíz de descargas |
-| Carpeta on-demand | destino de descargas del catálogo |
-| Raíces `.strm` | rutas válidas para `/catalog/lookup` |
+| Accesos `.strm` (salida) | donde TOD escribe los `.strm` que lee Jellyfin |
+| Películas en Radarr | raíz de Radarr (solo lectura) |
+| Series en Sonarr | raíz de Sonarr (solo lectura) |
+| Raíz de la biblioteca | opcional, si ambas comparten carpeta padre |
+| Descargas | raíz de descargas en qBittorrent |
+| Descargas on-demand | destino de descargas del catálogo bajo demanda |
+| Archivo de torrents | destino al mover torrents completados (siguiendo sembrando) |
 
 Usa **Comprobar** para ver existencia, escritura y espacio libre.

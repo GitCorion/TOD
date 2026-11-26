@@ -16,12 +16,12 @@ catalogo/
 ├── app_settings.py   ajustes tipados, secretos y recarga
 ├── log.py            niveles y formato de log del proceso
 ├── api_status.py     servicios, discos, indexers y salud para la API
-├── api_ondemand.py   catálogo, ajustes y descargas bajo demanda
-├── api_titles.py     alta, ficha, biblioteca y seguimiento
+├── api_ondemand.py   biblioteca, ajustes y descargas bajo demanda
+├── api_titles.py     alta, ficha, biblioteca y monitorización
 ├── api_intake.py     recepción, listas y torrents manuales
 ├── api_tmdb.py       búsqueda, temporadas y episodios
-├── api_releases.py   fijar, verificar y preparar versiones
-├── api_monitor.py    seguimiento, indexers y siembra
+├── api_releases.py   fijar, verificar y preparar releases
+├── api_monitor.py    buscados, indexers y siembra
 ├── api_preferences.py idioma y reglas de siembra
 ├── api_settings.py   configuración, tareas, avisos y sistema
 ├── api_dashboard.py  portada, actividad, calendario y búsqueda
@@ -111,7 +111,7 @@ principales:
 | `/api/overview`, `/api/activity` | panel |
 | `/api/attention`, `/api/attention/check` | avisos de estado y comprobación bajo demanda |
 | `/api/ondemand/*` | catálogo, añadir, descargar |
-| `/api/ondemand/recent` | últimas incorporaciones ya publicadas |
+| `/api/ondemand/recent` | últimas incorporaciones disponibles |
 | `/api/indexers` | indexers de Prowlarr y su estado |
 | `/api/monitor/health` | salud de RSS, barrido e indexers |
 | `/api/intake`, `/api/intake/preflight`, `/api/intake/import` | recepción, análisis y alta de listas |
@@ -157,7 +157,7 @@ reproducción y el respaldo del catálogo. La propiedad depende del estado:
 | Estado en el *arr | TOD |
 |---|---|
 | Tiene el fichero | Indexa `library_files`, sirve desde la biblioteca del *arr y poda su `.strm`. |
-| Tiene una descarga en cola | Publica el `.strm`, adopta ese torrent y lo fuerza al reproducir. No crea otro ni un compromiso de siembra. |
+| Tiene una descarga en cola | Genera el `.strm`, adopta ese torrent y lo fuerza al reproducir. No crea otro ni un compromiso de siembra. |
 | No tiene fichero ni cola | `arr_fallback`: lo monitoriza y busca fuentes por lotes; si el *arr lo pone en cola o recupera el fichero, deja de perseguirlo. |
 | No está en el *arr | Lo posee TOD: búsqueda, descarga, `.strm` y siembra. |
 

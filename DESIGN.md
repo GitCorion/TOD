@@ -53,8 +53,8 @@ Una sola aplicación con barra lateral fija y contenido ancho.
 - **Barra lateral:** Inicio, Biblioteca, Añadir, Actividad, Sistema. Biblioteca
   lleva el total de títulos; Actividad, la cola; Sistema, los avisos. Los iconos
   siempre van con etiqueta.
-- **Pestañas de sección:** Catálogo, Pendientes, Calendario / Descargas, Tareas,
-  Siembra / Estado, Configuración. Son el segundo nivel; no se duplican en la
+- **Pestañas de sección:** Biblioteca, Buscados, Calendario / Cola, Tareas,
+  Siembra, Blocklist / Estado, Configuración. Son el segundo nivel; no se duplican en la
   barra lateral.
 - **Móvil:** la barra lateral se abre con el botón de menú; scrim y cierre con
   `Esc`; la navegación inferior es la principal. La cabecera de la biblioteca no
@@ -115,13 +115,13 @@ vacías se ocultan.
   «Disponible» porque el `.strm` existe; la portada lo pinta como `Sin fuente`
   en ámbar para que el verde no mienta.
 - **Solo cuenta lo emitido.** Un episodio sin estrenar se muestra
-  `Sin estrenar` y no suma como fuente ausente, sin catalogar ni incompleto. Una
+  `Sin estrenar` y no suma como fuente ausente, sin añadir ni incompleto. Una
   serie con todos sus episodios emitidos disponibles está `Disponible` aunque
   tenga temporadas futuras; estas se resumen como `N sin estrenar` en la ficha y
   en el título accesible del cartel, no en la línea de metadatos.
 - **Los especiales no cuentan.** La temporada 0 tiene su propio chip y su
   contador, sin punto de aviso y sin efecto en la disponibilidad ni en los
-  faltantes de la serie. Se pueden catalogar aparte.
+  faltantes de la serie. Se pueden añadir aparte.
 - El contador del menú es el total del catálogo agrupado; el de la línea de
   resultados es el del filtro actual (`753 de 3329`).
 - Las facetas se calculan después de la búsqueda y del tipo, y antes del estado:
@@ -136,31 +136,31 @@ La página de la película o del episodio.
 - **Migas:** Biblioteca › serie › episodio.
 - **Héroe:** póster (148 px, hasta 196 en pantallas grandes), título y año,
   sinopsis a 65ch, colección si existe y fila de acciones. El estado y la pertenencia van en la
-  misma fila que el título: `Disponible`, `En Radarr/Sonarr`, `Descargada`.
-- **Franja de datos reales:** fuentes vivas, versiones, ficheros, calidad,
+  misma fila que el título: `Disponible`, `En biblioteca`, `En Radarr/Sonarr`, `Descargada`.
+- **Franja de datos reales:** releases vivos, releases totales, ficheros, calidad,
   compromisos y eventos. Es la misma franja en la ficha y en la serie.
-- **Pestañas:** Resumen, Fuentes, Ficheros, Historial.
-- **Resumen:** las tres mejores versiones (calidad, seeds, salud, tamaño) y los
-  dos primeros ficheros, con “Ver todas” y “Ver todos”. Es una vista previa, no
+- **Pestañas:** Resumen, Releases, Ficheros, Historial.
+- **Resumen:** los tres mejores releases (calidad, seeds, salud, tamaño) y los
+  dos primeros ficheros, con “Ver todos”. Es una vista previa, no
   una copia de las tablas.
 - **Panel de detalles:** a la derecha, fijo en escritorio. Calidad, audio,
-  procedencia, ubicación y fuentes vivas de versiones. Solo acompaña a Resumen:
-  en Fuentes, Ficheros e Historial la tabla ocupa todo el ancho.
-- **Fuentes:** tabla a ancho completo. En escritorio, columnas fijas, cifras sin
-  salto de línea y acciones visibles (Ficha, Fijar, Verificar, Preparar). La
-  privacidad es una etiqueta en la línea del tracker. En móvil, cada versión es
+  procedencia, ubicación y releases vivos. Solo acompaña a Resumen:
+  en Releases, Ficheros e Historial la tabla ocupa todo el ancho.
+- **Releases:** tabla a ancho completo. En escritorio, columnas fijas, cifras sin
+  salto de línea y acciones visibles (Ficha, Usar por defecto, Verificar, Preparar/Forzar, Blocklist). La
+  privacidad es una etiqueta en la línea del tracker. En móvil, cada release es
   una ficha: título, tracker y privacidad, rejilla 2×2 de calidad, tamaño, seeds
   y salud, y las acciones debajo. La lista larga tiene scroll interno (70dvh),
   no alarga la página.
 - **Acciones del héroe:** una primaria, el resto fantasma; la destructiva
-  separada. En móvil, una columna de ancho completo y “Quitar de TOD” en su
+  separada. En móvil, una columna de ancho completo y “Quitar de biblioteca” en su
   propia fila con una línea fina.
 
 ### Serie
 
 - Héroe con póster, título, año, badges, sinopsis y acciones.
-- Franja de datos: episodios, en Radarr/Sonarr, en seguimiento, sin fuente, sin
-  catalogar, especiales.
+- Franja de datos: episodios, en biblioteca, monitorizados, sin fuente, sin
+  añadir, especiales.
 - Chips de temporada con su contador y un punto de aviso si falta algo.
 - Tabla de episodios: título con still, estado, fuentes, progreso y acciones.
   En móvil se apila.
@@ -171,7 +171,7 @@ La página de la película o del episodio.
   explica que también acepta un enlace, una lista o un `.torrent`.
 - `Enter` busca; `Mayús+Enter` añade una línea. El botón cambia entre **Buscar**
   y **Añadir** según lo escrito.
-- **Seguir buscando fuente** y **Subir .torrent** en una fila secundaria.
+- **Monitorizar (buscar automáticamente si no hay fuente)** y **Subir .torrent** en una fila secundaria.
 - **Resultados:** póster, título, año y tipo, con un botón **Añadir** explícito;
   los que ya están muestran **Abrir**.
 - **Últimas entradas:** panel lateral fijo en escritorio; debajo de los
@@ -182,13 +182,12 @@ La página de la película o del episodio.
 
 Son pantallas de operación; comparten el sistema y no se reinventan.
 
-- **Inicio:** avisos, cifras del catálogo, últimas incorporaciones, alta rápida,
-  descargas, Radarr/Sonarr y últimas tareas.
-- **Actividad:** descargas, tareas e historial; barra de progreso y acciones por
+- **Inicio:** avisos, cifras de la biblioteca, últimas incorporaciones, alta rápida,
+  cola de descargas, Radarr/Sonarr y últimas tareas.
+- **Actividad:** cola, tareas, historial, siembra y blocklist; barra de progreso y acciones por
   fila.
 - **Sistema:** Estado (diagnóstico, servicios, discos, auditoría) y Configuración
-  (integraciones, directorios, reproducción, idioma, trackers, seguridad,
-  tareas) con pruebas de conexión y el motivo concreto de cada fallo.
+  (general y rutas, integraciones e indexers, perfiles y custom formats, gestión de medios `.strm`, etiquetas y listas, trackers y siembra, tareas programadas) con pruebas de conexión y el motivo concreto de cada fallo.
 
 ## Color
 

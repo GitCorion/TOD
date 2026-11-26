@@ -63,16 +63,17 @@ tod rss-sync --limit 200 --delay 0.3
 tod monitor --limit 100 --delay 2
 ```
 
-## Seguimiento por defecto
+## Monitorización por defecto
 
-Todo título que **no esté en Radarr/Sonarr** queda en seguimiento al
-entrar en TOD. Así se busca una fuente y TOD crea su `.strm` sin tener que
-pedirlo a mano. Cuando existe el `.strm`, el seguimiento se cierra solo.
+Todo título que **no esté en Radarr/Sonarr** queda monitorizado al entrar en
+TOD. Así se busca un release y TOD genera su `.strm` sin tener que pedirlo a
+mano. Cuando existe el `.strm`, la monitorización se cierra sola.
 
-`library_added` es la fuente de verdad de pertenencia a los *arr. Si un título
-sale de Radarr/Sonarr, vuelve a seguimiento; si entra, deja de perseguirse
-desde TOD. Los títulos que ya tienen fichero local/torrent también se marcan
-al importarse, para que no queden fuera de la reconciliación.
+`library_added` indica la pertenencia a la biblioteca de TOD, mientras que
+`library_files` (y `has_file`) refleja los ficheros reales indexados desde
+Radarr/Sonarr. Si un título tiene respaldo activo y pierde su fichero en
+Radarr/Sonarr, TOD lo vuelve a monitorizar; si entra en Radarr/Sonarr con
+fichero, deja de perseguirse desde TOD.
 
 ## Añadir y procedencia
 
@@ -84,8 +85,8 @@ al importarse, para que no queden fuera de la reconciliación.
 - un `.torrent` manual, que se envía a qBittorrent. Es un atajo explícito:
   no pasa por admisión ni crea un compromiso de seed.
 
-El botón **Añadir a Seguimiento** decide si los títulos nuevos se buscan y se
-añaden a Jellyfin cuando haya fuente. Sin esa marca solo se crea la identidad.
+La casilla **Monitorizar** decide si los títulos nuevos se buscan y se añaden a
+Jellyfin cuando haya fuente. Sin esa marca solo se crea la identidad.
 
 Añadir no descarga ni ocupa disco. Cada lote queda en
 `intake_batches`/`intake_items` con el resultado de cada línea, aunque falle.
@@ -150,10 +151,10 @@ tod qbit-limits
   ficheros. Si el destino deja el torrent en `missingFiles`, revierte el
   movimiento en vez de dejar de sembrar en silencio.
 - El borrado desde TOD está desactivado por defecto. Se puede activar en
-  **Configuración → Siembra**; entonces aparece el botón de borrar en
-  Descargas, con opción de quitar solo el torrent o borrar también ficheros.
+  **Configuración → Trackers y Siembra**; entonces aparece el botón de borrar en
+  **Cola**, con opción de quitar solo el torrent o borrar también ficheros.
 - Al descubrir un tracker privado sin política, TOD crea una inicial con los
-  valores de **Configuración → Siembra** (por defecto 72 h y ratio 1,0;
+  valores de **Configuración → Trackers y Siembra** (por defecto 72 h y ratio 1,0;
   cada instalación puede cambiarlos).
 - La privacidad sale del indexer (Prowlarr `privacy`, Jackett `<type>`), no se
   asume privada. Se puede corregir por tracker en la tabla de Siembra o por
@@ -166,17 +167,18 @@ tod qbit-limits
   si el *arr hubiera perdido sus ficheros. Se procesan por lotes (50 cada
   ciclo del worker y 200 en el trabajo `fallback-sweep`), con búsqueda por
   título local, original e ID. Los títulos siguen monitorizados hasta que
-  el *arr recupere el fichero o los ponga en cola. **Seguir** en la ficha
+  el *arr recupere el fichero o los ponga en cola. **Monitorizar** en la ficha
   sigue siendo la vía para forzar uno concreto.
 - **Retención hasta la biblioteca**: por defecto TOD no permite borrar una
   descarga completada hasta que `library_files` confirma que ya está en
   Radarr/Sonarr. Si el puente falla, espera como máximo
   `seed.keep_max_hours` (0 = sin límite) antes de permitir el borrado, para
-  no perder la única copia. Se ajusta en Configuración → Siembra.
+  no perder la única copia. Se ajusta en **Configuración → Trackers y Siembra**.
 - Públicos: sin compromiso de seed, pero la retención hasta la biblioteca
   sigue aplicando.
-- `evict`, `reseed`, `abandon`, `clean-broken` y `move-completed` ya no se
-  usan: el borrado pertenece a qBittorrent.
+- `evict`, `reseed`, `abandon` y `clean-broken` ya no se ejecutan en el ciclo
+  automático: el borrado pertenece a qBittorrent (`move-completed` sigue activo
+  para mover descargas completadas al archivo sin dejar de sembrar).
 
 ```bash
 tod policies
@@ -199,7 +201,7 @@ latino de un título originalmente español se acepta como V.O. pero después de
 castellano. Los títulos sin idioma detectado solo entran como último respaldo.
 
 Al actualizar una instalación anterior hay que rellenar el país una vez:
-**Sistema → Tareas → Actualizar metadatos**, marcando «Revisar también los ya
+**Actividad → Tareas → Actualizar metadatos**, marcando «Revisar también los ya
 rellenados». Sin ese paso, los títulos importados de Radarr/Sonarr no tienen
 país y el latino se queda como respaldo.
 
@@ -219,7 +221,7 @@ archivo:          /mnt/library/descargas
 En Docker se usan `/downloads`, `/library` y `/media/catalogo` dentro del
 contenedor, montados desde `./data/`.
 
-**Configuración → Directorios** solo pide cuatro decisiones:
+**Configuración → General y Rutas** solo pide cuatro decisiones:
 
 1. **Accesos para Jellyfin**: dónde escribe TOD los `.strm`.
 2. **Biblioteca existente**: las carpetas de Películas (Radarr) y Series (Sonarr).
