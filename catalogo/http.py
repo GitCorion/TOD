@@ -426,6 +426,24 @@ class CatalogHandler(BaseHTTPRequestHandler):
                     pinned = self.resolver.resolve_release(key, release_id)
                 except Exception:
                     pinned = None
+                if pinned is not None and pinned.source in ("library", "local_seed"):
+                    status = asset_status(
+                        self.db_path, key,
+                        release_id=pinned.release_id, qbit=None,
+                    )
+                    if status is not None:
+                        status = self._local_ready_status(key, status)
+                    return _prepared(
+                        202,
+                        {
+                            "prepared": True,
+                            "already_available": True,
+                            "key": key,
+                            "release_id": pinned.release_id,
+                            "info_hash": pinned.info_hash,
+                            "status": status,
+                        },
+                    )
                 if pinned is not None and (
                     pinned.source == "unavailable"
                     or pinned.health in ("dead", "stale")

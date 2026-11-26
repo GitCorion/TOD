@@ -252,7 +252,10 @@ class StreamGuard:
         recent = samples[-3:]
         window = recent[-1][0] - recent[0][0]
         growth = recent[-1][1] - recent[0][1]
+        progress_growth = recent[-1][3] - recent[0][3]
         if window < 8 or growth > 0:
+            return
+        if buffer_bytes == 0 and progress_growth > 0 and len(samples) < 5:
             return
         if now_ts - self._last_nudge.get(key, 0.0) < 30:
             return
@@ -545,11 +548,18 @@ class StreamGuard:
         window = max(1.0, recent[-1][0] - recent[0][0])
         growth = recent[-1][1] - recent[0][1]
         avg_speed = sum(item[2] for item in recent) / len(recent)
+        progress_growth = recent[-1][3] - recent[0][3]
         if self._audio_ok.get(key) is False:
             reason = "audio_not_spanish"
         else:
             reason = None
         if reason is None and buffer_bytes == 0 and all(item[1] == 0 for item in recent):
+            if (
+                avg_speed >= required_speed
+                and progress_growth > 0
+                and elapsed < self.grace_seconds * 3.0
+            ):
+                return
             reason = "no_contiguous_buffer"
         elif reason is None and avg_speed < required_speed * self.safety:
             reason = "slow_swarm"

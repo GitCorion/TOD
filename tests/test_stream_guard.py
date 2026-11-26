@@ -283,3 +283,16 @@ def test_guard_nudges_when_piece_zero_stalled(tmp_path):
     assert report["nudged"], report
     assert qbit.priorities[0] == {0: 0}
     assert qbit.priorities[1] == {0: 1}
+
+
+def test_guard_waits_when_progress_and_speed_grow_without_piece_zero(tmp_path):
+    db, _asset_id, release_id = seed(tmp_path)
+    qbit = FakeQbit(progress=0.02, speed=500 * 1024, buffer_pieces=0)
+    service = FakePlayService(qbit)
+    guard = StreamGuard(str(db), service, grace_seconds=30, nudge_hold=0)
+    guard.run_once(now=NOW)
+    qbit.progress = 0.05
+    report = guard.run_once(now=NOW + timedelta(seconds=40))
+    assert report["bad"] == []
+    assert service.calls == []
+    assert release_id not in failed_release_ids(str(db))

@@ -345,6 +345,12 @@ def _mark_complete(
                     """,
                     (path, int(row["id"])),
                 )
+        rel_ids = {
+            int(rid) for rid in ([torrent["release_id"]] + [r["release_id"] for r in rows])
+            if rid is not None
+        }
+        for rid in rel_ids:
+            conn.execute("DELETE FROM stream_failures WHERE release_id = ?", (rid,))
         conn.commit()
 
 

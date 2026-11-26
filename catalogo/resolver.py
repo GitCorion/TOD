@@ -520,11 +520,6 @@ class Resolver:
                 """,
                 (int(release_id),),
             ).fetchone()
-        if failed is not None:
-            return Resolution(
-                asset["key"], asset["id"], "unavailable",
-                "stream_bad_swarm",
-            )
         rel_hash = (release["info_hash"] or "").strip().lower()
         target_ids = {int(release_id), int(release["id"])}
         files = [
@@ -549,6 +544,11 @@ class Resolver:
                 )
                 if result is not None:
                     return result
+        if failed is not None:
+            return Resolution(
+                asset["key"], asset["id"], "unavailable",
+                "stream_bad_swarm",
+            )
         if blocked:
             return Resolution(
                 key=asset["key"],
