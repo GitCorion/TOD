@@ -68,8 +68,8 @@ reproducción (`/play`, `/resolve`, `/sources`, `/status`, `/catalog/lookup`,
 
 | Componente | Función |
 |---|---|
-| [Medusa](https://github.com/GitCorion/Medusa) | Cliente nativo para Android TV que reproduce desde Jellyfin. |
-| [Medusa-Jellyfin-Plugin](https://github.com/GitCorion/Medusa-Jellyfin-Plugin) | Plugin de Jellyfin que expone `/Medusa/Status`, `/Prepare` y `/Lease` para arrancar y monitorizar el buffering desde el cliente. |
+| [Medusa](https://github.com/GitCorion/Medusa) | Cliente nativo para Android TV y tablet que reproduce desde Jellyfin. |
+| [Medusa-Jellyfin-Plugin](https://github.com/GitCorion/Medusa-Jellyfin-Plugin) | Plugin de Jellyfin que expone `/Medusa/Capabilities`, `/Status`, `/Prepare` y `/Lease` para preparación bajo demanda y negociación de versiones. |
 | **TOD** | Servidor de biblioteca, selección de releases, `.strm` y streaming por rangos. |
 
 ## Funcionamiento de `.strm` y versiones
@@ -195,13 +195,9 @@ con precedencia sobre las variables de entorno, dividida en siete secciones bajo
 
 ## Seguridad
 
-- Diseñado para ejecutarse en LAN o tras WireGuard. **No exponer el puerto `8773` a Internet.**
-- `/prepare` y `/lease` solo aceptan peticiones desde loopback.
-- Las rutas de reproducción (`/play`, `/resolve`, `/sources`, `/status`) no
-  requieren token de panel; el acceso debe restringirse a nivel de red.
-- Los secretos se almacenan en `var/tod.db` (`0600`); `.env` y `var/` están
-  excluidos de Git.
-- Consulta [SECURITY.md](SECURITY.md) para más detalles.
+TOD está pensado para ejecutarse en LAN o tras WireGuard (**no exponer el puerto
+`8773` a Internet**). Las rutas de reproducción no requieren token web y los
+secretos se guardan en `var/tod.db` (`0600`). Consulta [SECURITY.md](SECURITY.md).
 
 ## Desarrollo
 
