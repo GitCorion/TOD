@@ -473,11 +473,20 @@ def test_monitor_only_checks_available_titles(tmp_path, monkeypatch):
             "WHERE key='series:tmdb:42:1:2'"
         )
         conn.commit()
+    class Client:
+        def indexers(self):
+            return []
+
     checked = []
+
+    def fake_sync(db_path, client, **kwargs):
+        checked.append(kwargs.get("key"))
+
+    monkeypatch.setattr(admin, "_prowlarr", lambda config: Client())
+    monkeypatch.setattr(admin, "sync_sources", fake_sync)
     monkeypatch.setattr(
-        admin, "_sync_keys", lambda ctx, keys, **kwargs: checked.extend(keys)
+        admin, "export_strm", lambda *args, **kwargs: {"written": 0}
     )
-    monkeypatch.setattr(admin, "export_strm", lambda *args, **kwargs: None)
     report = admin.monitor_titles(db, config, delay=0)
     assert set(checked) == {"movie:tmdb:9", "series:tmdb:42:1:1"}
     assert report["waiting"] == 2
