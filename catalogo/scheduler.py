@@ -80,7 +80,7 @@ DEFAULT_TASKS: tuple[TaskSpec, ...] = (
         "monitor", "Buscar monitorizados", "monitor",
         "Busca releases de los títulos monitorizados ya estrenados.",
         schedule="daily", at="04:20",
-        params={"limit": 100, "delay": 2},
+        params={"limit": 0, "delay": 0, "workers": 4},
     ),
     TaskSpec(
         "restore-strm", "Reconciliar .strm", "restore-strm",

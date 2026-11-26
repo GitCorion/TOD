@@ -605,13 +605,17 @@ def monitor_titles(
     config: Config,
     *,
     keys: list[str] | None = None,
-    limit: int = 50,
-    delay: float = 2.0,
+    limit: int = 0,
+    delay: float = 0.0,
+    workers: int = 4,
+    no_jackett: bool = True,
     force: bool = False,
     ctx=None,
 ) -> dict[str, Any]:
-    """Busca fuentes para títulos en seguimiento y crea su `.strm` si aparecen."""
+    """Busca fuentes en paralelo para títulos en seguimiento y crea su `.strm` si aparecen."""
+    from concurrent.futures import ThreadPoolExecutor, as_completed
     from contextlib import closing
+    import threading
 
     from .db import connect
     from .strm_inventory import invalidate, inventory
@@ -635,13 +639,15 @@ def monitor_titles(
     params: list[Any] = []
     selected_keys: list[str] = []
     if keys:
-        selected_keys = [str(key) for key in keys if key][:500]
+        selected_keys = [str(key) for key in keys if key][:2000]
         if not selected_keys:
             return {"checked": 0, "found": 0, "waiting": 0, "errors": []}
         query += " AND key IN (" + ",".join("?" for _ in selected_keys) + ")"
         params.extend(selected_keys)
-    query += " ORDER BY monitor_last_search_at IS NOT NULL, monitor_last_search_at, id LIMIT ?"
-    params.append(max(1, min(int(limit), 500)))
+    query += " ORDER BY monitor_last_search_at IS NOT NULL, monitor_last_search_at, id"
+    if int(limit) > 0:
+        query += " LIMIT ?"
+        params.append(min(int(limit), 20000))
     with closing(connect(db_path)) as conn:
         rows = [dict(row) for row in conn.execute(query, params).fetchall()]
         waiting_query = (
@@ -666,9 +672,6 @@ def monitor_titles(
             conn.execute(waiting_query, waiting_params).fetchone()[0]
         )
 
-    checked = 0
-    found = 0
-    errors: list[str] = []
     if ctx is None:
         from types import SimpleNamespace
 
@@ -677,66 +680,96 @@ def monitor_titles(
             report=lambda *args, **kwargs: None,
             check=lambda: None,
         )
-    for index, row in enumerate(rows):
-        if ctx is not None:
-            ctx.check()
-            ctx.report(
-                f"seguimiento {index + 1}/{len(rows)}: {row['key']}",
-                progress=(index / max(1, len(rows))),
+
+    published_keys = set(inventory(config.catalog_library)["keys"])
+    already_ids = [row["id"] for row in rows if row["key"] in published_keys]
+    if already_ids:
+        with closing(connect(db_path)) as conn:
+            conn.executemany(
+                "UPDATE media_items SET monitored = 0 WHERE id = ?",
+                [(row_id,) for row_id in already_ids],
             )
-        checked += 1
+            conn.commit()
+    pending_rows = [row for row in rows if row["key"] not in published_keys]
+
+    client = _prowlarr(config) if pending_rows else None
+    jackett = None if (no_jackett or not pending_rows) else _jackett(config)
+    indexer_payload = client.indexers() if client is not None else None
+
+    checked = len(already_ids)
+    found = 0
+    errors: list[str] = []
+    lock = threading.Lock()
+    max_workers = max(1, min(int(workers), 8, len(pending_rows) or 1))
+
+    def process_one(row: dict[str, Any]) -> None:
+        nonlocal checked, found
+        ctx.check()
+        key = row["key"]
         try:
-            published = inventory(config.catalog_library)
-            if row["key"] in published["keys"]:
-                with closing(connect(db_path)) as conn:
-                    conn.execute(
-                        "UPDATE media_items SET monitored = 0 WHERE id = ?",
-                        (row["id"],),
-                    )
-                    conn.commit()
-                continue
-            _sync_keys(
-                ctx,
-                [row["key"]],
-                kind=row["kind"],
+            sync_sources(
+                str(db_path),
+                client,
+                jackett=jackett,
+                limit=1,
                 delay=0,
+                trackers=GENERAL_TRACKERS,
                 min_seeders=1,
-                no_jackett=False,
+                key=key,
+                kind=row["kind"],
                 recheck=True,
+                parallel_queries=True,
+                id_fallback=True,
+                indexer_payload=indexer_payload,
             )
-            with closing(connect(db_path)) as conn:
-                conn.execute(
-                    "UPDATE media_items SET monitor_last_search_at = ? WHERE id = ?",
-                    (
-                        time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
-                        row["id"],
-                    ),
-                )
-                conn.commit()
-            export_strm(
+            exported = export_strm(
                 db_path,
                 config.catalog_library,
                 base_url=config.playback_base_url,
-                key=row["key"],
+                key=key,
                 limit=None,
                 min_seeders=1,
                 versions_filter="available",
                 skip_library=False,
             )
-            invalidate(config.catalog_library)
-            published = inventory(config.catalog_library, ttl=0)
-            if row["key"] in published["keys"]:
-                found += 1
-                with closing(connect(db_path)) as conn:
+            now_str = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+            written = int(exported.get("written") or 0) > 0
+            with closing(connect(db_path)) as conn:
+                if written:
                     conn.execute(
-                        "UPDATE media_items SET monitored = 0 WHERE id = ?",
-                        (row["id"],),
+                        "UPDATE media_items SET monitor_last_search_at = ?, monitored = 0 WHERE id = ?",
+                        (now_str, row["id"]),
                     )
-                    conn.commit()
+                else:
+                    conn.execute(
+                        "UPDATE media_items SET monitor_last_search_at = ? WHERE id = ?",
+                        (now_str, row["id"]),
+                    )
+                conn.commit()
+            with lock:
+                checked += 1
+                if written:
+                    found += 1
         except Exception as exc:
-            errors.append(f"{row['key']}: {str(exc)[:180]}")
-        if delay and index < len(rows) - 1:
+            with lock:
+                checked += 1
+                errors.append(f"{key}: {str(exc)[:180]}")
+        if delay:
             time.sleep(max(0.0, delay))
+
+    if pending_rows:
+        with ThreadPoolExecutor(max_workers=max_workers) as pool:
+            futures = [pool.submit(process_one, row) for row in pending_rows]
+            for index, future in enumerate(as_completed(futures)):
+                future.result()
+                if index % 5 == 0 or index == len(futures) - 1:
+                    ctx.report(
+                        f"seguimiento {index + 1 + len(already_ids)}/{len(rows)}",
+                        progress=((index + 1 + len(already_ids)) / max(1, len(rows))),
+                    )
+        if found:
+            invalidate(config.catalog_library)
+
     return {
         "checked": checked,
         "found": found,
@@ -2095,8 +2128,10 @@ def job_monitor(ctx: JobContext) -> dict[str, Any]:
         str(ctx.config.db_path),
         ctx.config,
         keys=keys or None,
-        limit=_int(params.get("limit"), 50),
-        delay=max(0.0, _float(params.get("delay"), 2.0)),
+        limit=_int(params.get("limit"), 0),
+        delay=max(0.0, _float(params.get("delay"), 0.0)),
+        workers=max(1, _int(params.get("workers"), 4)),
+        no_jackett=_bool(params.get("no_jackett"), True),
         force=_bool(params.get("force"), False),
         ctx=ctx,
     )

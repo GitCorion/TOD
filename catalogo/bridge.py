@@ -170,6 +170,26 @@ def bridge_downloads(
     radarr_profile: int | None = None
     sonarr_root: str | None = None
     sonarr_profile: int | None = None
+    radarr_by_tmdb: dict[int, dict[str, Any]] | None = None
+    if radarr is not None and callable(getattr(radarr, "movies", None)):
+        try:
+            radarr_by_tmdb = {
+                int(m.get("tmdbId") or 0): m
+                for m in radarr.movies()
+                if m.get("tmdbId")
+            }
+        except Exception:
+            radarr_by_tmdb = None
+    sonarr_by_tmdb: dict[int, dict[str, Any]] | None = None
+    if sonarr is not None and callable(getattr(sonarr, "series", None)):
+        try:
+            sonarr_by_tmdb = {
+                int(s.get("tmdbId") or 0): s
+                for s in sonarr.series()
+                if s.get("tmdbId")
+            }
+        except Exception:
+            sonarr_by_tmdb = None
 
     def movie_defaults(tod_profile_id: int | None = None) -> tuple[str | None, int | None]:
         nonlocal radarr_root, radarr_profile
@@ -241,7 +261,7 @@ def bridge_downloads(
                 )
                 continue
             try:
-                movie = radarr.movie_by_tmdb(tmdb)
+                movie = radarr_by_tmdb.get(tmdb) if radarr_by_tmdb is not None else radarr.movie_by_tmdb(tmdb)
                 added = False
                 if movie is None:
                     root, profile = movie_defaults(asset.get("quality_profile_id"))
@@ -328,7 +348,7 @@ def bridge_downloads(
             )
             continue
         try:
-            series = sonarr.series_by_tmdb(tmdb)
+            series = sonarr_by_tmdb.get(tmdb) if sonarr_by_tmdb is not None else sonarr.series_by_tmdb(tmdb)
             added = False
             if series is None:
                 root, profile = series_defaults(asset.get("quality_profile_id"))

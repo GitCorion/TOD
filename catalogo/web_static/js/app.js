@@ -1409,7 +1409,7 @@ document.addEventListener('click', async (event) => {
       try {
         const result = await apiPost('/api/jobs', {
           kind: 'monitor',
-          params: { limit: 100, delay: 1 },
+          params: { limit: 0, delay: 0, workers: 4 },
         });
         toast(`Búsqueda en cola (#${result.job_id})`, 'ok',
           `<button class="btn btn-sm btn-ghost" data-action="job-detail" data-id="${result.job_id}">Ver tarea</button>`);

@@ -34,7 +34,7 @@ from .trackers import (
 )
 
 # Prowlarr limita ráfagas de búsquedas por ID: como mucho dos a la vez.
-_ID_SEARCH = threading.BoundedSemaphore(2)
+_ID_SEARCH = threading.BoundedSemaphore(6)
 
 
 def _aliases(asset) -> list[str]:
@@ -389,8 +389,10 @@ def sync_sources(
     workers: int = 1,
     parallel_queries: bool = False,
     id_fallback: bool = False,
+    indexer_payload: list[dict] | None = None,
 ) -> dict:
-    indexer_payload = client.indexers()
+    if indexer_payload is None:
+        indexer_payload = client.indexers()
     found, missing = resolve_indexers(
         client, trackers, indexers=indexer_payload
     )
@@ -616,7 +618,7 @@ def sync_sources(
             if not args or not targets:
                 return []
             asked += 1
-            with ThreadPoolExecutor(max_workers=min(2, len(targets))) as pool:
+            with ThreadPoolExecutor(max_workers=min(6, len(targets))) as pool:
                 chunks = list(pool.map(lambda pair: by_id(pair, args), targets))
             return [row for chunk in chunks for row in chunk]
 
@@ -663,15 +665,24 @@ def sync_sources(
                     if accepted:
                         break
 
-        if not accepted:
+        if not accepted and jackett_sources:
             # Jackett solo como respaldo: su indexer "all" es lo más lento.
-            for query in queries:
-                results = jackett_search(query)
-                jackett_count += len(results)
-                asset_results += len(results)
-                accepted = _accepted_for(asset, results)
-                if accepted:
-                    break
+            if parallel_queries and len(queries) > 1:
+                with ThreadPoolExecutor(max_workers=len(queries)) as pool:
+                    for results in pool.map(jackett_search, queries):
+                        jackett_count += len(results)
+                        asset_results += len(results)
+                        accepted = _accepted_for(asset, results)
+                        if accepted:
+                            break
+            else:
+                for query in queries:
+                    results = jackett_search(query)
+                    jackett_count += len(results)
+                    asset_results += len(results)
+                    accepted = _accepted_for(asset, results)
+                    if accepted:
+                        break
 
         if delay:
             time.sleep(delay)
