@@ -14,6 +14,7 @@ import re
 import urllib.parse
 from contextlib import closing
 from pathlib import Path
+from typing import Any
 from xml.sax.saxutils import escape as xml_escape
 
 from . import language_settings

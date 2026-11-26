@@ -11,6 +11,13 @@ from .errors import WebError
 HASH_RE = re.compile(r"^[0-9a-fA-F]{40}$")
 
 
+def _int(value: Any, default: int) -> int:
+    try:
+        return int(value) if value is not None else default
+    except (TypeError, ValueError):
+        return default
+
+
 def handle(
     app: Any,
     parts: list[str],
