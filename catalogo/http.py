@@ -447,8 +447,28 @@ class CatalogHandler(BaseHTTPRequestHandler):
                 if pinned is not None and (
                     pinned.source == "unavailable"
                     or pinned.health in ("dead", "stale")
-                ) and self._search_sources(key):
-                    release_id = None
+                ):
+                    default_res = self.resolver.resolve(key)
+                    if default_res.source in ("library", "local_seed"):
+                        status = asset_status(
+                            self.db_path, key,
+                            release_id=default_res.release_id, qbit=None,
+                        )
+                        if status is not None:
+                            status = self._local_ready_status(key, status)
+                        return _prepared(
+                            202,
+                            {
+                                "prepared": True,
+                                "already_available": True,
+                                "key": key,
+                                "release_id": default_res.release_id,
+                                "info_hash": default_res.info_hash,
+                                "status": status,
+                            },
+                        )
+                    if default_res.source == "torrent" or self._search_sources(key):
+                        release_id = None
             if release_id is None:
                 resolution = self.resolver.resolve(key)
                 if (
@@ -520,13 +540,32 @@ class CatalogHandler(BaseHTTPRequestHandler):
                         **ensure_extra,
                     )
                 except (NoSource, ReleaseUnavailable):
+                    # Si ya existe copia local o de librería, servirla al instante.
+                    default_res = self.resolver.resolve(key)
+                    if default_res.source in ("library", "local_seed"):
+                        status = asset_status(
+                            self.db_path, key,
+                            release_id=default_res.release_id, qbit=None,
+                        )
+                        if status is not None:
+                            status = self._local_ready_status(key, status)
+                        return _prepared(
+                            202,
+                            {
+                                "prepared": True,
+                                "already_available": True,
+                                "key": key,
+                                "release_id": default_res.release_id,
+                                "info_hash": default_res.info_hash,
+                                "status": status,
+                            },
+                        )
                     # El release que fija el .strm puede estar muerto (el
                     # índice devuelve 404) aunque el tracker lo anuncie vivo.
                     # Buscamos alternativas una vez y reintentamos la mejor.
-                    if release_id is None or time.monotonic() >= prepare_deadline or not self._search_sources(
-                        key, force=True
-                    ):
+                    if release_id is None or time.monotonic() >= prepare_deadline:
                         raise
+                    self._search_sources(key, force=True)
                     handle = self.play_service.ensure(
                         key,
                         release_id=None,

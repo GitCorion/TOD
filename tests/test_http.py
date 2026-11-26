@@ -1029,3 +1029,35 @@ def test_prepare_retries_without_pin_when_release_is_broken(tmp_path, monkeypatc
         server.shutdown()
         server.server_close()
         thread.join(timeout=5)
+
+
+def test_prepare_with_dead_release_falls_back_to_library_file(tmp_path):
+    db, _content = build_db(tmp_path)
+    conn_db = sqlite3.connect(db)
+    conn_db.execute("UPDATE releases SET health='dead' WHERE id=2")
+    conn_db.execute(
+        "INSERT INTO library_files(kind,tmdb,season,episode,path,size_bytes,source) VALUES(?,?,?,?,?,?,?)",
+        ("movie", 2, 0, 0, "/mnt/fichier/Peliculas/Movie (2024)/Movie.mkv", 123456, "radarr"),
+    )
+    conn_db.commit()
+    conn_db.close()
+
+    service = FakePlayService()
+    server = make_server("127.0.0.1", 0, db, play_service=service)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    host, port = server.server_address
+    try:
+        conn = http.client.HTTPConnection(host, port, timeout=5)
+        conn.request("POST", "/prepare?key=movie%3Atmdb%3A2&release=2")
+        response = conn.getresponse()
+        body = json.loads(response.read().decode())
+        conn.close()
+        assert response.status == 202, body
+        assert body["already_available"] is True
+        assert body["status"]["source"] == "library"
+        assert service.ensured == []
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=5)
