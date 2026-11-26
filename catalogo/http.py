@@ -37,7 +37,7 @@ from .media_info import build_media_info
 from .play_service import AdmissionDenied, EngineUnavailable, NoPeers, Warming
 from .ranges import parse_range
 from .resolver import Resolution, Resolver
-from .status import asset_status
+from .status import asset_status, asset_versions
 from .stream import RangeNotSatisfiable, SeekNotReady, StreamTimeout
 from .trackers import tracker_priority
 from .torrent import DisabledBackend, TorrentBackend
@@ -340,6 +340,40 @@ class CatalogHandler(BaseHTTPRequestHandler):
         download_allowed = (params.get("download") or "").strip().lower() in (
             "1", "true", "yes", "on"
         )
+        def _parse_bool_param(name: str) -> bool | None:
+            raw = (params.get(name) or "").strip().lower()
+            if raw in ("1", "true", "yes", "on"):
+                return True
+            if raw in ("0", "false", "no", "off"):
+                return False
+            return None
+
+        max_width: int | None = None
+        if params.get("max_width"):
+            try:
+                parsed_w = int(params["max_width"])
+                if parsed_w > 0:
+                    max_width = parsed_w
+            except ValueError:
+                pass
+        supports_4k = _parse_bool_param("supports_4k")
+        supports_dv = _parse_bool_param("supports_dv")
+        if (
+            release_id is None
+            and (max_width is not None or supports_4k is False or supports_dv is False)
+        ):
+            try:
+                _, rec_id = asset_versions(
+                    self.db_path,
+                    key,
+                    max_width=max_width,
+                    supports_4k=supports_4k,
+                    supports_dv=supports_dv,
+                )
+                if rec_id is not None:
+                    release_id = int(rec_id)
+            except Exception:
+                pass
 
         if parsed.path == "/prepare":
             if self.command != "POST":
@@ -596,7 +630,13 @@ class CatalogHandler(BaseHTTPRequestHandler):
                 else None
             )
             status = asset_status(
-                self.db_path, key, release_id=release_id, qbit=qbit
+                self.db_path,
+                key,
+                release_id=release_id,
+                qbit=qbit,
+                max_width=max_width,
+                supports_4k=supports_4k,
+                supports_dv=supports_dv,
             )
             if status is None:
                 return self._json(

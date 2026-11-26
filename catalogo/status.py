@@ -6,6 +6,7 @@ de qBittorrent, los datos vivos del torrent para progreso/velocidad/ETA.
 
 from __future__ import annotations
 
+import re
 import time
 from contextlib import closing
 from datetime import datetime, timedelta, timezone
@@ -347,6 +348,191 @@ def _mark_complete(
         conn.commit()
 
 
+
+_DV_RE = re.compile(r"(^|[^a-z0-9])(dv|dovi)([^a-z0-9]|$)", re.IGNORECASE)
+_4K_RE = re.compile(r"(^|[^a-z0-9])(4k|uhd|2160p?)([^a-z0-9]|$)", re.IGNORECASE)
+
+
+def release_is_4k(release: Any) -> bool:
+    quality = str((release["quality"] if release is not None else "") or "").strip()
+    title = str((release["title"] if release is not None else "") or "").strip()
+    return bool(_4K_RE.search(f"{quality} {title}"))
+
+
+def release_is_dolby_vision(release: Any) -> bool:
+    if release is None:
+        return False
+    keys = set(release.keys()) if hasattr(release, "keys") else set()
+    hdr = str(release["hdr"] or "") if "hdr" in keys else ""
+    flags = str(release["parsed_flags"] or "") if "parsed_flags" in keys else ""
+    title = str(release["title"] or "") if "title" in keys else ""
+    text = f"{hdr} {flags} {title}".lower()
+    if "dolby vision" in text or "dolby.vision" in text or "dovi" in text:
+        return True
+    return bool(_DV_RE.search(text))
+
+
+def is_release_compatible(
+    release: Any,
+    *,
+    max_width: int | None = None,
+    supports_4k: bool | None = None,
+    supports_dv: bool | None = None,
+) -> bool:
+    if release is None:
+        return True
+    is_4k = release_is_4k(release)
+    is_dv = release_is_dolby_vision(release)
+    if (supports_4k is False or (max_width is not None and max_width < 3840)) and is_4k:
+        return False
+    if supports_dv is False and is_dv:
+        return False
+    return True
+
+
+def _version_label(release: Any) -> str:
+    q = str(release["quality"] or "unknown").lower()
+    q_label = {"2160p": "4K", "uhd": "4K", "4k": "4K"}.get(q, q)
+    a = str(release["audio"] or "unknown").lower()
+    a_label = {
+        "castellano": "Cast",
+        "spanish_unverified": "ESP",
+        "espanol": "ESP",
+        "latino": "Lat",
+        "vose": "VOSE",
+        "unknown": "VO",
+    }.get(a, a)
+    return f"{q_label} {a_label}".strip()
+
+
+def asset_versions(
+    db_path: str,
+    key: str,
+    *,
+    max_width: int | None = None,
+    supports_4k: bool | None = None,
+    supports_dv: bool | None = None,
+) -> tuple[list[dict[str, Any]], int | None]:
+    with closing(connect(db_path)) as conn:
+        asset = conn.execute(
+            "SELECT * FROM media_items WHERE key = ? OR media_id = ? LIMIT 1",
+            (key, key),
+        ).fetchone()
+        if asset is None:
+            return [], None
+        asset_id = int(asset["id"])
+        file_rows = conn.execute(
+            """
+            SELECT f.release_id, f.local_path, f.library_path, f.state,
+                   COALESCE(NULLIF(t.info_hash, ''), r.info_hash) AS eff_hash,
+                   r.*
+            FROM torrent_files f
+            LEFT JOIN torrents t ON t.id = f.torrent_id
+            LEFT JOIN releases r ON r.id = f.release_id
+            WHERE f.asset_id = ?
+              AND f.state NOT IN ('evicted', 'missing')
+            """,
+            (asset_id,),
+        ).fetchall()
+        avail_ids: set[int] = set()
+        avail_hashes: set[str] = set()
+        avail_keys: set[tuple[str, str]] = set()
+        pack_rels: list[Any] = []
+        for fr in file_rows:
+            if not (fr["local_path"] or fr["library_path"]):
+                continue
+            if fr["release_id"] is not None:
+                avail_ids.add(int(fr["release_id"]))
+            if fr["eff_hash"]:
+                avail_hashes.add(str(fr["eff_hash"]).strip().lower())
+            if fr["id"] is not None:
+                avail_keys.add((str(fr["tracker"] or "").lower(), str(fr["title"] or "").strip().lower()))
+                pack_rels.append(fr)
+
+        rel_rows = conn.execute(
+            """
+            SELECT r.* FROM releases r
+            WHERE r.asset_id = ?
+              AND r.health <> 'blocked'
+              AND NOT EXISTS (
+                  SELECT 1 FROM tracker_policies tp
+                  WHERE tp.tracker = r.tracker AND tp.enabled = 0
+              )
+            ORDER BY COALESCE(r.size_bytes, 999999999999) ASC, r.id DESC
+            """,
+            (asset_id,),
+        ).fetchall()
+
+    versions: list[dict[str, Any]] = []
+    seen_hashes: set[str] = set()
+    merged_rels = list(rel_rows)
+    seen_rel_ids = {int(r["id"]) for r in merged_rels}
+    for pr in pack_rels:
+        pr_id = int(pr["id"])
+        pr_key = (str(pr["tracker"] or "").lower(), str(pr["title"] or "").strip().lower())
+        if pr_id not in seen_rel_ids and not any(
+            (str(r["tracker"] or "").lower(), str(r["title"] or "").strip().lower()) == pr_key
+            for r in merged_rels
+        ):
+            merged_rels.append(pr)
+            seen_rel_ids.add(pr_id)
+
+    for rel in merged_rels:
+        rid = int(rel["id"])
+        ih = str(rel["info_hash"] or "").strip().lower()
+        rel_key = (str(rel["tracker"] or "").lower(), str(rel["title"] or "").strip().lower())
+        is_avail = rid in avail_ids or (bool(ih) and ih in avail_hashes) or (rel_key in avail_keys)
+        is_alive = str(rel["health"] or "") == "alive" and int(rel["seeders"] or 0) >= 1
+        if not is_avail and not is_alive:
+            continue
+        if ih and ih in seen_hashes:
+            continue
+        if ih:
+            seen_hashes.add(ih)
+        is_4k = release_is_4k(rel)
+        is_dv = release_is_dolby_vision(rel)
+        compat = is_release_compatible(
+            rel,
+            max_width=max_width,
+            supports_4k=supports_4k,
+            supports_dv=supports_dv,
+        )
+        q_low = str(rel["quality"] or "").lower()
+        width, height = (3840, 2160) if is_4k else ((1280, 720) if "720" in q_low else (1920, 1080))
+        versions.append({
+            "release_id": rid,
+            "label": _version_label(rel),
+            "title": rel["title"],
+            "quality": rel["quality"],
+            "codec": rel["codec"],
+            "audio": rel["audio"],
+            "dolby_vision": is_dv,
+            "width": width,
+            "height": height,
+            "size_bytes": rel["size_bytes"],
+            "available": is_avail,
+            "compatible": compat,
+        })
+
+    prefer_4k = supports_4k is True
+    versions.sort(
+        key=lambda v: (
+            0 if (v["available"] and v["compatible"]) else (1 if v["available"] else (2 if v["compatible"] else 3)),
+            (0 if int(v.get("width") or 0) >= 3840 else 1) if prefer_4k else (0 if "h264" in str(v.get("codec") or "").lower() or "avc" in str(v.get("codec") or "").lower() else 1),
+            -int(v.get("size_bytes") or 0) if prefer_4k else int(v.get("size_bytes") or 999999999999),
+            int(v["release_id"]),
+        )
+    )
+    recommended = next(
+        (v["release_id"] for v in versions if v["available"] and v["compatible"]),
+        None,
+    ) or next(
+        (v["release_id"] for v in versions if v["compatible"]),
+        None,
+    )
+    return versions, recommended
+
+
 def asset_status(
     db_path: str,
     key: str,
@@ -354,6 +540,9 @@ def asset_status(
     release_id: int | None = None,
     qbit: StatusQbit | None = None,
     now: datetime | None = None,
+    max_width: int | None = None,
+    supports_4k: bool | None = None,
+    supports_dv: bool | None = None,
 ) -> dict[str, Any] | None:
     current = now or _now()
     with closing(connect(db_path)) as conn:
@@ -416,6 +605,26 @@ def asset_status(
                 "SELECT * FROM releases WHERE id = ? AND asset_id = ?",
                 (int(release_id), asset_id),
             ).fetchone()
+            if release is None:
+                cand = conn.execute(
+                    "SELECT * FROM releases WHERE id = ?",
+                    (int(release_id),),
+                ).fetchone()
+                if cand is not None:
+                    cand_hash = str(cand["info_hash"] or "").strip().lower()
+                    linked = conn.execute(
+                        """
+                        SELECT 1 FROM torrent_files f
+                        LEFT JOIN torrents t ON t.id = f.torrent_id
+                        WHERE f.asset_id = ?
+                          AND f.state NOT IN ('evicted', 'missing')
+                          AND (f.release_id = ? OR (? != '' AND lower(COALESCE(t.info_hash, '')) = ?))
+                        LIMIT 1
+                        """,
+                        (asset_id, int(release_id), cand_hash, cand_hash),
+                    ).fetchone()
+                    if linked is not None:
+                        release = cand
             if release is None:
                 return None
         elif torrent is not None:
@@ -810,4 +1019,13 @@ def asset_status(
         "seed": seed,
         "updated_at": current.isoformat(),
     }
+    versions, recommended_release_id = asset_versions(
+        db_path,
+        key,
+        max_width=max_width,
+        supports_4k=supports_4k,
+        supports_dv=supports_dv,
+    )
+    result["versions"] = versions
+    result["recommended_release_id"] = recommended_release_id
     return result

@@ -67,6 +67,16 @@ def _normalize(data: dict[str, Any], file_size: int | None) -> dict[str, Any]:
         kind = item.get("codec_type")
         tags = item.get("tags") or {}
         if kind == "video" and video is None:
+            side_data = item.get("side_data_list") or []
+            has_dovi = (
+                any(
+                    "dovi" in str(sd.get("side_data_type") or "").casefold()
+                    or "dolby vision" in str(sd.get("side_data_type") or "").casefold()
+                    for sd in side_data if isinstance(sd, dict)
+                )
+                or "dvhe" in str(item.get("codec_tag_string") or "").casefold()
+                or "dvh1" in str(item.get("codec_tag_string") or "").casefold()
+            )
             video = {
                 "index": _as_int(item.get("index")) or 0,
                 "codec": item.get("codec_name") or None,
@@ -80,6 +90,7 @@ def _normalize(data: dict[str, Any], file_size: int | None) -> dict[str, Any]:
                 "pix_fmt": item.get("pix_fmt") or None,
                 "color_transfer": item.get("color_transfer") or None,
                 "color_primaries": item.get("color_primaries") or None,
+                "dolby_vision": bool(has_dovi),
             }
         elif kind == "audio":
             audio.append(
@@ -271,6 +282,15 @@ def _release_fallback(
                 else None
             ),
             "color_primaries": None,
+            "dolby_vision": (
+                "dolby vision" in text
+                or "dolby.vision" in text
+                or "dovi" in text
+                or any(
+                    tok == "dv"
+                    for tok in text.replace("-", " ").replace(".", " ").replace("[", " ").replace("]", " ").split()
+                )
+            ),
         },
         "audio": [
             {
@@ -303,6 +323,19 @@ def _file_path(
             ORDER BY id DESC LIMIT 1
             """,
             (int(release_id), int(file_index)),
+        ).fetchone()
+    if row is None and release_id is not None:
+        row = conn.execute(
+            """
+            SELECT f.local_path, f.library_path, f.rel_path FROM torrent_files f
+            LEFT JOIN torrents t ON t.id = f.torrent_id
+            LEFT JOIN releases r ON r.id = ?
+            WHERE f.asset_id = ?
+              AND f.state NOT IN ('evicted', 'missing')
+              AND (f.release_id = ? OR (r.info_hash IS NOT NULL AND lower(COALESCE(t.info_hash, '')) = lower(r.info_hash)))
+            ORDER BY f.id DESC LIMIT 1
+            """,
+            (int(release_id), int(asset_id), int(release_id)),
         ).fetchone()
     if row is None:
         row = conn.execute(
@@ -362,6 +395,11 @@ def build_media_info(
                 "SELECT * FROM releases WHERE id = ? AND asset_id = ?",
                 (int(release_id), int(asset["id"])),
             ).fetchone()
+            if release is None:
+                release = conn.execute(
+                    "SELECT * FROM releases WHERE id = ?",
+                    (int(release_id),),
+                ).fetchone()
         file_size = None
         file_index = resolution.file_index if resolution is not None else None
         save_path = resolution.save_path if resolution is not None else None

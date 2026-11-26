@@ -243,6 +243,36 @@ def _available_release_ids(conn) -> set[int]:
     }
 
 
+
+def _available_pack_by_asset(conn) -> tuple[dict[int, set[str]], dict[int, list[Any]]]:
+    """Hashes y releases de pack disponibles por asset_id según torrent_files."""
+    rows = conn.execute(
+        """
+        SELECT f.asset_id,
+               f.local_path,
+               f.library_path,
+               COALESCE(NULLIF(t.info_hash, ''), r.info_hash) AS eff_hash,
+               r.*
+        FROM torrent_files f
+        LEFT JOIN torrents t ON t.id = f.torrent_id
+        LEFT JOIN releases r ON r.id = f.release_id
+        WHERE f.asset_id IS NOT NULL
+          AND f.state NOT IN ('evicted', 'missing')
+        """
+    ).fetchall()
+    hashes: dict[int, set[str]] = {}
+    rels_by_asset: dict[int, dict[int, Any]] = {}
+    for row in rows:
+        if not (row["local_path"] or row["library_path"]):
+            continue
+        aid = int(row["asset_id"])
+        eh = row["eff_hash"]
+        if eh:
+            hashes.setdefault(aid, set()).add(str(eh).strip().lower())
+        if row["id"] is not None:
+            rels_by_asset.setdefault(aid, {})[int(row["id"])] = row
+    return hashes, {aid: list(m.values()) for aid, m in rels_by_asset.items()}
+
 def _versions(
     asset: dict,
     releases: list,
@@ -449,6 +479,7 @@ def export_strm(
 
     with closing(connect(db_path)) as conn:
         available_ids = _available_release_ids(conn)
+        available_hashes, available_pack_rels = _available_pack_by_asset(conn)
         pinned_targets: dict[int, int] = {}
         if conn.execute(
             "SELECT 1 FROM sqlite_master WHERE type='table' AND name='play_targets'"
@@ -539,19 +570,45 @@ def export_strm(
                 skipped_reasons.get("in_library", 0) + 1
             )
             continue
+        asset_id = int(asset["id"])
+        asset_hashes = available_hashes.get(asset_id, set())
+        pack_rels = available_pack_rels.get(asset_id, [])
+        pack_keys = {
+            (str(pr["tracker"] or "").lower(), str(pr["title"] or "").strip().lower())
+            for pr in pack_rels
+            if pr["title"]
+        }
+        asset_available_ids = set(available_ids)
+        base_releases = list(all_releases[asset_id])
+        seen_ids = {int(r["id"]) for r in base_releases}
+        for release in base_releases:
+            rel_hash = (release["info_hash"] or "").strip().lower()
+            rel_key = (str(release["tracker"] or "").lower(), str(release["title"] or "").strip().lower())
+            if (rel_hash and rel_hash in asset_hashes) or (rel_key in pack_keys):
+                asset_available_ids.add(int(release["id"]))
+        for pr in pack_rels:
+            pr_id = int(pr["id"])
+            pr_key = (str(pr["tracker"] or "").lower(), str(pr["title"] or "").strip().lower())
+            if pr_id not in seen_ids and not any(
+                (str(r["tracker"] or "").lower(), str(r["title"] or "").strip().lower()) == pr_key
+                for r in base_releases
+            ):
+                base_releases.append(pr)
+                seen_ids.add(pr_id)
+                asset_available_ids.add(pr_id)
         releases = [
-            release for release in all_releases[int(asset["id"])]
+            release for release in base_releases
             if release["health"] in ("alive", "unknown", "stale")
-            or int(release["id"]) in available_ids
+            or int(release["id"]) in asset_available_ids
         ]
         playable = _versions(
             asset,
             releases,
-            available_ids,
+            asset_available_ids,
             versions_filter="all",
             min_seeders=min_seeders,
             preference=preference,
-            pinned_release_id=pinned_targets.get(int(asset["id"])),
+            pinned_release_id=pinned_targets.get(asset_id),
         )
         # Un .strm solo se publica si hay algo que reproducir de verdad:
         # fichero local/archivado o un release VIVO con seeds. Los releases
@@ -559,7 +616,7 @@ def export_strm(
         # catálogo conserva el título para reintentarlo.
         playable = [
             (release, label) for release, label in playable
-            if int(release["id"]) in available_ids
+            if int(release["id"]) in asset_available_ids
             or (
                 release["health"] == "alive"
                 and int(release["seeders"] or 0) >= min_seeders
@@ -592,7 +649,7 @@ def export_strm(
         versions = _versions(
             asset,
             releases,
-            available_ids,
+            asset_available_ids,
             versions_filter=versions_filter,
             min_seeders=min_seeders,
             preference=preference,

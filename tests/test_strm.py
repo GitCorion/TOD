@@ -493,3 +493,39 @@ def test_export_strm_allows_pinned_or_prepared_override_audio(tmp_path):
     Resolver(db).set_target("series:tmdb:285404:1:1", "torrent", release_id=release_id)
     res2 = export_strm(db, out, base_url="http://x")
     assert res2["written"] >= 1
+
+
+
+def test_pack_torrent_exports_versions_for_all_episodes(tmp_path):
+    from catalogo.db import connect, migrate
+    from catalogo.strm import export_strm
+
+    db_path = tmp_path / "tod.db"
+    out_dir = tmp_path / "strm"
+    media_file_1 = tmp_path / "e01_1080.mkv"
+    media_file_1.write_bytes(b"1")
+    media_file_2 = tmp_path / "e02_1080.mkv"
+    media_file_2.write_bytes(b"1")
+    media_file_3 = tmp_path / "e02_4k.mkv"
+    media_file_3.write_bytes(b"1")
+
+    with connect(db_path) as conn:
+        migrate(conn, Path('/opt/catalogo/catalogo/migrations'))
+        conn.execute("INSERT INTO media_items(id, key, kind, tmdb, season, episode, title, year) VALUES (1, 'series:tmdb:99:1:1', 'series', 99, 1, 1, 'Demo', 2026)")
+        conn.execute("INSERT INTO media_items(id, key, kind, tmdb, season, episode, title, year) VALUES (2, 'series:tmdb:99:1:2', 'series', 99, 1, 2, 'Demo', 2026)")
+        conn.execute("INSERT INTO releases(id, asset_id, tracker, title, quality, codec, audio, is_pack, health, seeders) VALUES (10, 1, 'Tr', 'Demo S01 1080p', '1080p', 'H264', 'castellano', 1, 'alive', 5)")
+        conn.execute("INSERT INTO releases(id, asset_id, tracker, title, quality, codec, audio, is_pack, health, seeders) VALUES (11, 1, 'Tr', 'Demo S01 2160p DV', '4K', 'HEVC', 'castellano', 1, 'alive', 5)")
+        conn.execute("INSERT INTO releases(id, asset_id, tracker, title, quality, codec, audio, is_pack, health, seeders) VALUES (20, 2, 'Tr', 'Demo S01 1080p', '1080p', 'H264', 'castellano', 1, 'alive', 5)")
+        conn.execute("INSERT INTO releases(id, asset_id, tracker, title, quality, codec, audio, is_pack, health, seeders) VALUES (21, 2, 'Tr', 'Demo S01 2160p DV', '4K', 'HEVC', 'castellano', 1, 'alive', 5)")
+        conn.execute("INSERT INTO torrents(id, info_hash, release_id, tracker, state, progress) VALUES (100, 'aaaa', 10, 'Tr', 'seeding', 1.0)")
+        conn.execute("INSERT INTO torrents(id, info_hash, release_id, tracker, state, progress) VALUES (101, 'bbbb', 11, 'Tr', 'seeding', 1.0)")
+        conn.execute("INSERT INTO torrent_files(asset_id, release_id, torrent_id, file_index, local_path, state) VALUES (1, 10, 100, 0, ?, 'ready')", (str(media_file_1),))
+        conn.execute("INSERT INTO torrent_files(asset_id, release_id, torrent_id, file_index, local_path, state) VALUES (2, 10, 100, 1, ?, 'ready')", (str(media_file_2),))
+        conn.execute("INSERT INTO torrent_files(asset_id, release_id, torrent_id, file_index, local_path, state) VALUES (2, 11, 101, 1, ?, 'ready')", (str(media_file_3),))
+        conn.commit()
+
+    report = export_strm(db_path, out_dir, versions_filter="available")
+    assert report["versions_written"] >= 2
+    e02_files = sorted(p.name for p in (out_dir / "series" / "Demo (2026)" / "Season 01").glob("*S01E02*.strm"))
+    assert "Demo S01E02 - 1080p Cast.strm" in e02_files
+    assert "Demo S01E02 - 4K Cast.strm" in e02_files

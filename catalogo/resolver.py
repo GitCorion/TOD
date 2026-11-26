@@ -235,11 +235,40 @@ class Resolver:
                 "SELECT * FROM releases WHERE id = ?", (release_id,)
             ).fetchone()
 
+    def _resolve_pack_release(self, asset_id: int, release: Any) -> Any:
+        if release is None:
+            return None
+        if int(release["asset_id"]) == int(asset_id):
+            return release
+        info_hash = (release["info_hash"] or "").strip().lower()
+        with closing(self._conn()) as conn:
+            has_pack_file = conn.execute(
+                """
+                SELECT 1 FROM torrent_files f
+                LEFT JOIN torrents t ON t.id = f.torrent_id
+                WHERE f.asset_id = ?
+                  AND f.state NOT IN ('evicted', 'missing')
+                  AND (f.release_id = ? OR (? != '' AND lower(COALESCE(t.info_hash, '')) = ?))
+                LIMIT 1
+                """,
+                (int(asset_id), int(release["id"]), info_hash, info_hash),
+            ).fetchone()
+            if has_pack_file is None:
+                return None
+            if info_hash:
+                sibling = conn.execute(
+                    "SELECT * FROM releases WHERE asset_id = ? AND lower(COALESCE(info_hash, '')) = ? ORDER BY id DESC LIMIT 1",
+                    (int(asset_id), info_hash),
+                ).fetchone()
+                if sibling is not None:
+                    return sibling
+        return release
+
     def _torrent_from_release(
         self, key: str, asset_id: int, release_id: int, reason: str
     ) -> Resolution | None:
-        release = self._release(release_id)
-        if release is None or release["asset_id"] != asset_id:
+        release = self._resolve_pack_release(asset_id, self._release(release_id))
+        if release is None:
             return None
         return Resolution(
             key=key,
@@ -473,8 +502,8 @@ class Resolver:
         if asset is None:
             return Resolution(key=key, asset_id=None, source="unavailable",
                               reason="asset_not_found")
-        release = self._release(release_id)
-        if release is None or release["asset_id"] != asset["id"]:
+        release = self._resolve_pack_release(asset["id"], self._release(release_id))
+        if release is None:
             return Resolution(asset["key"], asset["id"], "unavailable",
                               "release_not_found")
         with closing(self._conn()) as conn:
@@ -496,9 +525,12 @@ class Resolver:
                 asset["key"], asset["id"], "unavailable",
                 "stream_bad_swarm",
             )
+        rel_hash = (release["info_hash"] or "").strip().lower()
+        target_ids = {int(release_id), int(release["id"])}
         files = [
             row for row in self._files(asset["id"])
-            if int(row["release_id"] or -1) == int(release_id)
+            if int(row["release_id"] or -1) in target_ids
+            or (rel_hash and (row["torrent_hash"] or "").strip().lower() == rel_hash)
         ]
         for row in files:
             if row["state"] in ("evicted", "missing"):
