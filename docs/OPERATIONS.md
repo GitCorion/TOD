@@ -150,9 +150,22 @@ tod qbit-limits
 - Al mover a archivo, TOD verifica que qBittorrent sigue viendo los
   ficheros. Si el destino deja el torrent en `missingFiles`, revierte el
   movimiento en vez de dejar de sembrar en silencio.
-- El borrado desde TOD está desactivado por defecto. Se puede activar en
-  **Configuración → Trackers y Siembra**; entonces aparece el botón de borrar en
-  **Cola**, con opción de quitar solo el torrent o borrar también ficheros.
+- El borrado lo decide qBittorrent salvo que actives **Permitir borrar desde
+  TOD** en **Configuración → Trackers y Siembra**; entonces aparece el botón
+  en **Descargas**. El ciclo de siembra no borra: fuerza hasta el mínimo y
+  suelta.
+- Si un tracker sigue activo en Prowlarr/Jackett pero no quieres sus accesos,
+  usa **Borrar .strm** (`tod delete-tracker Nombre --strm-only --execute`):
+  quita las variantes y el principal solo si el título no tiene otra fuente,
+  sin tocar versiones ni política.
+- Para retirar un tracker que ya no está en Prowlarr/Jackett, usa **Eliminar**
+  (`tod delete-tracker Nombre --execute`). Borra sus versiones y, si marcas
+  *Eliminar también los .strm*, sus accesos. La casilla *Evitar que se vuelva
+  a agregar* deja la política bloqueada para que los syncs no lo reincorporen;
+  sin ella se borra también la política y el tracker podría volver. No se
+  tocan las descargas ni las siembras de qBittorrent. Sin `--execute` (o sin
+  confirmar en la web) solo se muestra el recuento (modo simulación). Para
+  recuperar un tracker bloqueado: `tod block-tracker Nombre --unblock --execute`.
 - Al descubrir un tracker privado sin política, TOD crea una inicial con los
   valores de **Configuración → Trackers y Siembra** (por defecto 72 h y ratio 1,0;
   cada instalación puede cambiarlos).
@@ -162,13 +175,6 @@ tod qbit-limits
   pone 0 días/ratio, actualiza sus releases y cierra las siembras abiertas.
   También se puede cambiar el mínimo:
   `tod set-policy Tracker --min-seed-hours 24 --target-ratio 0.5`.
-- **Búsqueda de respaldo en los *arr**: activa por defecto. TOD busca
-  títulos de Radarr/Sonarr que no tengan fichero ni descarga en cola, como
-  si el *arr hubiera perdido sus ficheros. Se procesan por lotes (50 cada
-  ciclo del worker y 200 en el trabajo `fallback-sweep`), con búsqueda por
-  título local, original e ID. Los títulos siguen monitorizados hasta que
-  el *arr recupere el fichero o los ponga en cola. **Monitorizar** en la ficha
-  sigue siendo la vía para forzar uno concreto.
 - **Retención hasta la biblioteca**: por defecto TOD no permite borrar una
   descarga completada hasta que `library_files` confirma que ya está en
   Radarr/Sonarr. Si el puente falla, espera como máximo
@@ -183,6 +189,23 @@ tod qbit-limits
 ```bash
 tod policies
 ```
+
+## Búsquedas
+
+- **Respaldo en los *arr**: opción de **Configuración → Integraciones e
+  Indexers** (`search.arr_fallback`, desactivada por defecto). Si se activa,
+  TOD busca títulos de Radarr/Sonarr que no tengan fichero ni descarga en
+  cola, como si el *arr hubiera perdido sus ficheros. Se procesan por lotes
+  (50 cada ciclo del worker y 200 en `fallback-sweep`) con búsqueda por
+  título local, original e ID. Los títulos siguen monitorizados hasta que
+  el *arr recupera el fichero o lo pone en cola. **Monitorizar** en la ficha
+  sigue siendo la vía para forzar uno concreto. No mueve ni borra nada en
+  Radarr/Sonarr.
+- El buscador de TOD sigue el patrón de los *arr*: busca primero por IDs
+  Torznab (`tmdbid`/`tvdbid`/`imdbid`, con `season`/`ep`) cuando el indexer
+  lo declara en sus capacidades, y solo después por texto; Jackett queda
+  como respaldo. Cada tarea se lanza en paralelo (hasta 8 títulos y 6
+  búsquedas por ID) y el job `monitor` no tiene límite de títulos.
 
 ## Idioma
 

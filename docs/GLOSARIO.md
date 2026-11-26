@@ -34,9 +34,15 @@ Estos son los términos oficiales que deben aparecer en pantalla:
 ## Trackers
 
 - **Descargar** solo permite o bloquea descargas nuevas de ese tracker.
-- **Bloquear** marca sus releases como no disponibles y permite borrar sus
-  `.strm`. El principal solo se borra si el título se queda sin otra fuente ni
-  fichero local.
+- **Borrar .strm** quita los accesos de ese tracker sin tocar sus versiones ni
+  su política. Es lo que se usa cuando el tracker sigue activo en Prowlarr o
+  Jackett.
+- **Eliminar** borra sus versiones de la biblioteca de TOD y, si se elige,
+  sus `.strm`. Puede dejar el tracker bloqueado para que los syncs no lo
+  reincorporen. El `.strm` principal solo se borra si el título se queda sin
+  otra fuente ni fichero local. No afecta a las descargas en curso.
+- **Desbloquear** vuelve a habilitar un tracker bloqueado (también con
+  `tod block-tracker Nombre --unblock`).
 
 ## Reglas de escritura
 
