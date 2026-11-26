@@ -510,7 +510,7 @@ def test_pack_torrent_exports_versions_for_all_episodes(tmp_path):
     media_file_3.write_bytes(b"1")
 
     with connect(db_path) as conn:
-        migrate(conn, Path('/opt/catalogo/catalogo/migrations'))
+        migrate(conn, Path(__file__).resolve().parents[1] / "catalogo" / "migrations")
         conn.execute("INSERT INTO media_items(id, key, kind, tmdb, season, episode, title, year) VALUES (1, 'series:tmdb:99:1:1', 'series', 99, 1, 1, 'Demo', 2026)")
         conn.execute("INSERT INTO media_items(id, key, kind, tmdb, season, episode, title, year) VALUES (2, 'series:tmdb:99:1:2', 'series', 99, 1, 2, 'Demo', 2026)")
         conn.execute("INSERT INTO releases(id, asset_id, tracker, title, quality, codec, audio, is_pack, health, seeders) VALUES (10, 1, 'Tr', 'Demo S01 1080p', '1080p', 'H264', 'castellano', 1, 'alive', 5)")
