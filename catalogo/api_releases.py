@@ -138,7 +138,7 @@ def handle(
     if len(parts) == 3 and parts[2] == "blocklist":
         if not mutate:
             raise WebError(405, "usa POST")
-        from . import lists as lists_mod, ondemand
+        from . import lists as lists_mod
         reason = str(body.get("reason") or "manual")
         days = _int(body.get("days"), 3650)
         try:
