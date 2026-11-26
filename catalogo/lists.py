@@ -466,12 +466,15 @@ def apply_series_monitor_preset(
 # ═══════════════════════════════════════════════════════════════════════
 
 
+_UNSET: Any = object()
+
+
 def mass_edit_media(
     db_path: str | Path,
     keys: list[str],
     *,
-    quality_profile_id: int | None = ...,
-    root_folder_id: int | None = ...,
+    quality_profile_id: int | None = _UNSET,
+    root_folder_id: int | None = _UNSET,
     monitored: bool | None = None,
     monitor_mode: str | None = None,
     add_tag_ids: list[int] | None = None,
@@ -505,10 +508,10 @@ def mass_edit_media(
         for tmdb in movie_tmdbs:
             sets = ["updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')"]
             params: list[Any] = []
-            if quality_profile_id is not ...:
+            if quality_profile_id is not _UNSET:
                 sets.append("quality_profile_id = ?")
                 params.append(int(quality_profile_id) if quality_profile_id else None)
-            if root_folder_id is not ...:
+            if root_folder_id is not _UNSET:
                 sets.append("root_folder_id = ?")
                 params.append(int(root_folder_id) if root_folder_id else None)
             if monitored is not None:
@@ -526,10 +529,10 @@ def mass_edit_media(
         for tmdb in series_tmdbs:
             sets = ["updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')"]
             params = []
-            if quality_profile_id is not ...:
+            if quality_profile_id is not _UNSET:
                 sets.append("quality_profile_id = ?")
                 params.append(int(quality_profile_id) if quality_profile_id else None)
-            if root_folder_id is not ...:
+            if root_folder_id is not _UNSET:
                 sets.append("root_folder_id = ?")
                 params.append(int(root_folder_id) if root_folder_id else None)
             if monitored is not None and not monitor_mode:
@@ -549,12 +552,12 @@ def mass_edit_media(
                 ).fetchone()
                 new_qp = (
                     (int(quality_profile_id) if quality_profile_id else None)
-                    if quality_profile_id is not ...
+                    if quality_profile_id is not _UNSET
                     else (existing["quality_profile_id"] if existing else None)
                 )
                 new_rf = (
                     (int(root_folder_id) if root_folder_id else None)
-                    if root_folder_id is not ...
+                    if root_folder_id is not _UNSET
                     else (existing["root_folder_id"] if existing else None)
                 )
                 conn.execute(
@@ -962,8 +965,8 @@ def run_import_list(
         mass_edit_media(
             db_path,
             [f"movie:tmdb:{m['tmdb']}" for m in movies],
-            quality_profile_id=spec.get("quality_profile_id") or ...,
-            root_folder_id=spec.get("root_folder_id") or ...,
+            quality_profile_id=spec.get("quality_profile_id") or _UNSET,
+            root_folder_id=spec.get("root_folder_id") or _UNSET,
             monitored=spec.get("monitor_mode") != "none",
             add_tag_ids=[spec["tag_id"]] if spec.get("tag_id") else None,
         )
@@ -988,8 +991,8 @@ def run_import_list(
             mass_edit_media(
                 db_path,
                 [f"series:{s['tmdb']}"],
-                quality_profile_id=spec.get("quality_profile_id") or ...,
-                root_folder_id=spec.get("root_folder_id") or ...,
+                quality_profile_id=spec.get("quality_profile_id") or _UNSET,
+                root_folder_id=spec.get("root_folder_id") or _UNSET,
                 monitor_mode=spec.get("monitor_mode") or "all",
                 add_tag_ids=[spec["tag_id"]] if spec.get("tag_id") else None,
             )

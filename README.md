@@ -1,7 +1,7 @@
 <p align="center">
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="docs/assets/tod-banner-dark.png">
-    <img src="docs/assets/tod-banner-light.png" alt="TOD — Torrent on Demand. Catálogo bajo demanda para qBittorrent y Jellyfin." width="100%">
+    <img src="docs/assets/tod-banner-light.png" alt="TOD — Torrent on Demand. Biblioteca y reproducción bajo demanda para qBittorrent y Jellyfin." width="100%">
   </picture>
 </p>
 
@@ -11,50 +11,45 @@
   <a href="https://www.python.org/"><img alt="Python 3.11 o superior" src="https://img.shields.io/badge/python-3.11%2B-3776AB.svg"></a>
 </p>
 
-TOD unifica biblioteca, gestión de releases y reproducción bajo demanda en un
-único servicio. Se integra con qBittorrent, Jellyfin, Prowlarr, Jackett y,
-opcionalmente, Radarr/Sonarr. Todos siguen siendo independientes: el
-`docker-compose.yml` incluido los levanta juntos en un solo comando.
+**TOD (Torrent on Demand)** es un servicio unificado de biblioteca, gestión de
+releases y streaming bajo demanda para **Jellyfin** y **qBittorrent**, con
+soporte para **Prowlarr**, **Jackett**, **TMDB** y sincronización vía API con
+**Radarr** y **Sonarr**.
 
 <p align="center">
   <img src="docs/assets/catalog-dark.png" alt="Biblioteca de TOD: filtros por estado, perfil, calidad y descargas." width="100%">
 </p>
 
-<p align="center"><sub>TOD está en beta activa. La interfaz y la API pueden cambiar entre versiones menores.</sub></p>
+<p align="center"><sub>Estado: beta activa. La interfaz y la API pueden cambiar entre versiones menores.</sub></p>
 
-No hace falta editar bases de datos ni archivos de configuración de Prowlarr.
-Las URLs y API keys se introducen desde la web con validación previa; en Docker,
-`.env` solo aporta valores iniciales como UID/GID, hosts permitidos y claves.
+## Características principales
 
-## Qué puedes hacer
+- **Biblioteca y alta unificada**: gestión de películas, series y sagas desde
+  TMDB con búsqueda por texto, enlaces, IDs, listas por lotes o ficheros
+  `.torrent`. Incluye editor masivo, etiquetas y vistas en carteles o tabla.
+- **Perfiles de calidad, Custom Formats y restricciones**: puntuación
+  configurable de releases, calidad objetivo (*cutoff*), bloqueo de formatos
+  (CAM, ISO/BDMV) y reglas de idioma (cualquier idioma, castellano primero o
+  solo castellano).
+- **Búsqueda automática e interactiva**: selección manual por título o
+  temporada completa (incluidos packs), fijación de release por defecto,
+  descarga forzada y gestión de **Blocklist**.
+- **Buscados y Calendario**: seguimiento de *Faltantes*, *Mejorables* (por
+  debajo de la calidad objetivo) y *Próximos* estrenos, además de listas de
+  importación programadas desde TMDB o URLs JSON.
+- **`.strm` multiversión y `.nfo`**: generación automática de un `.strm`
+  principal y variantes por calidad/audio/tracker para Jellyfin, con plantillas
+  de nombrado configurables.
+- **Streaming bajo demanda**: reproducción directa desde qBittorrent mediante
+  rangos HTTP (`206`) sin necesidad de completar la descarga previamente.
+- **Políticas de siembra por tracker**: retención con `force-start` hasta
+  cumplir días y ratio mínimos antes de delegar la gestión a qBittorrent.
+- **Integración con Radarr y Sonarr**: espejo de biblioteca, respaldo de
+  títulos sin fichero y puente de importación a través de sus APIs oficiales.
+- **Diagnóstico integrado**: panel **Inicio** y **Sistema → Estado** con
+  supervisión de servicios, discos, indexers, tareas programadas y avisos.
 
-- **Gestionar tu biblioteca** de películas, series y sagas desde TMDB con
-  filtros avanzados, editor masivo, etiquetas y vistas en carteles o tabla.
-- **Añadir desde una sola caja**: un título, un enlace o ID de TMDB, una lista
-  completa o un `.torrent` manual, con historial de lotes importados.
-- **Definir perfiles de calidad, Custom Formats y restricciones**: puntuación
-  personalizada, calidad objetivo (*cutoff*), bloqueo de CAM/ISO y filtros de
-  idioma (castellano primero, solo castellano o cualquier idioma).
-- **Buscar y elegir releases**: **Búsqueda automática** y **Búsqueda
-  interactiva** por título o temporada completa (con soporte de packs), fijar un
-  release por defecto, forzar descargas o vetar releases en la **Blocklist**.
-- **Controlar Buscados y Calendario**: vistas de *Faltantes*, *Mejorables*
-  (debajo de la calidad objetivo) y *Próximos* estrenos, además de listas de
-  importación automática desde TMDB o URLs JSON.
-- **Crear entradas multiversión en Jellyfin**: un `.strm` principal y una
-  variante por cada release reproducible, con plantillas de nombrado `.strm` y
-  `.nfo` configurables.
-- **Reproducir bajo demanda** desde qBittorrent mediante rangos HTTP reales
-  (`206`) sin esperar a descargar el fichero completo.
-- **Sembrar con reglas por tracker**: mínimo de días y ratio con `force-start`.
-  Al cumplirse, TOD lo suelta y qBittorrent aplica sus reglas (el borrado desde
-  TOD está desactivado por defecto).
-- **Integrar Radarr y Sonarr por API** (solo lectura + espejo y respaldo),
-  sin tocar nunca sus bases de datos.
-- **Supervisar el sistema** desde **Inicio** y **Sistema → Estado**, con avisos
-  directos al ajuste que los resuelve.
-
-## Cómo funciona
+## Arquitectura
 
 ```text
 Jellyfin ──.strm──▶ TOD :8773 ──▶ fichero local / nube (archivo)
@@ -62,43 +57,32 @@ Jellyfin ──.strm──▶ TOD :8773 ──▶ fichero local / nube (archivo)
                          ├──▶ qBittorrent (cola, descarga y siembra)
                          ├──▶ Prowlarr    (indexers y salud)
                          ├──▶ Jackett     (indexers)
-                         └──▶ Radarr/Sonarr (solo API, biblioteca)
+                         └──▶ Radarr/Sonarr (API)
 ```
 
-Un único proceso sirve:
+Un único proceso sirve la interfaz web y la API (`/api/*`), el motor de
+reproducción (`/play`, `/resolve`, `/sources`, `/status`, `/catalog/lookup`,
+`/prepare`, `/lease`) y el planificador de tareas periódicas.
 
-- la web y su API (`/`, `/api/*`),
-- el motor de reproducción (`/play`, `/resolve`, `/sources`, `/status`,
-  `/catalog/lookup`, `/prepare`, `/lease`),
-- el scheduler interno de tareas programadas.
+### Ecosistema Medusa
 
-## El ecosistema Medusa
-
-TOD es el motor de biblioteca y reproducción bajo demanda. Estas tres piezas se
-complementan:
-
-| Repositorio | Papel |
+| Componente | Función |
 |---|---|
-| [Medusa](https://github.com/GitCorion/Medusa) | Cliente nativo para Android TV. Reproduce desde Jellyfin. |
-| [Medusa-Jellyfin-Plugin](https://github.com/GitCorion/Medusa-Jellyfin-Plugin) | Puente dentro de Jellyfin: expone `/Medusa/Status`, `/Prepare` y `/Lease`, y traduce un ítem `.strm` a una clave de TOD. |
-| **TOD** (este repositorio) | Biblioteca, releases, cola de qBittorrent, `.strm` y streaming por rangos. |
+| [Medusa](https://github.com/GitCorion/Medusa) | Cliente nativo para Android TV que reproduce desde Jellyfin. |
+| [Medusa-Jellyfin-Plugin](https://github.com/GitCorion/Medusa-Jellyfin-Plugin) | Plugin de Jellyfin que expone `/Medusa/Status`, `/Prepare` y `/Lease` para arrancar y monitorizar el buffering desde el cliente. |
+| **TOD** | Servidor de biblioteca, selección de releases, `.strm` y streaming por rangos. |
 
-El plugin es el nexo: Medusa no habla con TOD directamente; habla con Jellyfin
-y el plugin traduce esa conversación. Sin el plugin, los `.strm` siguen
-funcionando como cualquier otro ítem de Jellyfin, pero no hay progreso ni
-preparación bajo demanda desde el cliente.
+## Funcionamiento de `.strm` y versiones
 
-## Versiones y `.strm`
-
-Cada película o episodio disponible en Jellyfin tiene un `.strm` principal:
+Cada película o episodio disponible en Jellyfin genera un `.strm` principal:
 
 ```text
 movies/Título (Año)/Título (Año).strm
 series/Título (Año)/Season 01/Título S01E01.strm
 ```
 
-Si hay **más de un release reproducible**, se añade una variante por cada uno
-para elegir calidad o audio directamente en Jellyfin:
+Cuando existen múltiples releases reproducibles, TOD genera variantes
+adicionales para seleccionar calidad o idioma desde Jellyfin:
 
 ```text
 movies/Título (Año)/Título (Año) - 1080p Cast.strm
@@ -106,57 +90,51 @@ movies/Título (Año)/Título (Año) - 4K VO - Tracker.strm
 series/Título (Año)/Season 01/Título S01E01 - 1080p Cast.strm
 ```
 
-- El `.strm` principal resuelve el mejor release disponible en el momento de
-  reproducir.
-- Cada variante apunta de forma estable al release concreto: si qBittorrent o
-  Radarr/Sonarr mueven el fichero de ruta, la variante sigue funcionando sin
-  regenerar el `.strm`.
-- Solo se genera `.strm` si hay algo reproducible (**un release vivo con
-  seeds** o un fichero local/en nube). Si una fuente muere, TOD intenta buscar
-  otra al reproducir y retira el `.strm` en la reconciliación diaria si ya no
-  queda ninguna alternativa.
-- La biblioteca de TOD y los `.strm` de Jellyfin son dos niveles distintos: la
-  biblioteca puede guardar miles de títulos monitorizados o en espera; Jellyfin
-  solo ve los que ya tienen una fuente viva o un fichero disponible.
+- El `.strm` principal resuelve dinámicamente el mejor release disponible al
+  iniciar la reproducción.
+- Las variantes apuntan de forma estable al identificador interno del release,
+  manteniendo la validez aunque cambie la ruta del fichero en disco.
+- Solo se generan `.strm` para títulos con un release vivo (con seeds) o un
+  fichero local/en nube; la reconciliación diaria retira accesos obsoletos.
 
 ## Instalación
 
-### Desde una release (Docker o Python)
+### Desde una release
 
-Cada release publica una imagen en `ghcr.io/gitcorion/tod`, un wheel de Python y
-un `docker-compose.release.yml` listo para usar:
+Cada publicación incluye imagen Docker en `ghcr.io/gitcorion/tod`, paquete
+Python (`.whl`) y `docker-compose.release.yml`:
 
-- **Docker**: descarga `docker-compose.release.yml` y `env.docker.example` de la
-  [última release](https://github.com/GitCorion/TOD/releases/latest), renombra
-  el segundo a `.env`, ajusta la IP del servidor y las claves, y ejecuta
-  `docker compose -f docker-compose.release.yml up -d`.
-- **Python 3.11+**: instala el `.whl` de la release y ejecuta
+- **Docker**: descarga `docker-compose.release.yml` y `env.docker.example` desde
+  la [última release](https://github.com/GitCorion/TOD/releases/latest),
+  renombra el segundo a `.env`, ajusta `TOD_WEB_ALLOWED_HOSTS` y las claves, y
+  ejecuta `docker compose -f docker-compose.release.yml up -d`.
+- **Python 3.11+**: instala el `.whl` y arranca con
   `tod service --host 0.0.0.0 --port 8773`.
 
 ### Con Docker Compose (desde código)
 
-Levanta el stack completo (TOD, qBittorrent, Jellyfin, Prowlarr y Jackett):
+Despliega TOD junto con qBittorrent, Jellyfin, Prowlarr y Jackett:
 
 ```bash
 git clone https://github.com/GitCorion/TOD.git
 cd TOD
 cp .env.docker.example .env
-# edita .env: IP del servidor (TOD_WEB_ALLOWED_HOSTS), UID/GID y claves
+# Ajusta TOD_WEB_ALLOWED_HOSTS, PUID/PGID y claves en .env
 docker compose up -d --build
 ```
 
-| Servicio | URL | Para qué |
+| Servicio | Puerto | Función |
 |---|---|---|
-| TOD | `http://IP_DEL_SERVIDOR:8773` | biblioteca, releases y configuración |
-| Jellyfin | `http://IP_DEL_SERVIDOR:8096` | reproducir la biblioteca |
-| qBittorrent | `http://IP_DEL_SERVIDOR:8080` | cola, descargas y siembra |
-| Prowlarr | `http://IP_DEL_SERVIDOR:9696` | indexers |
-| Jackett | `http://IP_DEL_SERVIDOR:9117` | indexers (alternativa a Prowlarr) |
+| TOD | `8773` | Interfaz web, API y streaming |
+| Jellyfin | `8096` | Servidor multimedia |
+| qBittorrent | `8080` | Cliente BitTorrent |
+| Prowlarr | `9696` | Gestor de indexers |
+| Jackett | `9117` | Gestor de indexers alternativo |
 
-Los detalles de volúmenes, variables y primer arranque están en
-[docs/DOCKER.md](docs/DOCKER.md).
+Consulta [docs/DOCKER.md](docs/DOCKER.md) para detalles sobre volúmenes y
+variables de entorno.
 
-### Con systemd (Linux sin contenedores)
+### Con systemd (Linux)
 
 ```bash
 git clone https://github.com/GitCorion/TOD.git
@@ -164,75 +142,66 @@ cd TOD
 sudo bash deploy/install-unified.sh
 ```
 
-Requiere Python 3.11+. Crea `/etc/tod.env` si no existe, instala `tod.service` y
-arranca TOD en `0.0.0.0:8773`.
+Requiere Python 3.11+. Genera `/etc/tod.env`, registra `tod.service` y expone
+el panel en `0.0.0.0:8773`.
 
-## Primera puesta en marcha
+## Configuración inicial
 
-Al abrir TOD por primera vez (`:8773`), el asistente de **Primeros pasos** guía
-y valida qBittorrent, fuentes (Prowlarr o Jackett), rutas y Jellyfin antes de
-guardar. Si detecta Docker, propone automáticamente las URLs internas y las
-rutas `/media/catalogo` y `/downloads`.
+Al acceder por primera vez a `:8773`, el asistente de **Primeros pasos**
+valida las conexiones y rutas antes de guardarlas:
 
 <p align="center">
-  <img src="docs/assets/setup-dark.png" alt="Asistente de primeros pasos: qBittorrent, fuentes, directorios y Jellyfin, con validación antes de guardar." width="100%">
+  <img src="docs/assets/setup-dark.png" alt="Asistente de primeros pasos: qBittorrent, fuentes, directorios y Jellyfin." width="100%">
 </p>
 
-1. Valida **qBittorrent**, **Prowlarr o Jackett** (basta con uno) y las
-   **rutas** desde el asistente.
-2. En **Jellyfin**, añade `/media/catalogo/movies` como biblioteca de
-   **Películas** y `/media/catalogo/series` como **Series**.
-3. Si usas **Radarr** o **Sonarr**, conéctalos por URL y API key desde
+1. Configura **qBittorrent**, **Prowlarr** o **Jackett**, y las **rutas** de
+   almacenamiento.
+2. En **Jellyfin**, añade `/media/catalogo/movies` (**Películas**) y
+   `/media/catalogo/series` (**Series**).
+3. Si utilizas **Radarr** o **Sonarr**, añade su URL y API key en
    **Sistema → Configuración → Integraciones e Indexers**.
 
 ## Integraciones
 
-| Servicio | Uso en TOD | Necesario |
+| Servicio | Función | Requisito |
 |---|---|---|
-| qBittorrent | Descargar, sembrar y servir torrents | Sí, para reproducir bajo demanda |
-| Prowlarr | Descubrir releases y comprobar salud | Uno de los dos (Prowlarr o Jackett) |
-| Jackett | Descubrir releases | Uno de los dos (Prowlarr o Jackett) |
-| Jellyfin | Reproducir los `.strm` y avisar de rutas nuevas | Opcional |
-| Radarr | Espejo de biblioteca y destino de lo descargado por TOD | Opcional |
-| Sonarr | Espejo de biblioteca y destino de lo descargado por TOD | Opcional |
+| qBittorrent | Descarga, siembra y lectura de piezas para streaming | Obligatorio para reproducción bajo demanda |
+| Prowlarr | Búsqueda de releases y comprobación de salud | Obligatorio (Prowlarr o Jackett) |
+| Jackett | Búsqueda de releases | Alternativa o complemento a Prowlarr |
+| Jellyfin | Reproducción de `.strm` y refresco de bibliotecas | Opcional |
+| Radarr | Espejo de películas y destino tras descarga | Opcional |
+| Sonarr | Espejo de series y destino tras descarga | Opcional |
 | TMDB | Metadatos, pósters, sinopsis y sagas | Recomendado |
-
-Los trackers se descubren automáticamente desde Prowlarr o Jackett; no hay listas
-privadas en el repositorio.
 
 ## Configuración desde la web
 
-**Sistema → Estado** centraliza el diagnóstico (avisos, servicios, tareas,
-discos y auditoría). **Sistema → Configuración** organiza todos los ajustes en
-siete pestañas:
+La configuración reside en SQLite (`var/tod.db`, o `/config/tod.db` en Docker)
+con precedencia sobre las variables de entorno, dividida en siete secciones bajo
+**Sistema → Configuración**:
 
-- **General y Rutas**: directorios (accesos `.strm`, bibliotecas de Radarr/Sonarr,
-  descargas y archivo), límites de reproducción, idioma de releases y seguridad.
-- **Integraciones e Indexers**: URLs y API keys con prueba de conexión, además
-  de activación y estadísticas de indexers de Prowlarr.
+- **General y Rutas**: directorios (`.strm`, Radarr/Sonarr, descargas y
+  archivo), límites de reproducción, preferencia de idioma y seguridad.
+- **Integraciones e Indexers**: credenciales con prueba de conexión y control de
+  indexers de Prowlarr.
 - **Perfiles y Custom Formats**: perfiles de calidad, *cutoff*, reglas de
-  puntuación (*Custom Formats*) y restricciones (*Must Contain / Must Not Contain*).
+  puntuación y restricciones de texto.
 - **Gestión de medios (`.strm`)**: carpetas raíz, plantillas de nombrado para
   `.strm` y `.nfo`, separación de anime y vista previa de renombrado.
-- **Etiquetas y Listas**: etiquetas de color y listas de importación automática
-  (colecciones/populares/listas de TMDB o URLs JSON).
-- **Trackers y Siembra**: días/ratio mínimos, `force-start`, retención hasta
-  biblioteca y bloqueo o permisos de descarga por tracker.
-- **Tareas programadas**: activar, ajustar cadencias, ver próximas ejecuciones
-  y lanzar tareas manualmente.
-
-Los cambios se guardan en SQLite (`var/tod.db`, o `/config/tod.db` en Docker) y
-prevalecen sobre `.env`. La mayoría se aplican en caliente.
+- **Etiquetas y Listas**: etiquetas y listas de importación automática (TMDB o
+  JSON).
+- **Trackers y Siembra**: políticas mínimas de días/ratio, `force-start`,
+  retención hasta biblioteca y bloqueo por tracker.
+- **Tareas programadas**: cadencias, activación y ejecución manual.
 
 ## Seguridad
 
-- Pensado para LAN o WireGuard. **No publiques el puerto `8773` en Internet.**
+- Diseñado para ejecutarse en LAN o tras WireGuard. **No exponer el puerto `8773` a Internet.**
 - `/prepare` y `/lease` solo aceptan peticiones desde loopback.
 - Las rutas de reproducción (`/play`, `/resolve`, `/sources`, `/status`) no
-  usan el token del panel web: restringe el puerto a LAN/WireGuard.
-- Los secretos viven en `var/tod.db` (`0600`); `.env` y `var/` están ignorados
-  por git.
-- Consulta [SECURITY.md](SECURITY.md) antes de exponer el servicio.
+  requieren token de panel; el acceso debe restringirse a nivel de red.
+- Los secretos se almacenan en `var/tod.db` (`0600`); `.env` y `var/` están
+  excluidos de Git.
+- Consulta [SECURITY.md](SECURITY.md) para más detalles.
 
 ## Desarrollo
 
@@ -244,8 +213,9 @@ ruff check .
 python -m pytest -q
 ```
 
-También puede instalarse como paquete (`pip install .` y `tod service --host 0.0.0.0 --port 8773`),
-en cuyo caso la base de datos se guarda en `~/.local/share/tod/tod.db`.
+Para instalar como paquete del sistema (`pip install .` y
+`tod service --host 0.0.0.0 --port 8773`), la base de datos se ubica en
+`~/.local/share/tod/tod.db`.
 
 ## Documentación
 

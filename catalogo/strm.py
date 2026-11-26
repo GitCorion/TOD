@@ -404,6 +404,8 @@ def export_strm(
                          series_settings_map=_ss_map)
 
 
+    nfo_done: set[Path] = set()
+
     def ensure_nfo(asset: dict, default_strm: Path | None = None) -> None:
         data = _nfo(asset, rich=_rich_nfo)
         if data is None:
@@ -429,7 +431,6 @@ def export_strm(
     versions_written = 0
     pruned = 0
     written_paths: list[str] = []
-    nfo_done: set[Path] = set()
     expected: set[Path] = set()
     skipped_reasons: dict[str, int] = {}
     library = build_library_index(radarr, sonarr) if skip_library else None
