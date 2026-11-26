@@ -37,7 +37,7 @@ from .media_info import build_media_info
 from .play_service import AdmissionDenied, EngineUnavailable, NoPeers, Warming
 from .ranges import parse_range
 from .resolver import Resolution, Resolver
-from .status import asset_status, asset_versions
+from .status import asset_status, asset_versions, is_release_compatible
 from .stream import RangeNotSatisfiable, SeekNotReady, StreamTimeout
 from .trackers import tracker_priority
 from .torrent import DisabledBackend, TorrentBackend
@@ -363,15 +363,37 @@ class CatalogHandler(BaseHTTPRequestHandler):
             and (max_width is not None or supports_4k is False or supports_dv is False)
         ):
             try:
-                _, rec_id = asset_versions(
-                    self.db_path,
-                    key,
-                    max_width=max_width,
-                    supports_4k=supports_4k,
-                    supports_dv=supports_dv,
-                )
-                if rec_id is not None:
-                    release_id = int(rec_id)
+                local_compat = False
+                default_res = self.resolver.resolve(key)
+                if default_res.source in ("library", "local_seed"):
+                    rel_info: Any = None
+                    if default_res.release_id is not None:
+                        with closing(connect(self.db_path)) as conn:
+                            rel_info = conn.execute(
+                                "SELECT * FROM releases WHERE id = ?",
+                                (int(default_res.release_id),),
+                            ).fetchone()
+                    if rel_info is None:
+                        rel_info = {
+                            "quality": "",
+                            "title": Path(default_res.path or "").name,
+                        }
+                    local_compat = is_release_compatible(
+                        rel_info,
+                        max_width=max_width,
+                        supports_4k=supports_4k,
+                        supports_dv=supports_dv,
+                    )
+                if not local_compat:
+                    _, rec_id = asset_versions(
+                        self.db_path,
+                        key,
+                        max_width=max_width,
+                        supports_4k=supports_4k,
+                        supports_dv=supports_dv,
+                    )
+                    if rec_id is not None:
+                        release_id = int(rec_id)
             except Exception:
                 pass
 
