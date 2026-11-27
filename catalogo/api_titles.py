@@ -259,7 +259,7 @@ def handle(
             job_params = {
                 "keys": keys,
                 "min_seeders": _int(body.get("min_seeders"), 1),
-                "versions": body.get("versions") or "available",
+                "versions": body.get("versions") or "alive",
                 "require_health": bool(body.get("require_health")),
             }
         job_id = app.runner.submit(

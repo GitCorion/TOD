@@ -38,7 +38,9 @@ def _select_assets(
                 WHERE a.status = 'COLD'
                   AND (a.year IS NULL OR a.year >= ?)
                   AND NOT EXISTS (
-                      SELECT 1 FROM torrent_files f WHERE f.asset_id = a.id
+                      SELECT 1 FROM torrent_files f
+                      WHERE f.asset_id = a.id
+                        AND f.state NOT IN ('evicted', 'missing')
                   )
                 ORDER BY a.year DESC, a.id
                 LIMIT ?
@@ -51,7 +53,9 @@ def _select_assets(
             WHERE a.status = 'COLD'
               AND (a.year IS NULL OR a.year >= ?)
               AND NOT EXISTS (
-                  SELECT 1 FROM torrent_files f WHERE f.asset_id = a.id
+                  SELECT 1 FROM torrent_files f
+                  WHERE f.asset_id = a.id
+                    AND f.state NOT IN ('evicted', 'missing')
               )
               AND NOT EXISTS (
                   SELECT 1 FROM releases r

@@ -145,7 +145,9 @@ def _select_assets(
         WHERE a.kind = ?
           AND a.status = 'COLD'
           AND NOT EXISTS (
-              SELECT 1 FROM torrent_files f WHERE f.asset_id = a.id
+              SELECT 1 FROM torrent_files f
+              WHERE f.asset_id = a.id
+                AND f.state NOT IN ('evicted', 'missing')
           )
           AND NOT EXISTS (
               SELECT 1 FROM library_files lf

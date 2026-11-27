@@ -678,3 +678,48 @@ def test_pack_files_are_linked_to_their_local_episodes(tmp_path):
     ]
     assert statuses[2] == "SEEDING_LOCAL"
     assert statuses[3] == "SEEDING_LOCAL"
+
+
+def test_ready_ondemand_pack_queues_strm_publish(tmp_path):
+    db, _asset_id = seed_db(tmp_path)
+    conn = sqlite3.connect(db)
+    for ep in (1, 2):
+        conn.execute(
+            "INSERT INTO media_items(key,kind,tmdb,title,year,season,episode) "
+            "VALUES(?,?,?,?,?,?,?)",
+            (f"series:tmdb:200:1:{ep}", "series", 200, "Pack", 2026, 1, ep),
+        )
+    ep1_id = conn.execute(
+        "SELECT id FROM media_items WHERE key='series:tmdb:200:1:1'"
+    ).fetchone()[0]
+    conn.execute(
+        "INSERT INTO releases(asset_id,tracker,guid,title,size_bytes,is_pack) "
+        "VALUES(?,?,?,?,?,1)",
+        (ep1_id, "TrackerEspanol2", "pack1-guid", "Pack S01", 1000),
+    )
+    rel_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
+    conn.execute(
+        "INSERT INTO torrents(info_hash,release_id,tracker,state,category) "
+        "VALUES('pack1',?,'TrackerEspanol2','downloading','ondemand')",
+        (rel_id,),
+    )
+    conn.commit()
+    conn.close()
+
+    class NamedPackQbit(PartialPackQbit):
+        def files(self, info_hash):
+            if info_hash == "pack1":
+                self.files_calls.append(info_hash)
+                return [
+                    {"index": 0, "name": "Pack/S01E01.mkv", "size": 500,
+                     "progress": 1, "priority": 6},
+                    {"index": 1, "name": "Pack/S01E02.mkv", "size": 500,
+                     "progress": 0, "priority": 0},
+                ]
+            return super().files(info_hash)
+
+    qbit = NamedPackQbit()
+    report = sync(db, qbit, dry_run=False, check_exists=False, now=NOW)
+    assert "series:tmdb:200:1:1" in report.arr_keys
+    assert "series:tmdb:200:1:2" not in report.arr_keys
+    assert "series:tmdb:200:1:1" not in report.arr_done_keys

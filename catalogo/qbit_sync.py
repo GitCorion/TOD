@@ -960,9 +960,15 @@ def sync(
                             archive_root=archive_root,
                         )
                         report.files_written += 1
-                        if (
-                            asset_id is not None
-                            and category in ("radarr", "tv-sonarr")
+                        if asset_id is not None and (
+                            category in ("radarr", "tv-sonarr")
+                            or (
+                                category in ONDEMAND_CATEGORIES
+                                and (
+                                    complete
+                                    or float(item.get("progress") or 0) >= 0.9999
+                                )
+                            )
                         ):
                             key_row = conn.execute(
                                 "SELECT key FROM media_items WHERE id = ?",
@@ -970,7 +976,11 @@ def sync(
                             ).fetchone()
                             if key_row:
                                 target = (
-                                    report.arr_done_keys if complete
+                                    report.arr_done_keys
+                                    if (
+                                        complete
+                                        and category in ("radarr", "tv-sonarr")
+                                    )
                                     else report.arr_keys
                                 )
                                 target.add(str(key_row["key"]))

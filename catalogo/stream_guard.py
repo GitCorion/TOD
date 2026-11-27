@@ -15,9 +15,8 @@ from pathlib import Path
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
-from . import play_intents
+from . import play_intents, seed_health
 from .db import connect
-from .media_probe import audio_verdict, probe_audio
 from .resolver import Resolver
 from .status import _buffer_required, _buffer_state
 
@@ -33,6 +32,33 @@ DISCARD_DELETE_THRESHOLD = 0.05
 
 def _now() -> datetime:
     return datetime.now(timezone.utc)
+
+
+def _tracker_terminal_error(
+    qbit: Any, info_hash: str, *, private: bool = False
+) -> str | None:
+    """Devuelve el código de error si el tracker rechaza el torrent."""
+    trackers_fn = getattr(qbit, "trackers", None)
+    if not callable(trackers_fn) or not info_hash:
+        return None
+    try:
+        items = trackers_fn(info_hash) or []
+    except Exception:
+        return None
+    msgs = [
+        str(x.get("msg") or "").strip()
+        for x in items
+        if str(x.get("url") or "").startswith("http")
+        and str(x.get("msg") or "").strip()
+    ]
+    if not msgs:
+        return None
+    verdict, _ = seed_health.classify(msgs)
+    if verdict in ("client_not_allowed", "not_authorized"):
+        return verdict
+    if verdict == "unregistered" and private:
+        return verdict
+    return None
 
 
 def block_release(
@@ -503,28 +529,17 @@ class StreamGuard:
         del samples[:-6]
 
         if buffer_bytes >= buffer_required:
-            # Con colchón suficiente, comprobar el audio antes de dar luz
-            # verde. Si aún no se puede sondear, no se descarta la fuente.
-            if self._audio_ok.get(key) is None:
-                path = self._local_file_path(
-                    int(asset["id"]), release_id, int(file_index), files, live
-                )
-                probe = probe_audio(path)
-                verdict = audio_verdict(probe)
-                if verdict is not None:
-                    self._audio_ok[key] = verdict
-            if self._audio_ok.get(key) is not False:
-                self._record_swarm(
-                    release_id,
-                    resolution.tracker,
-                    connected_seeds=int(live.get("num_seeds") or 0),
-                    swarm_seeds=int(live.get("num_complete") or 0),
-                    speed_bps=speed,
-                    buffer_bytes=buffer_bytes,
-                    required_speed_bps=required_speed,
-                    started_ok=True,
-                )
-                return
+            self._record_swarm(
+                release_id,
+                resolution.tracker,
+                connected_seeds=int(live.get("num_seeds") or 0),
+                swarm_seeds=int(live.get("num_complete") or 0),
+                speed_bps=speed,
+                buffer_bytes=buffer_bytes,
+                required_speed_bps=required_speed,
+                started_ok=True,
+            )
+            return
 
         self._maybe_nudge(
             key,
@@ -549,26 +564,38 @@ class StreamGuard:
         growth = recent[-1][1] - recent[0][1]
         avg_speed = sum(item[2] for item in recent) / len(recent)
         progress_growth = recent[-1][3] - recent[0][3]
-        if self._audio_ok.get(key) is False:
-            reason = "audio_not_spanish"
+        qbit_state = str(live.get("state") or "").lower()
+        connected_seeds = int(live.get("num_seeds") or 0)
+        swarm_seeds = int(live.get("num_complete") or 0)
+        num_leechs = int(live.get("num_leechs") or 0)
+        has_peers = (connected_seeds + num_leechs + swarm_seeds) > 0
+        making_progress = avg_speed > 0 or progress_growth > 0 or growth > 0
+        zombie_stalled = (
+            elapsed >= self.grace_seconds * 3.0
+            and buffer_bytes < buffer_required
+            and avg_speed < 64 * 1024
+            and growth <= 0
+            and progress_growth <= 0
+        )
+
+        tracker_err = _tracker_terminal_error(
+            qbit, info_hash, private=bool(live.get("is_private"))
+        )
+        if tracker_err:
+            reason = f"tracker_{tracker_err}"
+        elif qbit_state in ("error", "missingfiles"):
+            reason = "torrent_error"
+        elif (
+            not has_peers
+            and not making_progress
+            and buffer_bytes == 0
+            and all(item[1] == 0 for item in recent)
+        ):
+            reason = "no_contiguous_buffer"
+        elif zombie_stalled:
+            reason = "buffer_stalled"
         else:
             reason = None
-        if reason is None and buffer_bytes == 0 and all(item[1] == 0 for item in recent):
-            if (
-                avg_speed >= required_speed
-                and progress_growth > 0
-                and elapsed < self.grace_seconds * 3.0
-            ):
-                return
-            reason = "no_contiguous_buffer"
-        elif reason is None and avg_speed < required_speed * self.safety:
-            reason = "slow_swarm"
-        elif (
-            reason is None
-            and growth <= 0
-            and buffer_bytes < buffer_required
-        ):
-            reason = "buffer_stalled"
         if reason is None:
             return
         if self._busy:

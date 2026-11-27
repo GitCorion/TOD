@@ -754,7 +754,7 @@ def monitor_titles(
                 key=key,
                 limit=None,
                 min_seeders=1,
-                versions_filter="available",
+                versions_filter="alive",
                 skip_library=False,
             )
             now_str = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
@@ -1477,7 +1477,7 @@ def job_sync_sources(ctx: JobContext) -> dict[str, Any]:
                 key=key,
                 limit=None,
                 min_seeders=1,
-                versions_filter="available",
+                versions_filter="alive",
                 radarr=radarr,
                 sonarr=sonarr,
             )
@@ -1595,9 +1595,9 @@ def job_export(ctx: JobContext) -> dict[str, Any]:
     keys = [str(value) for value in params.get("keys") or [] if value]
     base_url = params.get("base_url") or ctx.config.playback_base_url
     min_seeders = _int(params.get("min_seeders"), 1)
-    versions = params.get("versions") or "available"
+    versions = params.get("versions") or "alive"
     if versions not in ("available", "alive", "all"):
-        versions = "available"
+        versions = "alive"
     radarr, sonarr = _arr_clients(ctx.config)
     if keys:
         written = 0
@@ -1690,7 +1690,7 @@ def _publish_arr_strm(config: Config, keys: list[str]) -> dict[str, Any]:
                 key=key,
                 limit=None,
                 min_seeders=1,
-                versions_filter="available",
+                versions_filter="alive",
                 skip_library=False,
             )
             paths.extend(report.get("written_paths") or [])
@@ -1967,7 +1967,7 @@ def job_arr_mirror(ctx: JobContext) -> dict[str, Any]:
             key=key,
             limit=None,
             min_seeders=1,
-            versions_filter="available",
+            versions_filter="alive",
             radarr=radarr,
             sonarr=sonarr,
         )
@@ -1994,7 +1994,7 @@ def job_arr_mirror(ctx: JobContext) -> dict[str, Any]:
             key=key,
             limit=None,
             min_seeders=1,
-            versions_filter="available",
+            versions_filter="alive",
             radarr=radarr,
             sonarr=sonarr,
         )
@@ -2073,7 +2073,9 @@ def fallback_sweep(
               AND monitor_source = 'arr_fallback'
               AND status = 'COLD'
               AND NOT EXISTS (
-                  SELECT 1 FROM torrent_files f WHERE f.asset_id = media_items.id
+                  SELECT 1 FROM torrent_files f
+                  WHERE f.asset_id = media_items.id
+                    AND f.state NOT IN ('evicted', 'missing')
               )
               AND NOT EXISTS (
                   SELECT 1 FROM library_files lf
@@ -2151,7 +2153,7 @@ def fallback_sweep(
                 key=str(row["key"]),
                 limit=None,
                 min_seeders=1,
-                versions_filter="available",
+                versions_filter="alive",
                 skip_library=False,
             )
             paths.extend(result.get("written_paths") or [])
@@ -2309,7 +2311,7 @@ def job_restore_strm(ctx: JobContext) -> dict[str, Any]:
         base_url=ctx.config.playback_base_url,
         limit=None,
         min_seeders=min_seeders,
-        versions_filter="available",
+        versions_filter="alive",
         prune=prune,
         skip_library=False,
         radarr=radarr,

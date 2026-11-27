@@ -24,7 +24,7 @@ def _publish_key_strm(app: Any, key: str | None) -> dict[str, Any]:
             key=key,
             limit=None,
             min_seeders=1,
-            versions_filter="available",
+            versions_filter="alive",
             radarr=radarr,
             sonarr=sonarr,
         )

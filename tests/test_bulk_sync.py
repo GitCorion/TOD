@@ -528,3 +528,33 @@ def test_series_rejects_another_episode_but_accepts_a_pack(tmp_path):
         key="series:tmdb:555:1:1", kind="series",
     )
     assert report["accepted"] == 1
+
+
+def test_evicted_torrent_file_does_not_block_sync(tmp_path):
+    db = seed_db(tmp_path)
+    conn = sqlite3.connect(db)
+    conn.execute(
+        "INSERT INTO releases(asset_id, tracker, guid, title, size_bytes) "
+        "VALUES(1, 'TrackerEspanol (API)', 'g1', 'Old.Release.2026.mkv', 1000)"
+    )
+    rel_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
+    conn.execute(
+        "INSERT INTO torrents(info_hash, release_id, tracker, state) "
+        "VALUES('deadbeef', ?, 'TrackerEspanol (API)', 'removed')",
+        (rel_id,),
+    )
+    tor_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
+    conn.execute(
+        "INSERT INTO torrent_files(asset_id, release_id, torrent_id, file_index, "
+        "rel_path, state) VALUES(1, ?, ?, 0, 'Old.Release.2026.mkv', 'evicted')",
+        (rel_id, tor_id),
+    )
+    conn.commit()
+    conn.close()
+
+    report = sync_sources(
+        db, FakeProwlarr([result()]), limit=5, delay=0,
+        key="movie:tmdb:1263337", recheck=True,
+    )
+    assert report["assets_checked"] == 1
+    assert report["accepted"] == 1

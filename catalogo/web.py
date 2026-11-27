@@ -176,6 +176,7 @@ class App:
                 base_url=self.config.playback_base_url,
                 key=key,
                 limit=None,
+                versions_filter="alive",
                 skip_library=False,
             )
             written += int(report.get("written") or 0)
@@ -211,11 +212,34 @@ class App:
                 force=True,
             )
             results.append({"key": key, "sync": summary, "download": handle})
+        from .strm_inventory import invalidate
+
+        written = 0
+        to_notify: list[str] = []
+        for key in keys:
+            try:
+                report = admin.export_strm(
+                    self.db_path,
+                    self.config.catalog_library,
+                    base_url=self.config.playback_base_url,
+                    key=key,
+                    limit=None,
+                    versions_filter="alive",
+                    skip_library=False,
+                )
+                written += int(report.get("written") or 0)
+                to_notify.extend(report.get("written_paths") or [])
+            except Exception:
+                pass
+        if to_notify:
+            invalidate(self.config.catalog_library)
+            jellyfin.notify_updated(self.config, to_notify[:500])
         return {
             "requested": len(keys),
             "downloads": results,
             "download": results[0]["download"] if results else None,
             "sync": results[0]["sync"] if results else None,
+            "published": written,
         }
 
     def _job_sync_pending(self, ctx) -> dict:

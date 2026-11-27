@@ -505,6 +505,7 @@ def prepare_download(
             VALUES (?, ?, ?, 'waiting', ?, ?, ?, ?, 'pausedDL', 0, ?)
             ON CONFLICT(info_hash) DO UPDATE SET
                 release_id = COALESCE(torrents.release_id, excluded.release_id),
+                state = excluded.state,
                 category = excluded.category,
                 save_path = excluded.save_path,
                 base_path = excluded.base_path,

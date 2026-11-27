@@ -193,25 +193,38 @@ def test_switch_increments_stream_generation(tmp_path):
     assert row[1] == "no_contiguous_buffer"
 
 
-def test_guard_switches_when_audio_is_not_spanish(tmp_path, monkeypatch):
-    from catalogo import stream_guard as guard_module
-
+def test_guard_does_not_switch_on_non_spanish_audio(tmp_path):
     db, _asset_id, _release_id = seed(tmp_path)
     qbit = FakeQbit(progress=0.05, speed=10 * MB, buffer_pieces=40)
     service = FakePlayService(qbit)
-    from catalogo.media_probe import AudioProbe
-
-    monkeypatch.setattr(
-        guard_module,
-        "probe_audio",
-        lambda path: AudioProbe(("eng", "fre"), False),
-    )
     guard = StreamGuard(str(db), service, grace_seconds=30)
     guard.run_once(now=NOW)
     report = guard.run_once(now=NOW + timedelta(seconds=40))
-    assert report["bad"][0]["reason"] == "audio_not_spanish"
+    assert report["bad"] == []
+    assert qbit.deleted == []
+    assert service.calls == []
+
+
+def test_guard_switches_on_tracker_unregistered_error(tmp_path):
+    db, asset_id, release_id = seed(tmp_path)
+
+    class TrackerErrQbit(FakeQbit):
+        def torrent(self, info_hash):
+            data = super().torrent(info_hash)
+            data["is_private"] = True
+            return data
+
+        def trackers(self, info_hash):
+            return [{"url": "https://tracker.local/announce", "msg": "Torrent not registered"}]
+
+    qbit = TrackerErrQbit(progress=0.02, speed=0, buffer_pieces=0)
+    service = FakePlayService(qbit)
+    guard = StreamGuard(str(db), service, grace_seconds=30)
+    guard.run_once(now=NOW)
+    report = guard.run_once(now=NOW + timedelta(seconds=40))
+    assert report["bad"][0]["reason"] == "tracker_unregistered"
     assert qbit.deleted == [("hash1", True)]
-    assert qbit.paused == []
+    assert release_id in failed_release_ids(str(db), asset_id=asset_id)
 
 
 class BusyQbit(FakeQbit):
@@ -252,18 +265,10 @@ def test_guard_records_swarm_stats(tmp_path):
     assert row == (0, 1)
 
 
-def test_guard_does_not_switch_on_unknown_audio(tmp_path, monkeypatch):
-    from catalogo import stream_guard as guard_module
-    from catalogo.media_probe import AudioProbe
-
+def test_guard_does_not_switch_on_unknown_audio(tmp_path):
     db, _asset_id, _release_id = seed(tmp_path)
     qbit = FakeQbit(progress=0.05, speed=10 * MB, buffer_pieces=40)
     service = FakePlayService(qbit)
-    monkeypatch.setattr(
-        guard_module,
-        "probe_audio",
-        lambda path: AudioProbe(("eng",), True),
-    )
     guard = StreamGuard(str(db), service, grace_seconds=30)
     guard.run_once(now=NOW)
     report = guard.run_once(now=NOW + timedelta(seconds=40))
@@ -296,3 +301,56 @@ def test_guard_waits_when_progress_and_speed_grow_without_piece_zero(tmp_path):
     assert report["bad"] == []
     assert service.calls == []
     assert release_id not in failed_release_ids(str(db))
+
+
+def test_guard_does_not_kick_slow_swarm_when_advancing_or_has_peers(tmp_path):
+    db, _asset_id, release_id = seed(tmp_path)
+    qbit = FakeQbit(progress=0.02, speed=320 * 1024, buffer_pieces=16)
+    service = FakePlayService(qbit)
+    guard = StreamGuard(str(db), service, grace_seconds=30, nudge_hold=0)
+    guard.run_once(now=NOW)
+    report = guard.run_once(now=NOW + timedelta(seconds=40))
+    assert report["bad"] == []
+    assert qbit.deleted == []
+    assert service.calls == []
+    assert release_id not in failed_release_ids(str(db))
+
+
+def test_guard_switches_on_torrent_error(tmp_path):
+    db, asset_id, release_id = seed(tmp_path)
+
+    class ErrorQbit(FakeQbit):
+        def torrent(self, info_hash):
+            data = super().torrent(info_hash)
+            data["state"] = "missingFiles"
+            return data
+
+    qbit = ErrorQbit(progress=0.02, speed=100 * 1024, buffer_pieces=4)
+    service = FakePlayService(qbit)
+    guard = StreamGuard(str(db), service, grace_seconds=30, nudge_hold=0)
+    guard.run_once(now=NOW)
+    report = guard.run_once(now=NOW + timedelta(seconds=40))
+    assert report["bad"][0]["reason"] == "torrent_error"
+    assert qbit.deleted == [("hash1", True)]
+    assert release_id in failed_release_ids(str(db), asset_id=asset_id)
+
+
+def test_guard_switches_only_after_extended_zombie_stall(tmp_path):
+    db, asset_id, release_id = seed(tmp_path)
+
+    class ZombieQbit(FakeQbit):
+        def torrent(self, info_hash):
+            data = super().torrent(info_hash)
+            data["num_seeds"] = 1
+            return data
+
+    qbit = ZombieQbit(progress=0.02, speed=5 * 1024, buffer_pieces=1)
+    service = FakePlayService(qbit)
+    guard = StreamGuard(str(db), service, grace_seconds=30, nudge_hold=0)
+    guard.run_once(now=NOW)
+    early = guard.run_once(now=NOW + timedelta(seconds=40))
+    assert early["bad"] == []
+    late = guard.run_once(now=NOW + timedelta(seconds=95))
+    assert late["bad"][0]["reason"] == "buffer_stalled"
+    assert qbit.deleted == [("hash1", True)]
+    assert release_id in failed_release_ids(str(db), asset_id=asset_id)

@@ -115,7 +115,8 @@ def overview(
                 conn,
                 "SELECT COUNT(*) FROM media_items m WHERE EXISTS "
                 "(SELECT 1 FROM torrent_files f WHERE f.asset_id=m.id "
-                "AND f.storage_location='LOCAL_DISK')",
+                "AND f.storage_location='LOCAL_DISK' "
+                "AND f.state IN ('ready','seeding'))",
             ),
             "with_cloud": _scalar(
                 conn,
@@ -318,7 +319,8 @@ AVAILABILITY_SQL = {
         NOT EXISTS (SELECT 1 FROM releases r WHERE r.asset_id=m.id
                     AND {UNBLOCKED_RELEASE_SQL})
         AND NOT EXISTS (SELECT 1 FROM torrent_files f WHERE f.asset_id=m.id
-                        AND f.storage_location IN ('LOCAL_DISK','1FICHIER'))
+                        AND f.storage_location IN ('LOCAL_DISK','1FICHIER')
+                        AND f.state NOT IN ('evicted','missing'))
         AND NOT EXISTS (SELECT 1 FROM library_files lf WHERE lf.kind=m.kind
                         AND lf.tmdb=m.tmdb AND (m.kind='movie' OR
                         (lf.season=m.season AND lf.episode=m.episode)))

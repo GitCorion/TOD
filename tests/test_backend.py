@@ -393,3 +393,26 @@ def test_priorities_private_target_high_not_max():
 def test_priorities_private_single_file_normal():
     """Con un solo fichero, prioridad 1 mantiene primera/última pieza."""
     assert priorities_for([{"index": 0}], 0, private=True) == {0: 1}
+
+
+def test_readding_removed_torrent_resets_state_to_waiting(tmp_path):
+    db, key, rel_id = seed(tmp_path, kind="movie", tracker="TrackerEspanol2 (API)")
+    digest = info_hash(TORRENT)
+    conn = sqlite3.connect(db)
+    conn.execute(
+        "INSERT INTO torrents(info_hash, release_id, tracker, state, qbit_state) "
+        "VALUES (?, ?, 'TrackerEspanol2 (API)', 'removed', 'removed')",
+        (digest, rel_id),
+    )
+    conn.commit()
+    conn.close()
+
+    client = FakeQbit(files=[{"index": 0, "name": "Movie.mkv", "size": 1000}])
+    prepare_download(str(db), key, client, torrent_bytes=TORRENT, max_active=4)
+
+    conn = sqlite3.connect(db)
+    state = conn.execute(
+        "SELECT state FROM torrents WHERE info_hash = ?", (digest,)
+    ).fetchone()[0]
+    conn.close()
+    assert state == "waiting"
