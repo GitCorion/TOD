@@ -1124,3 +1124,92 @@ def test_prepare_skips_incompatible_4k_library_and_picks_compatible_torrent(tmp_
         server.shutdown()
         server.server_close()
         thread.join(timeout=5)
+
+
+def test_prepare_primary_retries_with_search_when_release_fails(tmp_path, monkeypatch):
+    from catalogo import http as http_module
+    from catalogo.backend import ReleaseUnavailable
+
+    class PrimaryBrokenPlayService(FakePlayService):
+        def ensure(self, media_id, release_id=None, force=False, **kwargs):
+            self.ensured.append((media_id, release_id))
+            if len(self.ensured) == 1:
+                raise ReleaseUnavailable("tracker 404")
+            return {
+                "info_hash": "hash2",
+                "file_index": 0,
+                "release_id": 2,
+                "tracker": "eMuwarez (API)",
+            }
+
+    db, _content = build_db(tmp_path)
+    service = PrimaryBrokenPlayService()
+    searched = []
+
+    def fake_search(self, key, *, force=False):
+        searched.append((key, force))
+        return True
+
+    monkeypatch.setattr(http_module.CatalogHandler, "_search_sources", fake_search)
+    server = make_server("127.0.0.1", 0, db, play_service=service)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    host, port = server.server_address
+    try:
+        conn = http.client.HTTPConnection(host, port, timeout=5)
+        conn.request("POST", "/prepare?key=movie%3Atmdb%3A2")
+        response = conn.getresponse()
+        body = response.read()
+        conn.close()
+        assert response.status == 202, body
+        assert searched == [("movie:tmdb:2", True)]
+        assert service.ensured == [
+            ("movie:tmdb:2", None),
+            ("movie:tmdb:2", None),
+        ]
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=5)
+
+
+def test_play_torrent_triggers_async_source_refresh_and_skips_local(tmp_path, monkeypatch):
+    from catalogo import http as http_module
+
+    db, _content = build_db(tmp_path)
+    conn_db = sqlite3.connect(db)
+    conn_db.execute("UPDATE releases SET seeders=5 WHERE id=2")
+    conn_db.commit()
+    conn_db.close()
+
+    async_calls = []
+
+    def fake_async(self, key):
+        async_calls.append(key)
+
+    monkeypatch.setattr(http_module.CatalogHandler, "_search_sources_async", fake_async)
+    service = FakePlayService()
+    server = make_server("127.0.0.1", 0, db, play_service=service)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    host, port = server.server_address
+    try:
+        conn = http.client.HTTPConnection(host, port, timeout=5)
+        # Local seed -> NO debe disparar refresco asíncrono.
+        conn.request("GET", "/play?key=movie%3Atmdb%3A1", headers={"Range": "bytes=0-3"})
+        r1 = conn.getresponse()
+        r1.read()
+        assert r1.status == 206
+        assert async_calls == []
+
+        # Torrent frío con fuente viva -> SÍ debe disparar refresco asíncrono.
+        conn.request("GET", "/play?key=movie%3Atmdb%3A2", headers={"Range": "bytes=0-3"})
+        r2 = conn.getresponse()
+        r2.read()
+        conn.close()
+        assert r2.status == 206
+        assert async_calls == ["movie:tmdb:2"]
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=5)

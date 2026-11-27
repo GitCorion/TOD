@@ -156,7 +156,7 @@ reproducción y el respaldo del catálogo. La propiedad depende del estado:
 
 | Estado en el *arr | TOD |
 |---|---|
-| Tiene el fichero | Indexa `library_files`, sirve desde la biblioteca del *arr y poda su `.strm`. |
+| Tiene el fichero | Indexa `library_files`, sirve desde la biblioteca del *arr y mantiene el `.strm` en `catalog_library` para Jellyfin. |
 | Tiene una descarga en cola | Genera el `.strm`, adopta ese torrent y lo fuerza al reproducir. No crea otro ni un compromiso de siembra. |
 | No tiene fichero ni cola | `arr_fallback`: lo monitoriza y busca fuentes por lotes; si el *arr lo pone en cola o recupera el fichero, deja de perseguirlo. |
 | No está en el *arr | Lo posee TOD: búsqueda, descarga, `.strm` y siembra. |

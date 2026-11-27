@@ -252,7 +252,9 @@ def radarr_movies(db_path: str | Path, config: Config) -> list[dict[str, Any]]:
             out_dir, asset, cfg=cfg, root_folders_by_id=rf_map
         )
         movie_dir = strm_file.parent
-        if check_disk and not movie_dir.is_dir():
+        if check_disk and (
+            not movie_dir.is_dir() or next(movie_dir.glob("*.strm"), None) is None
+        ):
             continue
         title = str(asset.get("title") or "").strip()
         year = int(asset.get("year") or 0)
@@ -310,7 +312,9 @@ def sonarr_series(db_path: str | Path, config: Config) -> list[dict[str, Any]]:
             series_settings_map=ss_map,
         )
         series_dir = strm_file.parent.parent if use_season_folders else strm_file.parent
-        if check_disk and not series_dir.is_dir():
+        if check_disk and (
+            not series_dir.is_dir() or next(series_dir.rglob("*.strm"), None) is None
+        ):
             continue
         title = str(asset.get("title") or "").strip()
         year = int(asset.get("year") or 0)

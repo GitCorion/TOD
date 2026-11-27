@@ -9,7 +9,7 @@ import pytest
 from catalogo import integrations, trailarr
 from catalogo.config import Config
 from catalogo.db import connect, init_db
-from catalogo.naming import save_naming_settings
+from catalogo.naming import apply_reorganize, save_naming_settings
 from catalogo.web import make_server
 
 MIGRATIONS = Path(__file__).resolve().parents[1] / "catalogo" / "migrations"
@@ -50,12 +50,20 @@ def _config(tmp_path: Path, **overrides) -> Config:
 def _seed_media(db_path: Path, catalog_library: Path | None = None) -> None:
     init_db(db_path, MIGRATIONS)
     if catalog_library is not None:
-        (catalog_library / "movies" / "Interestelar (2014)").mkdir(
-            parents=True, exist_ok=True
+        m_dir = catalog_library / "movies" / "Interestelar (2014)"
+        m_dir.mkdir(parents=True, exist_ok=True)
+        (m_dir / "Interestelar (2014).strm").write_text(
+            "http://127.0.0.1:8773/play?key=movie:tmdb:157336\n", encoding="utf-8"
         )
-        (catalog_library / "series" / "Juego de Tronos (2011)").mkdir(
-            parents=True, exist_ok=True
+        s_dir = catalog_library / "series" / "Juego de Tronos (2011)" / "Season 01"
+        s_dir.mkdir(parents=True, exist_ok=True)
+        (s_dir / "Juego de Tronos S01E01.strm").write_text(
+            "http://127.0.0.1:8773/play?key=series:tmdb:1399:1:1\n", encoding="utf-8"
         )
+        # Carpeta vacía o solo con tráiler huérfano (sin .strm) debe excluirse.
+        orphan_dir = catalog_library / "movies" / "Sin Strm (2020)"
+        orphan_dir.mkdir(parents=True, exist_ok=True)
+        (orphan_dir / "Sin Strm (2020)-trailer.mp4").write_text("x", encoding="utf-8")
     with closing(connect(db_path)) as conn:
         conn.execute(
             """
@@ -84,6 +92,14 @@ def _seed_media(db_path: Path, catalog_library: Path | None = None) -> None:
             ) VALUES (?, ?, ?, ?, ?, ?, ?)
             """,
             ("movie:tmdb:888888", "movie", "Sin Carpeta En Disco", "No Dir", 2021, 888888, 1),
+        )
+        conn.execute(
+            """
+            INSERT INTO media_items(
+                key, kind, title, original_title, year, tmdb, library_added
+            ) VALUES (?, ?, ?, ?, ?, ?, ?)
+            """,
+            ("movie:tmdb:777777", "movie", "Sin Strm", "No Strm", 2020, 777777, 1),
         )
         conn.execute(
             """
@@ -224,7 +240,6 @@ def test_trailarr_integration_missing_key(tmp_path):
 def test_trailarr_http_bridge_auth_and_endpoints(tmp_path):
     cfg = _config(tmp_path, web_token="tod-secret")
     _seed_media(cfg.db_path, cfg.catalog_library)
-    app = None
     server = make_server("127.0.0.1", 0, cfg)
     port = server.server_address[1]
     import threading
@@ -255,3 +270,21 @@ def test_trailarr_http_bridge_auth_and_endpoints(tmp_path):
     finally:
         server.shutdown()
         server.server_close()
+
+
+def test_reorganize_moves_companion_trailers(tmp_path):
+    cfg = _config(tmp_path)
+    _seed_media(cfg.db_path, cfg.catalog_library)
+    old_movie_dir = cfg.catalog_library / "movies" / "Interestelar (2014)"
+    trailer = old_movie_dir / "Interestelar (2014)-trailer.mp4"
+    trailer.write_text("trailer", encoding="utf-8")
+
+    save_naming_settings(
+        cfg.db_path,
+        {"movie_folder": "{Original Title} ({Release Year})"},
+    )
+    res = apply_reorganize(cfg.db_path, cfg.catalog_library, kind="movie")
+    assert res["moved"] == 1
+    new_movie_dir = cfg.catalog_library / "movies" / "Interstellar (2014)"
+    assert (new_movie_dir / "Interestelar (2014)-trailer.mp4").exists()
+    assert not old_movie_dir.exists()

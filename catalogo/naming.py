@@ -414,6 +414,27 @@ def plan_reorganize(
     return moves
 
 
+def _move_companion_trailers(src_dir: Path, dst_dir: Path) -> None:
+    """Mueve tráilers acompañantes (*-trailer.* y trailers/) al reorganizar."""
+    if src_dir == dst_dir or not src_dir.is_dir():
+        return
+    for entry in list(src_dir.iterdir()):
+        if entry.is_file() and "-trailer." in entry.name.lower():
+            target = dst_dir / entry.name
+            if not target.exists():
+                shutil.move(str(entry), str(target))
+        elif entry.is_dir() and entry.name.lower() == "trailers":
+            target_dir = dst_dir / entry.name
+            if not target_dir.exists():
+                shutil.move(str(entry), str(target_dir))
+            else:
+                for sub in list(entry.iterdir()):
+                    if not (target_dir / sub.name).exists():
+                        shutil.move(str(sub), str(target_dir / sub.name))
+                if not any(entry.iterdir()):
+                    entry.rmdir()
+
+
 def apply_reorganize(
     db_path: str | Path,
     out_dir: Path | str,
@@ -435,6 +456,9 @@ def apply_reorganize(
         try:
             dst.parent.mkdir(parents=True, exist_ok=True)
             shutil.move(str(src), str(dst))
+            _move_companion_trailers(src.parent, dst.parent)
+            if src.parent.parent != root and dst.parent.parent != root:
+                _move_companion_trailers(src.parent.parent, dst.parent.parent)
             moved += 1
             affected_paths.append(dst)
             parent = src.parent

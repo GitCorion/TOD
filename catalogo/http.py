@@ -256,6 +256,28 @@ class CatalogHandler(BaseHTTPRequestHandler):
             _SOURCE_SEARCH_AT[key] = time.monotonic()
         return found
 
+    def _search_sources_async(self, key: str) -> None:
+        """Refresca fuentes en segundo plano sin bloquear el arranque del play."""
+        if self.config is None:
+            return
+        now = time.monotonic()
+        with _SOURCE_SEARCH_LOCK:
+            last = _SOURCE_SEARCH_AT.get(key)
+            if last is not None and now - last < SOURCE_SEARCH_TTL:
+                return
+
+        def _worker() -> None:
+            try:
+                self._search_sources(key)
+            except Exception:
+                pass
+
+        threading.Thread(
+            target=_worker,
+            name=f"tod-source-refresh-{key}",
+            daemon=True,
+        ).start()
+
     def _serve(self, head: bool) -> None:
         parsed = urllib.parse.urlparse(self.path)
         params = {
@@ -582,10 +604,10 @@ class CatalogHandler(BaseHTTPRequestHandler):
                                 "status": status,
                             },
                         )
-                    # El release que fija el .strm puede estar muerto (el
-                    # índice devuelve 404) aunque el tracker lo anuncie vivo.
-                    # Buscamos alternativas una vez y reintentamos la mejor.
-                    if release_id is None or time.monotonic() >= prepare_deadline:
+                    # El release (fijado o principal) puede estar muerto o sin
+                    # pares aunque el tracker lo anuncie vivo. Buscamos
+                    # alternativas una vez y reintentamos la mejor.
+                    if time.monotonic() >= prepare_deadline:
                         raise
                     self._search_sources(key, force=True)
                     handle = self.play_service.ensure(
@@ -765,6 +787,8 @@ class CatalogHandler(BaseHTTPRequestHandler):
                     if release_id is not None
                     else self.resolver.resolve(key)
                 )
+            elif not needs_search and resolution.source == "torrent":
+                self._search_sources_async(key)
         if parsed.path == "/play" and not head and self.headers.get("Range"):
             ua = self.headers.get("User-Agent") or ""
             session_id = (
