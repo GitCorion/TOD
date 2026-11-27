@@ -166,6 +166,22 @@ def test_buffer_required_uses_video_seconds_with_runtime():
     assert required < 32 * 1024**2
 
 
+def test_buffer_required_rounds_up_to_one_piece():
+    from catalogo.status import _buffer_required
+
+    MB = 1024**2
+    size = 1_753_457_301
+    # 10 s de vídeo son ~6,8 MB, pero el contador avanza en piezas de 16 MB.
+    assert _buffer_required(size, 2580, 16 * MB) == 16 * MB
+    # Con piezas pequeñas (o desconocidas) se mantiene el suelo de 8 MB.
+    assert _buffer_required(size, 2580, MB) == 8 * MB
+    assert _buffer_required(size, 2580) == 8 * MB
+    # Un fichero más pequeño que una pieza no puede pedir más de su tamaño.
+    assert _buffer_required(4 * MB, 100, 16 * MB) == 4 * MB
+    # El techo de 64 MB sigue limitando los vídeos de mucho bitrate.
+    assert _buffer_required(size, 100, 16 * MB) == 64 * MB
+
+
 def test_buffer_dynamics_detects_stall_and_eta():
     from catalogo.status import _buffer_dynamics
 
@@ -204,6 +220,7 @@ def test_buffer_state_counts_contiguous_from_start():
         BufferQbit(states), "hash", files, 0, size
     )
     assert buffer_bytes == 50 * 1024 * 1024
+    # El suelo sigue siendo 8 MB cuando la pieza es más pequeña.
     assert required == 8 * 1024**2
     assert tail_ready is True
 
@@ -224,6 +241,66 @@ def test_buffer_state_counts_contiguous_from_start():
         BufferQbit(pack_states), "hash", pack_files, 0, size
     )
     assert tail_ready is True
+
+
+def test_waiting_reason_first_piece_while_downloading(tmp_path):
+    from catalogo.status import asset_status
+
+    db, _asset_id, _release_id = seed(tmp_path)
+    size = 16 * 1024**2
+    conn = sqlite3.connect(db)
+    conn.execute("UPDATE releases SET size_bytes=?", (size,))
+    conn.execute("UPDATE torrent_files SET size_bytes=?", (size,))
+    conn.commit()
+    conn.close()
+
+    class DownloadingQbit(FakeStatusQbit):
+        def files(self, info_hash):
+            return [{"index": 0, "size": size, "progress": 0.1}]
+
+        def properties(self, info_hash):
+            return {"piece_size": size}
+
+        def piece_states(self, info_hash):
+            return [0, 0]
+
+    qbit = DownloadingQbit([{
+        "hash": "hash1", "state": "downloading", "progress": 0.1,
+        "size": size, "downloaded": size // 10, "dlspeed": 5000,
+        "num_seeds": 2, "num_leechs": 0, "num_complete": 3,
+        "num_incomplete": 1,
+    }])
+    status = asset_status(db, "movie:tmdb:1", qbit=qbit)
+    assert status["buffer_bytes"] == 0
+    assert status["buffer_required"] == size
+    assert status["waiting_reason"] == "esperando primera pieza"
+
+
+def test_local_ready_status_with_frozen_release():
+    from catalogo.status import local_ready_status
+    from catalogo.resolver import Resolution
+
+    class FrozenResolver:
+        def resolve(self, key):
+            return Resolution(
+                key=key, asset_id=1, source="local_seed", reason="active_file",
+                path="/tmp/Test.mkv", size=1000, release_id=99,
+                file_id=2, file_index=0,
+            )
+
+    status = {
+        "stream_ready": False,
+        "source": "torrent",
+        "buffer_bytes": 0,
+        "waiting_reason": "buffer",
+    }
+    ready = local_ready_status(FrozenResolver(), "movie:tmdb:1", status)
+    assert ready["stream_ready"] is True
+    assert ready["state"] == "AVAILABLE"
+    assert ready["buffer_bytes"] == 1000
+    assert ready["waiting_reason"] is None
+    # El estado original no se muta.
+    assert status["stream_ready"] is False
 
 
 def test_playback_state_preparing_and_startup_metrics(tmp_path):

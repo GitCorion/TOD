@@ -12,7 +12,8 @@ from pathlib import Path
 from typing import Any, Protocol
 from urllib.parse import parse_qs, urlencode, urlparse
 
-from .status import asset_status
+from .resolver import Resolver
+from .status import asset_status, local_ready_status
 
 DEFAULT_STRM_ROOTS = ("/mnt/catalogo",)
 
@@ -53,6 +54,7 @@ def lookup_strm(
     path: str,
     *,
     qbit: LookupQbit | None = None,
+    resolver: Resolver | None = None,
     allowed_roots: tuple[str, ...] | list[str] | None = None,
 ) -> dict[str, Any]:
     raw = (path or "").strip()
@@ -86,6 +88,8 @@ def lookup_strm(
     status = asset_status(
         db_path, key, release_id=release_id, qbit=qbit
     )
+    if status is not None and resolver is not None:
+        status = local_ready_status(resolver, key, status)
     query: dict[str, Any] = {"key": key}
     if release_id is not None:
         query["release"] = release_id

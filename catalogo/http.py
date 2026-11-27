@@ -37,7 +37,12 @@ from .media_info import build_media_info
 from .play_service import AdmissionDenied, EngineUnavailable, NoPeers, Warming
 from .ranges import parse_range
 from .resolver import Resolution, Resolver
-from .status import asset_status, asset_versions, is_release_compatible
+from .status import (
+    asset_status,
+    asset_versions,
+    is_release_compatible,
+    local_ready_status,
+)
 from .stream import RangeNotSatisfiable, SeekNotReady, StreamTimeout
 from .trackers import tracker_priority
 from .torrent import DisabledBackend, TorrentBackend
@@ -139,36 +144,8 @@ class CatalogHandler(BaseHTTPRequestHandler):
         return getattr(app, "config", None)
 
     def _local_ready_status(self, key: str, status: dict) -> dict:
-        """Marca el estado como listo si el fichero ya está en biblioteca/local.
-
-        La última fila de torrent puede ser de otra versión (o estar evicted)
-        y dejaba el overlay en COLD aunque el fichero estuviera disponible.
-        """
-        if status.get("stream_ready"):
-            return status
-        try:
-            resolution = self.resolver.resolve(key)
-        except Exception:
-            return status
-        if resolution.source not in ("library", "local_seed"):
-            return status
-        ready = dict(status)
-        ready.update(
-            {
-                "state": "AVAILABLE",
-                "playback_state": "idle",
-                "stream_ready": True,
-                "progress": 1.0,
-                "waiting_reason": None,
-                "source": (
-                    "library" if resolution.source == "library" else "local"
-                ),
-                "reason": resolution.reason,
-                "release_id": resolution.release_id,
-                "buffer_bytes": resolution.size or ready.get("size_bytes"),
-            }
-        )
-        return ready
+        """Aplica el rescate local al estado (ver ``local_ready_status``)."""
+        return local_ready_status(self.resolver, key, status)
 
     def _alive_sources(self, key: str) -> int:
         with closing(connect(self.db_path)) as conn:
@@ -305,6 +282,7 @@ class CatalogHandler(BaseHTTPRequestHandler):
                 self.db_path,
                 path,
                 qbit=qbit,
+                resolver=self.resolver,
                 allowed_roots=getattr(self, "strm_roots", None),
             )
             return self._json(200, result, head=head)
@@ -743,8 +721,7 @@ class CatalogHandler(BaseHTTPRequestHandler):
                 return self._json(
                     404, {"error": "sin_estado", "key": key}, head=head
                 )
-            if release_id is None:
-                status = self._local_ready_status(key, status)
+            status = self._local_ready_status(key, status)
             return self._json(200, status, head=head)
 
         if parsed.path == "/media-info":

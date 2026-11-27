@@ -188,22 +188,32 @@ _BUFFER_SAMPLES: dict[tuple[str, int], list[tuple[float, int]]] = {}
 
 
 def _buffer_required(
-    size: int | None, runtime_seconds: int | None = None
+    size: int | None,
+    runtime_seconds: int | None = None,
+    piece_size: int | None = None,
 ) -> int:
-    """Buffer de arranque: ~10 s de vídeo, con topes.
+    """Buffer de arranque: ~10 s de vídeo, redondeado a una pieza.
 
     Un 1080p de 11 Mbps necesita ~14 MB. Esperar 60 s de vídeo (lo que
     hacía antes) retrasaba el arranque sin necesidad: si el swarm va
     rápido, el colchón se llena solo. Sin duración conocida se estima
     12 s con size/240.
+
+    El buffer se mide en piezas enteras, así que pedir menos de una pieza
+    da un objetivo inalcanzable: el contador salta de 0 a ``piece_size``.
+    El suelo es la mayor de una pieza y 8 MB (los 8 MB siguen siendo el
+    colchón mínimo en torrents de piezas pequeñas) y nunca supera el
+    tamaño del fichero.
     """
+    floor = max(int(piece_size or 0), BUFFER_MIN_BYTES)
     if not size:
-        return BUFFER_MIN_BYTES
+        return floor
     if runtime_seconds and runtime_seconds > 0:
         wanted = (size / runtime_seconds) * BUFFER_SECONDS
     else:
         wanted = size / 240
-    return int(max(BUFFER_MIN_BYTES, min(BUFFER_MAX_BYTES, wanted)))
+    required = max(floor, min(BUFFER_MAX_BYTES, wanted))
+    return min(int(size), int(required))
 
 
 def _buffer_dynamics(
@@ -255,7 +265,17 @@ def _buffer_state(
     runtime_seconds: int | None = None,
 ) -> tuple[int | None, int, bool]:
     """Bytes contiguos listos desde el inicio del fichero y cola lista."""
-    required = _buffer_required(file_size, runtime_seconds)
+    properties = getattr(qbit, "properties", None)
+    pieces = getattr(qbit, "piece_states", None)
+    piece_size = None
+    if callable(properties) and qbit is not None and info_hash:
+        try:
+            piece_size = int(
+                (properties(info_hash) or {}).get("piece_size") or 0
+            ) or None
+        except Exception:
+            piece_size = None
+    required = _buffer_required(file_size, runtime_seconds, piece_size)
     if (
         qbit is None
         or not info_hash
@@ -263,14 +283,10 @@ def _buffer_state(
         or not file_size
     ):
         return None, required, False
-    properties = getattr(qbit, "properties", None)
-    pieces = getattr(qbit, "piece_states", None)
     if not callable(properties) or not callable(pieces):
         return None, required, False
     try:
-        piece_size = int(
-            (properties(info_hash) or {}).get("piece_size") or 0
-        ) or 512 * 1024
+        piece_size = piece_size or 512 * 1024
         states = pieces(info_hash)
         offset = file_offset(files, file_index)
     except Exception:
@@ -353,6 +369,42 @@ def _mark_complete(
             conn.execute("DELETE FROM stream_failures WHERE release_id = ?", (rid,))
         conn.commit()
 
+
+def local_ready_status(
+    resolver: Resolver, key: str, status: dict[str, Any]
+) -> dict[str, Any]:
+    """Marca el estado como listo si el fichero ya está en biblioteca/local.
+
+    La última fila de torrent puede ser de otra versión (o estar evicted) y
+    dejaba el overlay en COLD aunque el fichero estuviera disponible. Se
+    aplica tanto en ``/status`` como en ``/catalog/lookup``, incluso cuando
+    el .strm fija un release viejo.
+    """
+    if status.get("stream_ready"):
+        return status
+    try:
+        resolution = resolver.resolve(key)
+    except Exception:
+        return status
+    if resolution.source not in ("library", "local_seed"):
+        return status
+    ready = dict(status)
+    ready.update(
+        {
+            "state": "AVAILABLE",
+            "playback_state": "idle",
+            "stream_ready": True,
+            "progress": 1.0,
+            "waiting_reason": None,
+            "source": (
+                "library" if resolution.source == "library" else "local"
+            ),
+            "reason": resolution.reason,
+            "release_id": resolution.release_id,
+            "buffer_bytes": resolution.size or ready.get("size_bytes"),
+        }
+    )
+    return ready
 
 
 _DV_RE = re.compile(r"(^|[^a-z0-9])(dv|dovi)([^a-z0-9]|$)", re.IGNORECASE)
@@ -815,6 +867,11 @@ def asset_status(
         elif source in ("torrent", "arr"):
             if buffer_bytes is None:
                 waiting_reason = "pieces"
+            elif buffer_bytes == 0 and (speed > 0 or progress > 0.002):
+                # Con descarga activa pero sin ninguna pieza contigua al
+                # inicio, "0 de X MB" parece estancado. El buffer avanza a
+                # saltos de una pieza, así que lo decimos explícitamente.
+                waiting_reason = "esperando primera pieza"
             else:
                 waiting_reason = "buffer"
         else:
