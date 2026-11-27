@@ -188,6 +188,7 @@ def handle(
             "jellyfin": bool(config.jellyfin_api_key),
             "radarr": bool(config.radarr_api_key),
             "sonarr": bool(config.sonarr_api_key),
+            "trailarr": bool(config.trailarr_api_key),
             "tmdb": bool(config.tmdb_api_key),
         }
         paths = {

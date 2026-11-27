@@ -98,6 +98,24 @@ copiar sobre un proceso en marcha puede provocar `BadImageFormatException`.
 TOD se integra mediante la API: biblioteca, cola, historial y reescaneo. Solo
 necesita la URL y la API key. Si no se usan, se pueden dejar vacíos.
 
+## Trailarr
+
+TOD expone un puente compatible con la API v3 de Radarr y Sonarr para que
+Trailarr descargue los tráilers directamente en las carpetas `.strm` de TOD
+(solo títulos con `library_added = 1` y carpeta existente en disco):
+
+| Conexión en Trailarr | URL |
+|---|---|
+| Radarr | `http://<host-tod>:8773/trailarr/radarr` |
+| Sonarr | `http://<host-tod>:8773/trailarr/sonarr` |
+
+- **API Key**: usa el `Token de acceso web` de TOD si está configurado; si no hay
+  token activo, sirve cualquier clave de 32 caracteres (p. ej.
+  `0123456789abcdef0123456789abcdef`).
+- **Ajuste en TOD (opcional)**: en **Sistema → Configuración → Integraciones →
+  Trailarr** puedes configurar `URL` (`http://127.0.0.1:7889`) y `API key` para
+  probar la conexión, supervisar su estado en Inicio o lanzar `trailarr-sync`.
+
 ## TMDB
 
 Necesario para buscar títulos, pósters, sinopsis y colecciones. Se configura

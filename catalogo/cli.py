@@ -1559,7 +1559,20 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p.add_argument("--reparse-audio", action="store_true")
 
+    sub.add_parser(
+        "trailarr-sync",
+        help="dispara en Trailarr el refresco y búsqueda de trailers",
+    )
+
     return parser
+
+
+def cmd_trailarr_sync(args: argparse.Namespace, config: Config) -> int:
+    from .trailarr import sync_trailarr
+
+    result = sync_trailarr(config)
+    print(json.dumps(result, ensure_ascii=False))
+    return 0
 
 
 def cmd_backfill_parse(args: argparse.Namespace, config: Config) -> int:
@@ -1612,6 +1625,7 @@ def main(argv: list[str] | None = None) -> int:
         "runtime-sync": cmd_runtime_sync,
         "public-sync": cmd_public_sync,
         "backfill-parse": cmd_backfill_parse,
+        "trailarr-sync": cmd_trailarr_sync,
         "worker": cmd_worker,
         "repair": cmd_repair,
         "block-tracker": cmd_block_tracker,

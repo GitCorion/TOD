@@ -125,6 +125,8 @@ class Config:
     radarr_api_key: str | None = None
     sonarr_url: str = "http://127.0.0.1:8989/api/v3"
     sonarr_api_key: str | None = None
+    trailarr_url: str = "http://127.0.0.1:7889"
+    trailarr_api_key: str | None = None
     web_token: str | None = None
     jellyfin_url: str = "http://127.0.0.1:8096"
     jellyfin_api_key: str | None = None
@@ -201,6 +203,10 @@ class Config:
                 "SONARR_URL", "http://127.0.0.1:8989/api/v3"
             ),
             sonarr_api_key=_secret("SONARR_API_KEY"),
+            trailarr_url=os.environ.get(
+                "TRAILARR_URL", "http://127.0.0.1:7889"
+            ),
+            trailarr_api_key=_secret("TRAILARR_API_KEY"),
             web_token=_env_value("CATALOGO_WEB_TOKEN")
             or _secret("TOD_WEB_TOKEN")
             or _secret("CATALOGO_WEB_TOKEN"),

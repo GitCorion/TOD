@@ -76,6 +76,12 @@ SERVICES: dict[str, dict[str, Any]] = {
         "severity": "warn",
         "focus": "sonarr_api_key",
     },
+    "trailarr": {
+        "label": "Trailarr",
+        "attr": "trailarr_api_key",
+        "severity": "warn",
+        "focus": "trailarr_api_key",
+    },
     "tmdb": {
         "label": "TMDB",
         "attr": "tmdb_api_key",

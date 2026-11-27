@@ -107,6 +107,12 @@ DEFAULT_TASKS: tuple[TaskSpec, ...] = (
         params={"limit": 0, "delay": 0.08, "workers": 6},
         enabled=False,
     ),
+    TaskSpec(
+        "trailarr-sync", "Sincronizar Trailarr", "trailarr-sync",
+        "Dispara en Trailarr el refresco de conexiones y búsqueda de trailers.",
+        interval=1800,
+        enabled=False,
+    ),
 )
 
 BY_NAME = {task.name: task for task in DEFAULT_TASKS}

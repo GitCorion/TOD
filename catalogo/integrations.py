@@ -23,6 +23,7 @@ from .config import Config
 from .jackett import JackettError
 from .prowlarr import ProwlarrClient
 from .qbittorrent import QbittorrentClient
+from .trailarr import TrailarrClient
 
 DEFAULT_TIMEOUT = 15.0
 LIGHT_TIMEOUT = 8.0
@@ -331,6 +332,26 @@ def test_sonarr(config: Config) -> dict[str, Any]:
         return _error("sonarr", started, exc)
 
 
+def test_trailarr(
+    config: Config, *, timeout: float = DEFAULT_TIMEOUT
+) -> dict[str, Any]:
+    started = time.monotonic()
+    try:
+        if not config.trailarr_api_key:
+            raise IntegrationError("sin API key de Trailarr")
+        client = TrailarrClient(
+            config.trailarr_url,
+            config.trailarr_api_key,
+            timeout=timeout,
+        )
+        status = client.status()
+        version = str(status.get("version") or status.get("app_version") or "")
+        detail = f"Trailarr {version}".strip()
+        return _result("trailarr", started, detail=detail, version=version)
+    except Exception as exc:
+        return _error("trailarr", started, exc)
+
+
 def test_tmdb(
     config: Config, *, timeout: float = DEFAULT_TIMEOUT
 ) -> dict[str, Any]:
@@ -390,6 +411,7 @@ TESTS = {
     "jellyfin": test_jellyfin,
     "radarr": test_radarr,
     "sonarr": test_sonarr,
+    "trailarr": test_trailarr,
     "tmdb": test_tmdb,
     "directories": test_directories,
 }
@@ -463,6 +485,7 @@ LIGHT_TESTS = {
     "jellyfin": lambda config: test_jellyfin(config, timeout=LIGHT_TIMEOUT),
     "radarr": _light_radarr,
     "sonarr": _light_sonarr,
+    "trailarr": lambda config: test_trailarr(config, timeout=LIGHT_TIMEOUT),
     "tmdb": lambda config: test_tmdb(config, timeout=LIGHT_TIMEOUT),
 }
 

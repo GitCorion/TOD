@@ -2344,6 +2344,15 @@ def job_attention(ctx: JobContext) -> dict[str, Any]:
     return report
 
 
+def job_trailarr_sync(ctx: JobContext) -> dict[str, Any]:
+    from .trailarr import sync_trailarr
+
+    ctx.report("sincronizando Trailarr", progress=0.1)
+    report = sync_trailarr(ctx.config)
+    ctx.report("Trailarr sincronizado", progress=0.95)
+    return report
+
+
 JOB_HANDLERS = {
     "attention-check": job_attention,
     "move-completed": job_move,
@@ -2367,4 +2376,5 @@ JOB_HANDLERS = {
     "bridge": job_bridge,
     "restore-strm": job_restore_strm,
     "import-list-sync": job_import_lists,
+    "trailarr-sync": job_trailarr_sync,
 }

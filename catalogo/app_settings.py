@@ -121,6 +121,18 @@ SETTINGS: tuple[Setting, ...] = (
         "Sonarr · API key", kind="text", env="SONARR_API_KEY", secret=True,
     ),
     Setting(
+        "trailarr_url", "trailarr_url", "integraciones", "Trailarr · URL",
+        kind="url", env="TRAILARR_URL",
+        default="http://127.0.0.1:7889",
+        help="URL base de Trailarr.",
+    ),
+    Setting(
+        "trailarr_api_key", "trailarr_api_key", "integraciones",
+        "Trailarr · API key", kind="text", env="TRAILARR_API_KEY",
+        secret=True,
+        help="Settings → General → API Key en Trailarr.",
+    ),
+    Setting(
         "tmdb_api_key", "tmdb_api_key", "integraciones", "TMDB · API key",
         kind="text", env="TMDB_API_KEY", secret=True,
     ),

@@ -12,6 +12,7 @@ const INTEGRATIONS = [
   { name: 'jellyfin', label: 'Jellyfin', prefix: 'jellyfin' },
   { name: 'radarr', label: 'Radarr (solo lectura)', prefix: 'radarr' },
   { name: 'sonarr', label: 'Sonarr (solo lectura)', prefix: 'sonarr' },
+  { name: 'trailarr', label: 'Trailarr', prefix: 'trailarr' },
   { name: 'tmdb', label: 'TMDB', prefix: 'tmdb' },
 ];
 
@@ -103,7 +104,17 @@ function dirField(item, paths) {
   </div>`;
 }
 
-function integrationCard(items, meta, paths, attention) {
+function integrationCard(items, meta, paths, attention, allItems = []) {
+  const hasWebToken = Boolean(allItems.find((item) => item.key === 'web_token')?.configured);
+  const apiKeyHint = hasWebToken
+    ? 'tu <strong>Token de acceso web</strong> (sección Seguridad)'
+    : '<span class="mono">0123456789abcdef0123456789abcdef</span> (32 caracteres; sin token web activo sirve cualquier clave de 32 caracteres)';
+  const bridgeHelp = meta.name === 'trailarr' ? `<div class="tiny faint" style="margin-top:8px">
+      Puente *arr hacia carpetas <span class="mono">.strm</span> (para <strong>Trailarr → Settings → Connections</strong>):<br>
+      Radarr: <span class="mono">${esc(window.location.origin)}/trailarr/radarr</span><br>
+      Sonarr: <span class="mono">${esc(window.location.origin)}/trailarr/sonarr</span><br>
+      API Key: ${apiKeyHint}
+    </div>` : '';
   return `<div class="panel" id="settings-int-${esc(meta.name)}">
     <div class="panel-head">
       <h2>${integrationDot(attention, meta.name)}${esc(meta.label)}</h2>
@@ -113,6 +124,7 @@ function integrationCard(items, meta, paths, attention) {
     </div>
     <div class="panel-body">
       ${items.map(field).join('')}
+      ${bridgeHelp}
       <span class="tiny faint" role="status" data-integration-result="${meta.name}"></span>
     </div>
   </div>`;
@@ -406,7 +418,7 @@ export async function renderSettings({ signal, query } = {}) {
       <div class="panel-head"><h2>${sectionDot(attention, 'integraciones')}Integraciones</h2><span class="right tiny faint settings-hint">Prowlarr, Jackett, qBittorrent, Jellyfin, Radarr/Sonarr</span></div>
       <div class="settings-grid">
         ${INTEGRATIONS.map((meta) => integrationCard(
-          items.filter((item) => item.key.startsWith(`${meta.prefix}_`)), meta, data.paths, attention,
+          items.filter((item) => item.key.startsWith(`${meta.prefix}_`)), meta, data.paths, attention, items,
         )).join('')}
         ${otherIntegrations.length ? integrationCard(otherIntegrations, { name: 'otros', label: 'Otros servicios' }, data.paths, attention) : ''}
       </div>

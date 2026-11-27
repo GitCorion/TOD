@@ -456,6 +456,8 @@ class Handler(PlaybackHandler):
                 return self._static(path[len("/static/"):], head=head)
             if path == "/healthz":
                 return self._json(200, {"status": "ok"}, head=head)
+            if path.startswith("/trailarr/"):
+                return self._trailarr_bridge(path, params, head=head)
             if not path.startswith("/api/"):
                 raise WebError(404, "no encontrado")
 
@@ -578,6 +580,48 @@ class Handler(PlaybackHandler):
     def _require_auth(self) -> None:
         if not self._authenticated():
             raise WebError(401, "sesión requerida")
+
+    def _trailarr_bridge(
+        self, path: str, params: dict[str, str], *, head: bool
+    ) -> None:
+        from . import trailarr as trailarr_mod
+
+        token = self.app.token
+        if token and not self._authenticated():
+            provided = str(
+                self.headers.get("X-Api-Key") or params.get("apikey") or ""
+            )
+            if not provided or not hmac.compare_digest(provided, token):
+                raise WebError(401, "API key inválida")
+
+        db = self.app.db_path
+        cfg = self.app.config
+        clean = path.rstrip("/")
+        if clean == "/trailarr/radarr/api/v3/system/status":
+            return self._json(200, trailarr_mod.radarr_system_status(), head=head)
+        if clean == "/trailarr/radarr/api/v3/rootfolder":
+            return self._json(200, trailarr_mod.radarr_root_folders(db, cfg), head=head)
+        if clean == "/trailarr/radarr/api/v3/movie":
+            return self._json(200, trailarr_mod.radarr_movies(db, cfg), head=head)
+        if clean in (
+            "/trailarr/radarr/api/v3/tag",
+            "/trailarr/radarr/api/v3/qualityprofile",
+        ):
+            return self._json(200, [], head=head)
+        if clean == "/trailarr/sonarr/api/v3/system/status":
+            return self._json(200, trailarr_mod.sonarr_system_status(), head=head)
+        if clean == "/trailarr/sonarr/api/v3/rootfolder":
+            return self._json(200, trailarr_mod.sonarr_root_folders(db, cfg), head=head)
+        if clean == "/trailarr/sonarr/api/v3/series":
+            return self._json(200, trailarr_mod.sonarr_series(db, cfg), head=head)
+        if clean in (
+            "/trailarr/sonarr/api/v3/tag",
+            "/trailarr/sonarr/api/v3/qualityprofile",
+            "/trailarr/sonarr/api/v3/languageprofile",
+        ):
+            return self._json(200, [], head=head)
+        LOG.warning("trailarr bridge 404: %s", path)
+        raise WebError(404, "no encontrado")
 
     def _body(self) -> dict[str, Any]:
         try:
