@@ -140,17 +140,17 @@ function renderSearch(items) {
   }
   const rows = items.map((item, index) => {
     const kind = item.kind === 'series' ? 'Serie' : 'Película';
-    const meta = `${item.year || '—'}, ${kind}${item.already ? ', En TOD' : ''}`;
-    const posterHtml = `<span class="add-result-poster">${poster(item.poster_path, item.title, { size: 'w92' })}</span>`;
+    const meta = `${item.year || '—'} · ${kind}${item.already ? ' · Ya en TOD' : ''}`;
+    const posterHtml = `<span class="add-result-poster" style="width:46px">${poster(item.poster_path, item.title, { size: 'w154' })}</span>`;
     const main = `<span class="add-result-main"><strong>${esc(item.title || '—')}</strong><small>${esc(meta)}</small></span>`;
     if (item.already) {
       const href = item.kind === 'series' ? `#/series/${item.tmdb}` : `#/title/${item.asset_id}`;
-      return `<div class="add-result">${posterHtml}${main}<a class="btn btn-sm btn-ghost" href="${href}">Abrir</a></div>`;
+      return `<div class="add-result" style="grid-template-columns:46px minmax(0,1fr) auto">${posterHtml}${main}<a class="btn btn-sm btn-ghost" href="${href}">Abrir</a></div>`;
     }
-    return `<div class="add-result">
+    return `<div class="add-result" style="grid-template-columns:46px minmax(0,1fr) auto">
       ${posterHtml}${main}
-      <button class="btn btn-sm btn-ghost" type="button" data-action="add-result" data-index="${index}">
-        <span class="add-result-action">${icon('plus', 'sm')} Añadir</span>
+      <button class="btn btn-sm btn-primary" type="button" data-action="add-result" data-index="${index}">
+        <span class="add-result-action" style="color:inherit">${icon('plus', 'sm')} Añadir</span>
       </button>
     </div>`;
   }).join('');
@@ -168,7 +168,7 @@ function renderError(error) {
   target.innerHTML = `<div class="panel pad">${empty(
     'No se pudo añadir',
     message,
-    tmdb ? '<a class="btn btn-sm" href="#/settings?section=integraciones&focus=tmdb_api_key">Abrir configuración</a>' : '',
+    tmdb ? '<a class="btn btn-sm" href="#/settings?section=conexiones&focus=tmdb_api_key">Abrir configuración</a>' : '',
   )}</div>`;
 }
 
@@ -439,7 +439,7 @@ export async function renderAdd({ query, params, signal }) {
       </div>
       <div class="add-search-options">
         <label class="inline check" title="Si ahora no hay fuente, TOD buscará releases automáticamente cuando aparezcan">
-          <input type="checkbox" id="addFollow" checked> Monitorizar (buscar automáticamente si no hay fuente)
+          <input type="checkbox" id="addFollow" checked> Monitorizar automáticamente si falta fuente
         </label>
         <div class="row">
           <button type="button" class="btn btn-sm btn-ghost" data-action="torrent-pick">
@@ -448,9 +448,14 @@ export async function renderAdd({ query, params, signal }) {
         </div>
       </div>
       <input type="file" id="torrentFile" accept=".torrent,application/x-bittorrent" class="hidden">
-      <p class="tiny faint add-help" id="addHelp">
-        Enter busca. Mayús+Enter añade una línea. Un enlace o una lista de TMDB se añade directamente; el .torrent se envía a qBittorrent.
-      </p>
+      <details class="adv-box" style="margin-top:10px">
+        <summary style="padding:6px 10px;font-size:12px;font-weight:500">Importación por lotes, enlaces TMDB o .torrent</summary>
+        <div class="adv-box-body" style="padding:8px 10px">
+          <p class="tiny faint add-help" id="addHelp">
+            Pulsa <kbd>Enter</kbd> para buscar por título, o <kbd>Mayús+Enter</kbd> para pegar varias líneas (enlaces o IDs de TMDB) y añadirlas de golpe. También puedes subir un fichero <span class="mono">.torrent</span> directo a qBittorrent.
+          </p>
+        </div>
+      </details>
     </form>
 
     <div class="add-layout">

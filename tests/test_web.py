@@ -568,3 +568,46 @@ def test_web_tracker_delete_removes_releases_and_strm(tmp_path):
         "SELECT COUNT(*) FROM events WHERE kind='web.tracker_delete'"
     ).fetchone()[0] == 1
     conn.close()
+
+
+def test_web_logs_endpoint_backdrop_and_static_views(tmp_path):
+    from catalogo import log
+    from catalogo.web import make_server
+
+    db, movie_id, _release_id = seed(tmp_path)
+    with sqlite3.connect(db) as conn:
+        conn.execute(
+            "UPDATE media_items SET backdrop_path='/backdrop.jpg' WHERE id=?",
+            (movie_id,),
+        )
+        conn.commit()
+    config = config_for(tmp_path, db)
+    logger = log.get_logger("test_web_logs")
+    logger.info("mensaje informativo de prueba")
+    logger.warning("aviso de prueba trailarr ui")
+
+    server = make_server("127.0.0.1", 0, config)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    base = f"http://127.0.0.1:{server.server_address[1]}"
+    try:
+        status, title_payload = _request(base, f"/api/titles/{movie_id}")
+        assert status == 200
+        assert title_payload["backdrop_path"] == "/backdrop.jpg"
+
+        status, logs_payload = _request(
+            base, "/api/system/logs?level=WARNING&q=trailarr"
+        )
+        assert status == 200
+        assert any(
+            entry["level"] == "WARNING" and "trailarr ui" in entry["message"]
+            for entry in logs_payload["items"]
+        )
+
+        with urllib.request.urlopen(f"{base}/static/js/views/events.js") as resp:
+            assert resp.status == 200
+            assert b"renderEvents" in resp.read()
+    finally:
+        server.shutdown()
+        server.server_close()
+        server.app.runner.stop()

@@ -96,7 +96,7 @@ function clearTorrentSelectionUI() {
 function renderSelectionBar() {
   const bar = $('#selectionBar');
   if (!bar) return;
-  if (state.view === 'catalog' && state.selection.size) {
+  if (['catalog', 'movies', 'shows'].includes(state.view) && state.selection.size) {
     bar.classList.remove('hidden');
     bar.innerHTML = `<span><strong>${state.selection.size}</strong> ${state.selection.size === 1 ? 'seleccionado' : 'seleccionados'}</span>
       <button class="btn btn-sm btn-primary" data-action="bulk-publish">${icon('plus', 'sm')} Añadir seleccionados</button>
@@ -178,7 +178,7 @@ function setActivity(data) {
         latest.state === 'error' || (published === 0) ? 'warn' : 'ok',
         `<a class="btn btn-sm btn-ghost" href="#/jobs">Ver historial</a>`,
       );
-      if (['jobs', 'dashboard', 'downloads', 'title', 'series', 'collection', 'catalog', 'add', 'monitor'].includes(state.view) && $('#modal').classList.contains('hidden')) {
+      if (['jobs', 'dashboard', 'downloads', 'title', 'series', 'collection', 'catalog', 'movies', 'shows', 'add', 'monitor', 'events'].includes(state.view) && $('#modal').classList.contains('hidden')) {
         route();
       }
     }
@@ -265,19 +265,21 @@ let paletteTimer = null;
 
 const DESTINATIONS = [
   { label: 'Inicio', href: '#/dashboard', hint: 'Inicio' },
-  { label: 'Biblioteca', href: '#/catalog', hint: 'Biblioteca' },
-  { label: 'Buscados', href: '#/monitor', hint: 'Biblioteca' },
-  { label: 'Calendario', href: '#/calendar', hint: 'Biblioteca' },
-  { label: 'Cola', href: '#/downloads', hint: 'Actividad' },
-  { label: 'Tareas', href: '#/jobs', hint: 'Actividad' },
-  { label: 'Historial', href: '#/history', hint: 'Actividad' },
-  { label: 'Siembra', href: '#/seeds', hint: 'Actividad' },
-  { label: 'Blocklist', href: '#/blocklist', hint: 'Actividad' },
-  { label: 'Estado', href: '#/system', hint: 'Sistema' },
-  { label: 'Configuración', href: '#/settings', hint: 'Sistema' },
+  { label: 'Películas', href: '#/movies', hint: 'Catálogo' },
+  { label: 'Series', href: '#/shows', hint: 'Catálogo' },
   { label: 'Añadir nuevo', href: '#/add', hint: 'Acción' },
+  { label: 'Descargas', href: '#/downloads', hint: 'Actividad' },
+  { label: 'Faltantes', href: '#/monitor', hint: 'Descargas' },
+  { label: 'Calendario', href: '#/calendar', hint: 'Descargas' },
+  { label: 'Tareas', href: '#/jobs', hint: 'Actividad' },
+  { label: 'Eventos', href: '#/events', hint: 'Registros' },
+  { label: 'Registros', href: '#/logs', hint: 'Registros' },
+  { label: 'Configuración', href: '#/settings', hint: 'Sistema' },
+  { label: 'Estado del sistema', href: '#/system', hint: 'Sistema' },
+  { label: 'Siembra', href: '#/seeds', hint: 'Descargas' },
+  { label: 'Blocklist', href: '#/blocklist', hint: 'Descargas' },
+  { label: 'Biblioteca completa', href: '#/catalog', hint: 'Catálogo' },
   { label: 'Primeros pasos', href: '#/setup', hint: 'Sistema' },
-  { label: 'Detalle técnico', href: '#/technical', hint: 'Sistema' },
 ];
 
 function plain(text) {
@@ -1025,6 +1027,20 @@ document.addEventListener('click', async (event) => {
       $('#scrim').classList.remove('open');
       return;
     }
+    if (action === 'sidebar-toggle') {
+      const collapsed = document.documentElement.classList.toggle('sidebar-collapsed');
+      try { localStorage.setItem('tod.sidebarCollapsed', collapsed ? '1' : '0'); } catch (_) {}
+      return;
+    }
+    if (action === 'logs-level') {
+      const q = $('#logsQuery')?.value.trim() || '';
+      navigate('logs', [], { level: element.dataset.level || '', q }, { replace: true });
+      return;
+    }
+    if (action === 'logs-refresh') {
+      await route({ preserveScroll: true });
+      return;
+    }
     if (action === 'modal-close') { closeModal(); return; }
     if (action === 'modal-confirm') { closeModal(true); return; }
     if (action === 'shortcuts') { openShortcuts(); return; }
@@ -1095,7 +1111,8 @@ document.addEventListener('click', async (event) => {
     }
     if (action === 'catalog-clear') {
       clearCatalogSelectionUI();
-      navigate('catalog', [], {});
+      const targetView = ['movies', 'shows'].includes(state.view) ? state.view : 'catalog';
+      navigate(targetView, [], {});
       return;
     }
     if (action === 'catalog-page') {
@@ -1127,7 +1144,7 @@ document.addEventListener('click', async (event) => {
       return;
     }
     if (action === 'settings-jump') {
-      const secMap = { 'settings-integrations': 'integraciones', 'settings-indexers': 'integraciones', 'settings-directories': 'general', 'settings-playback': 'general', 'settings-security': 'general', 'settings-language': 'general', 'settings-seed': 'siembra', 'settings-profiles': 'perfiles', 'settings-formats': 'perfiles', 'settings-media': 'medios', 'settings-lists': 'listas', 'settings-scheduler': 'tareas' };
+      const secMap = { 'settings-integrations': 'conexiones', 'settings-indexers': 'conexiones', 'settings-directories': 'general', 'settings-playback': 'general', 'settings-security': 'avanzado', 'settings-language': 'general', 'settings-seed': 'avanzado', 'settings-profiles': 'perfiles', 'settings-formats': 'perfiles', 'settings-media': 'avanzado', 'settings-lists': 'avanzado', 'settings-scheduler': 'avanzado' };
       const sec = secMap[element.dataset.target];
       if (sec) updateQuery({ section: sec }, { resetPage: false });
       const target = document.getElementById(element.dataset.target);

@@ -46,29 +46,43 @@
     <symbol id="i-more" viewBox="0 0 24 24"><circle cx="5" cy="12" r="1.5"/><circle cx="12" cy="12" r="1.5"/><circle cx="19" cy="12" r="1.5"/></symbol>
     <symbol id="i-disc" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="2.5"/></symbol>
     <symbol id="i-film" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M7 4v16M17 4v16M3 9h4M3 15h4M17 9h4M17 15h4"/></symbol>
+    <symbol id="i-tv" viewBox="0 0 24 24"><rect x="2" y="6" width="20" height="14" rx="2"/><path d="m8 2 4 4 4-4"/></symbol>
+    <symbol id="i-activity" viewBox="0 0 24 24"><path d="M3 12h4l3-7 4 14 3-7h4"/></symbol>
+    <symbol id="i-terminal" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="m7 9 3 3-3 3M13 15h4"/></symbol>
+    <symbol id="i-sliders" viewBox="0 0 24 24"><path d="M4 21v-7M4 10V3M12 21v-9M12 8V3M20 21v-5M20 12V3M1 14h6M9 8h6M17 16h6"/></symbol>
+    <symbol id="i-sidebar" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M9 4v16"/></symbol>
     <symbol id="i-sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></symbol>
     <symbol id="i-moon" viewBox="0 0 24 24"><path d="M20 14.5A8 8 0 0 1 9.5 4 8.5 8.5 0 1 0 20 14.5Z"/></symbol>
   </svg>
 
   <div class="app">
     <aside class="sidebar" id="sidebar" aria-label="Navegación principal">
-      <a class="brand" href="#/dashboard">
-        <span class="brand-mark" aria-hidden="true">
-          <img src="/static/tod-mark.svg" alt="">
-        </span>
-        <span class="brand-text"><strong>TOD</strong><small>Torrent on Demand</small></span>
-      </a>
+      <div class="sidebar-top">
+        <a class="brand" href="#/dashboard">
+          <span class="brand-mark" aria-hidden="true">
+            <img src="/static/tod-mark.svg" alt="">
+          </span>
+          <span class="brand-text"><strong>TOD</strong><small>Catálogo</small></span>
+        </a>
+        <button class="btn btn-icon sidebar-collapse-btn" id="sidebarCollapseBtn" data-action="sidebar-toggle" aria-label="Contraer o expandir menú" title="Contraer menú">
+          <svg class="icon" aria-hidden="true"><use href="#i-sidebar"/></svg>
+        </button>
+      </div>
 
       <nav class="nav" id="nav">
-        <a href="#/dashboard" data-route="dashboard"><svg class="icon" aria-hidden="true"><use href="#i-home"/></svg><span>Inicio</span></a>
-        <a href="#/catalog" data-route="catalog"><svg class="icon" aria-hidden="true"><use href="#i-grid"/></svg><span>Biblioteca</span><em class="nav-count" id="navLibrary"></em></a>
-        <a href="#/add" data-route="add"><svg class="icon" aria-hidden="true"><use href="#i-plus"/></svg><span>Añadir</span></a>
-        <a href="#/downloads" data-route="downloads"><svg class="icon" aria-hidden="true"><use href="#i-download"/></svg><span>Actividad</span><em class="nav-count" id="navJobs"></em></a>
-        <a href="#/system" data-route="system"><svg class="icon" aria-hidden="true"><use href="#i-server"/></svg><span>Sistema</span><em class="nav-count attention hidden" id="navAttention" aria-live="polite"></em></a>
+        <a href="#/dashboard" data-route="dashboard" title="Inicio"><svg class="icon" aria-hidden="true"><use href="#i-home"/></svg><span>Inicio</span></a>
+        <a href="#/movies" data-route="movies" title="Películas"><svg class="icon" aria-hidden="true"><use href="#i-film"/></svg><span>Películas</span><em class="nav-count" id="navMovies"></em></a>
+        <a href="#/shows" data-route="shows" title="Series"><svg class="icon" aria-hidden="true"><use href="#i-tv"/></svg><span>Series</span><em class="nav-count" id="navSeries"></em></a>
+        <a href="#/add" data-route="add" title="Añadir"><svg class="icon" aria-hidden="true"><use href="#i-plus"/></svg><span>Añadir</span></a>
+        <div class="nav-sep" role="separator"></div>
+        <a href="#/downloads" data-route="downloads" title="Descargas"><svg class="icon" aria-hidden="true"><use href="#i-download"/></svg><span>Descargas</span><em class="nav-count" id="navDownloads"></em></a>
+        <a href="#/jobs" data-route="jobs" title="Tareas"><svg class="icon" aria-hidden="true"><use href="#i-jobs"/></svg><span>Tareas</span><em class="nav-count" id="navJobs"></em></a>
+        <a href="#/events" data-route="events" title="Eventos y registros"><svg class="icon" aria-hidden="true"><use href="#i-activity"/></svg><span>Eventos</span></a>
+        <a href="#/settings" data-route="settings" title="Configuración"><svg class="icon" aria-hidden="true"><use href="#i-sliders"/></svg><span>Configuración</span><em class="nav-count attention hidden" id="navAttention" aria-live="polite"></em></a>
       </nav>
 
       <div class="sidebar-foot">
-        <button class="btn btn-ghost btn-sm" data-action="shortcuts" aria-label="Ver atajos de teclado">Atajos <kbd>?</kbd></button>
+        <button class="btn btn-ghost btn-sm" data-action="shortcuts" aria-label="Ver atajos de teclado" title="Atajos de teclado"><span>Atajos</span> <kbd>?</kbd></button>
         <button class="btn btn-ghost btn-sm hidden" id="logoutBtn" data-action="logout">Salir</button>
       </div>
     </aside>
@@ -85,7 +99,7 @@
         </div>
         <button class="search-trigger" id="searchTrigger" data-action="palette-open" aria-label="Buscar en la biblioteca (Ctrl K)">
           <svg class="icon" aria-hidden="true"><use href="#i-search"/></svg>
-          <span>Buscar en la biblioteca…</span>
+          <span>Buscar película, serie o ir a…</span>
           <kbd>Ctrl K</kbd>
         </button>
         <a class="btn btn-primary top-add" href="#/add"><svg class="icon" aria-hidden="true"><use href="#i-plus"/></svg> Añadir</a>
@@ -103,9 +117,9 @@
 
     <nav class="mobile-nav" id="mobileNav" aria-label="Navegación rápida">
       <a href="#/dashboard" data-route="dashboard"><svg class="icon" aria-hidden="true"><use href="#i-home"/></svg><span>Inicio</span></a>
-      <a href="#/catalog" data-route="catalog"><svg class="icon" aria-hidden="true"><use href="#i-grid"/></svg><span>Biblioteca</span></a>
+      <a href="#/movies" data-route="movies"><svg class="icon" aria-hidden="true"><use href="#i-film"/></svg><span>Películas</span></a>
+      <a href="#/shows" data-route="shows"><svg class="icon" aria-hidden="true"><use href="#i-tv"/></svg><span>Series</span></a>
       <a href="#/add" data-route="add"><svg class="icon" aria-hidden="true"><use href="#i-plus"/></svg><span>Añadir</span></a>
-      <a href="#/downloads" data-route="downloads"><svg class="icon" aria-hidden="true"><use href="#i-download"/></svg><span>Actividad</span></a>
       <button data-action="menu"><svg class="icon" aria-hidden="true"><use href="#i-menu"/></svg><span>Más</span></button>
     </nav>
   </div>

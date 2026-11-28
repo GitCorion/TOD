@@ -40,22 +40,18 @@ detalle de cada pantalla se decide dentro de estas reglas.
 
 ## El armazón
 
-Una sola aplicación con barra lateral fija y contenido ancho.
+Una sola aplicación con barra lateral fija (colapsable en escritorio) y contenido ancho, inspirada en la claridad directa de Trailarr.
 
 | Pieza | Medida | Nota |
 |---|---|---|
-| Barra lateral | 232 px | Fija; fuera de pantalla en móvil con `.js` |
-| Barra superior | 52 px | Título de página, buscador global (se oculta en Biblioteca y Alta) y **Añadir** |
-| Pestañas de sección | 38 px (36 en móvil) | Pegadas bajo la barra superior |
+| Barra lateral | 232 px (64 px colapsada) | Fija; colapsable en escritorio (`tod.sidebarCollapsed`) y fuera de pantalla en móvil con `.js` |
+| Barra superior | 52 px | Título de página, buscador global (se oculta en Películas/Series y Alta) y **Añadir** |
+| Pestañas de sección | 38 px (36 en móvil) | Pegadas bajo la barra superior solo en secciones con sub-vistas |
 | Contenido | máx. 1680 px | `padding: 20px 24px 64px` |
-| Navegación móvil | 58 px | Inicio, Biblioteca, Añadir, Actividad, Más |
+| Navegación móvil | 58 px | Inicio, Películas, Series, Añadir, Más |
 
-- **Barra lateral:** Inicio, Biblioteca, Añadir, Actividad, Sistema. Biblioteca
-  lleva el total de títulos; Actividad, la cola; Sistema, los avisos. Los iconos
-  siempre van con etiqueta.
-- **Pestañas de sección:** Biblioteca, Buscados, Calendario / Cola, Tareas,
-  Siembra, Blocklist / Estado, Configuración. Son el segundo nivel; no se duplican en la
-  barra lateral.
+- **Barra lateral:** Inicio, Películas, Series, Añadir, Descargas, Tareas, Eventos, Configuración. Películas y Series llevan sus totales; Descargas y Tareas muestran elementos activos; Configuración muestra los avisos. Los iconos siempre van con etiqueta cuando está expandida.
+- **Pestañas de sección:** Descargas (Cola, Faltantes, Calendario, Siembra, Blocklist), Eventos (Eventos, Registros, Auditoría) y Configuración (Configuración, Estado del sistema). Todas las rutas clásicas (`#/catalog`, `#/system`, `#/history`) siguen funcionando como alias.
 - **Móvil:** la barra lateral se abre con el botón de menú; scrim y cierre con
   `Esc`; la navegación inferior es la principal. La cabecera de la biblioteca no
   se queda fija en móvil: ocuparía media pantalla.
@@ -134,12 +130,9 @@ vacías se ocultan.
 La página de la película o del episodio.
 
 - **Migas:** Biblioteca › serie › episodio.
-- **Héroe:** póster (148 px, hasta 196 en pantallas grandes), título y año,
-  sinopsis a 65ch, colección si existe y fila de acciones. El estado y la pertenencia van en la
-  misma fila que el título: `Disponible`, `En biblioteca`, `En Radarr/Sonarr`, `Descargada`.
-- **Franja de datos reales:** releases vivos, releases totales, ficheros, calidad,
-  compromisos y eventos. Es la misma franja en la ficha y en la serie.
-- **Pestañas:** Resumen, Releases, Ficheros, Historial.
+- **Héroe:** fondo difuminado con `backdrop_path` de TMDB (respaldo de póster) con degradado legible en ambos temas, póster (148 px, hasta 196 en pantallas grandes), título y año, sinopsis a 65ch, colección si existe y fila de acciones. El estado y la pertenencia van en la misma fila que el título: `Disponible`, `En biblioteca`, `En Radarr/Sonarr`, `Descargada`.
+- **Franja de datos reales:** releases vivos, releases totales, ficheros, calidad, compromisos y eventos. Es la misma franja en la ficha y en la serie.
+- **Pestañas:** Resumen y Avanzado (`Releases`, `Ficheros y siembra`, `Historial`). Las rutas con `?tab=fuentes|ficheros|historial` siguen abriendo directamente la sub-sección correspondiente.
 - **Resumen:** los tres mejores releases (calidad, seeds, salud, tamaño) y los
   dos primeros ficheros, con “Ver todos”. Es una vista previa, no
   una copia de las tablas.

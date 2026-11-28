@@ -87,6 +87,11 @@ function card(item, selected, priority) {
     : '';
   const sourceLabel = `${fmtInt(sources)} ${sources === 1 ? 'fuente' : 'fuentes'}`;
   const rail = coverage(item);
+  const quickAction = !isSeries && !item.published
+    ? (sources > 0
+      ? `<button type="button" class="catalog-quick-btn" data-action="download-now" data-key="${esc(item.key)}" title="Descargar ahora" aria-label="Descargar ${esc(item.title || '')}">${icon('download', 'sm')}</button>`
+      : `<button type="button" class="catalog-quick-btn" data-action="sync-title" data-id="${item.id}" title="Buscar fuentes" aria-label="Buscar fuentes para ${esc(item.title || '')}">${icon('search', 'sm')}</button>`)
+    : '';
   return `<article class="catalog-card ${selected ? 'selected' : ''}">
     <a class="catalog-link" href="${href}" aria-label="${esc(item.title || '')}">
       <div class="catalog-cover">
@@ -100,6 +105,7 @@ function card(item, selected, priority) {
         <small>${esc(item.year || '—')}, ${esc(meta)}</small>
       </div>
     </a>
+    ${quickAction ? `<div class="catalog-quick-actions">${quickAction}</div>` : ''}
     <label class="catalog-pick">
       <input type="checkbox" class="catalog-check" data-action="catalog-select" data-key="${esc(key)}" data-kind="${esc(item.kind)}" data-tmdb="${item.tmdb || ''}" ${selected ? 'checked' : ''} aria-label="Seleccionar ${esc(item.title || '')}">
     </label>
@@ -159,10 +165,11 @@ function filterChip({ label, count, active, action, key, value, hint }) {
   return `<button class="seg-item ${active ? 'active' : ''}" ${data}${hint ? ` title="${esc(hint)}"` : ''}>${esc(label)}${count !== null ? ` <b>${fmtInt(count)}</b>` : ''}</button>`;
 }
 
-export async function renderCatalog({ query, signal }) {
+export async function renderCatalog({ query, signal, fixedKind = '' }) {
+  const effectiveKind = fixedKind || query.get('kind') || '';
   const filters = {
     q: query.get('q') || '',
-    kind: query.get('kind') || '',
+    kind: effectiveKind,
     publication: query.get('publication') || '',
     download: query.get('download') || '',
     origin: query.get('origin') || '',
@@ -186,7 +193,12 @@ export async function renderCatalog({ query, signal }) {
     page: Math.max(1, Number(query.get('page')) || 1),
   };
   state.filters = filters;
-  setHeader('Biblioteca');
+  const pageHeading = fixedKind === 'movie'
+    ? 'Películas'
+    : fixedKind === 'series'
+      ? 'Series'
+      : 'Biblioteca';
+  setHeader(pageHeading);
 
   const params = new URLSearchParams({
     q: filters.q,
@@ -225,9 +237,13 @@ export async function renderCatalog({ query, signal }) {
   const cards = data.items.map((item, index) => card(item, selected(item.kind === 'series' ? `series:${item.tmdb}` : item.key), index < 8)).join('');
   const rows = data.items.map((item) => row(item, selected(item.kind === 'series' ? `series:${item.tmdb}` : item.key), cols)).join('');
   const totalGroups = data.total || 0;
-  const navLibrary = document.getElementById('navLibrary');
-  if (!filters.q) state.libraryTotal = (facets.kind?.movie || 0) + (facets.kind?.series || 0);
-  if (navLibrary) navLibrary.textContent = state.libraryTotal ? fmtInt(state.libraryTotal) : '';
+  const navMovies = document.getElementById('navMovies');
+  const navSeries = document.getElementById('navSeries');
+  if (!filters.q) {
+    state.libraryTotal = (facets.kind?.movie || 0) + (facets.kind?.series || 0);
+    if (navMovies && facets.kind?.movie !== undefined) navMovies.textContent = fmtInt(facets.kind.movie);
+    if (navSeries && facets.kind?.series !== undefined) navSeries.textContent = fmtInt(facets.kind.series);
+  }
 
   const kindTotal = (facets.kind?.movie || 0) + (facets.kind?.series || 0);
   const publicationTotal = (facets.publication?.publicado || 0)
@@ -312,9 +328,9 @@ export async function renderCatalog({ query, signal }) {
         <div class="library-bar">
           <label class="library-search">
             ${icon('search')}
-            <input data-input="catalog-q" value="${esc(filters.q)}" placeholder="Buscar por título, serie o año" autocomplete="off" aria-label="Buscar en la biblioteca">
+            <input data-input="catalog-q" value="${esc(filters.q)}" placeholder="${fixedKind === 'movie' ? 'Buscar película o año…' : fixedKind === 'series' ? 'Buscar serie o año…' : 'Buscar por título, serie o año'}" autocomplete="off" aria-label="Buscar en la biblioteca">
           </label>
-          <div class="seg-group">
+          ${fixedKind ? '' : `<div class="seg-group">
             <span class="seg-label">Tipo</span>
             <div class="seg" role="group" aria-label="Tipo de contenido">
               ${kindChips.map((chip) => filterChip({
@@ -326,7 +342,7 @@ export async function renderCatalog({ query, signal }) {
                 value: chip.value,
               })).join('')}
             </div>
-          </div>
+          </div>`}
           <div class="view-toggle" role="group" aria-label="Vista de la biblioteca">
             <button class="btn btn-icon ${filters.view === 'grid' ? 'active' : ''}" data-action="catalog-view" data-view="grid" aria-label="Vista de carteles" aria-pressed="${filters.view === 'grid'}" title="Carteles">${icon('grid')}</button>
             <button class="btn btn-icon ${filters.view === 'table' ? 'active' : ''}" data-action="catalog-view" data-view="table" aria-label="Vista de tabla" aria-pressed="${filters.view === 'table'}" title="Tabla">${icon('list')}</button>

@@ -3,6 +3,7 @@ import { $, setActiveNav, setHeader, renderSectionTabs, focusTitle, focusKey, re
 import { renderDashboard } from './views/dashboard.js';
 import { renderBlocklist } from './views/blocklist.js';
 import { renderCalendar } from './views/calendar.js';
+import { renderEvents } from './views/events.js';
 import { renderHistory } from './views/history.js';
 import { renderCatalog } from './views/catalog.js';
 import { renderMonitor } from './views/monitor.js';
@@ -20,6 +21,8 @@ import { renderSetup } from './views/setup.js';
 
 const ROUTES = {
   dashboard: { title: 'Inicio', render: renderDashboard },
+  movies: { title: 'Películas', render: (ctx) => renderCatalog({ ...ctx, fixedKind: 'movie' }) },
+  shows: { title: 'Series', render: (ctx) => renderCatalog({ ...ctx, fixedKind: 'series' }) },
   calendar: { title: 'Calendario', render: renderCalendar },
   catalog: { title: 'Biblioteca', render: renderCatalog },
   monitor: { title: 'Buscados', render: renderMonitor },
@@ -29,13 +32,15 @@ const ROUTES = {
   add: { title: 'Añadir', render: renderAdd },
   setup: { title: 'Primeros pasos', render: renderSetup },
   intake: { title: 'Añadir', render: renderAdd },
-  downloads: { title: 'Cola', render: renderDownloads },
+  downloads: { title: 'Descargas', render: renderDownloads },
   jobs: { title: 'Tareas', render: renderJobs },
+  events: { title: 'Eventos', render: (ctx) => renderEvents({ ...ctx, tab: 'events' }) },
+  logs: { title: 'Registros', render: (ctx) => renderEvents({ ...ctx, tab: 'logs' }) },
   history: { title: 'Historial', render: renderHistory },
   seeds: { title: 'Siembra', render: renderSeeds },
   blocklist: { title: 'Blocklist', render: renderBlocklist },
   settings: { title: 'Configuración', render: renderSettings },
-  system: { title: 'Estado', render: renderSystem },
+  system: { title: 'Estado del sistema', render: renderSystem },
   technical: { title: 'Detalle técnico', render: renderTechnical },
 };
 

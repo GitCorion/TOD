@@ -319,9 +319,13 @@ def test_settings_frontend_assets():
     ui = (root / "js/ui.js").read_text(encoding="utf-8")
     assert "renderSettings" in router
     assert "settings: {" in router
-    assert 'data-route="system"' in index
+    assert 'data-route="settings"' in index
+    assert 'data-route="movies"' in index
+    assert 'data-route="shows"' in index
+    assert 'data-route="events"' in index
     assert "Configuración" in ui
-    assert "Buscados" in ui
+    assert "Faltantes" in ui
+    assert "Registros" in ui
     assert 'data-action="settings-save"' in view
     assert "settings-test" in view
     assert "schedulerRun" not in app

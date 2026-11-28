@@ -1352,7 +1352,10 @@ def series_detail(
             (row.get("poster_path") for row in rows if row.get("poster_path")),
             None,
         ),
-        "backdrop_path": tmdb_series.get("backdrop_path"),
+        "backdrop_path": tmdb_series.get("backdrop_path") or next(
+            (row.get("backdrop_path") for row in rows if row.get("backdrop_path")),
+            None,
+        ),
         "overview": tmdb_series.get("overview") or next(
             (row.get("overview") for row in rows if row.get("overview")), None
         ),

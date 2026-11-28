@@ -2,7 +2,7 @@ import { api } from '../api.js';
 import { esc, episodeTag, fmtBytes, fmtDate, fmtInt, pct } from '../format.js';
 import { eventLabel, healthStatus, originLabel, WATCH } from '../labels.js';
 import { state } from '../store.js';
-import { $, badge, bar, empty, icon, poster, setHeader, status } from '../ui.js';
+import { $, backdropUrl, badge, bar, empty, icon, poster, setActiveNav, setHeader, status } from '../ui.js';
 import { renderRichReleaseRow } from './arr_actions.js';
 
 function releaseRow(release, showProgress = false) {
@@ -78,7 +78,10 @@ export async function renderTitle({ params, query, signal }) {
     od.downloaded ? badge('Descargada') : '',
   ].filter(Boolean).join('');
   state.titleDetail = data;
-  const tab = query.get('tab') || 'resumen';
+  const rawTab = query.get('tab') || 'resumen';
+  const advSub = ['fuentes', 'ficheros', 'historial'].includes(rawTab) ? rawTab : (query.get('sub') || 'fuentes');
+  const isAdvanced = rawTab === 'avanzado' || ['fuentes', 'ficheros', 'historial'].includes(rawTab);
+  const tab = isAdvanced ? 'avanzado' : 'resumen';
   const showAside = tab === 'resumen';
   const tag = episodeTag(item);
   const episodeName = item.kind === 'series' ? (item.episode_title || '') : '';
@@ -87,8 +90,13 @@ export async function renderTitle({ params, query, signal }) {
   const seriesContext = episodeName && item.tmdb
     ? `<div class="subtitle"><a href="#/series/${item.tmdb}">${esc(item.title || 'Serie')}</a>${item.year ? ` (${item.year})` : ''}</div>`
     : '';
+  setActiveNav(item.kind === 'series' ? 'shows' : 'movies');
   setHeader(heading);
   document.title = `${heading}, TOD`;
+
+  const bgUrl = backdropUrl(data.backdrop_path || item.backdrop_path || data.poster_path, 'w1280');
+  const listHref = item.kind === 'series' ? '#/shows' : '#/movies';
+  const listLabel = item.kind === 'series' ? 'Series' : 'Películas';
 
   const seriesLink = item.kind === 'series' && item.tmdb
     ? `<a href="#/series/${item.tmdb}">${esc(item.title || 'Serie')}</a>${icon('chevron')}`
@@ -284,10 +292,20 @@ export async function renderTitle({ params, query, signal }) {
     </div>
   `;
 
-  $('#view').innerHTML = `
-    <div class="breadcrumb"><a href="#/catalog">Biblioteca</a>${icon('chevron')}${seriesLink}<span>${esc(tag || item.title || 'Ficha')}</span></div>
+  const advPanel = `
+    <div class="seg seg-quiet" style="margin-bottom:12px" role="tablist" aria-label="Secciones técnicas">
+      <button class="seg-item ${advSub === 'fuentes' ? 'active' : ''}" data-action="detail-tab" data-tab="fuentes">Releases <b>${data.releases.length}</b></button>
+      <button class="seg-item ${advSub === 'ficheros' ? 'active' : ''}" data-action="detail-tab" data-tab="ficheros">Ficheros y siembra <b>${fileCount}</b></button>
+      <button class="seg-item ${advSub === 'historial' ? 'active' : ''}" data-action="detail-tab" data-tab="historial">Historial <b>${data.events.length}</b></button>
+    </div>
+    ${advSub === 'ficheros' ? files : advSub === 'historial' ? history : releases}
+  `;
 
-    <div class="panel pad detail-card">
+  $('#view').innerHTML = `
+    <div class="breadcrumb"><a href="${listHref}">${listLabel}</a>${icon('chevron')}${seriesLink}<span>${esc(tag || item.title || 'Ficha')}</span></div>
+
+    <div class="detail-hero-wrap detail-card">
+      ${bgUrl ? `<div class="detail-backdrop" style="background-image:url('${esc(bgUrl)}')"></div><div class="detail-backdrop-scrim"></div>` : ''}
       <div class="detail-hero">
         <div class="poster">${poster(data.poster_path, item.title)}</div>
         <div class="info">
@@ -309,11 +327,11 @@ export async function renderTitle({ params, query, signal }) {
             ${!od.library_added && !item.monitored ? `<button class="btn btn-primary" data-action="library-title" data-id="${item.id}" data-key="${esc(item.key)}" data-title="${esc(item.title || '')}" data-releases="${data.releases.length}">${icon('plus')} Añadir a biblioteca</button>` : ''}
             ${od.library_added && !od.published && item.monitored ? `<button class="btn btn-ghost" data-action="unmonitor-title" data-id="${item.id}">Dejar de monitorizar</button>` : ''}
             ${od.library_added && !od.published && !item.monitored && !od.has_file && !od.downloaded ? `<button class="btn" data-action="monitor-title" data-id="${item.id}">Monitorizar</button>` : ''}
-            ${!od.downloaded && data.releases.length ? `<button class="btn" data-action="download-now" data-key="${esc(item.key)}">${icon('download')} Descargar ahora</button>` : ''}
-            <button class="btn btn-ghost" data-action="manual-search" data-id="${item.id}" data-title="${esc(item.title || '')}">${icon('search')} Búsqueda interactiva</button>
-            <button class="btn btn-ghost" data-action="sync-title" data-id="${item.id}">${icon('search')} Búsqueda automática</button>
+            ${!od.downloaded && data.releases.length ? `<button class="btn btn-primary" data-action="download-now" data-key="${esc(item.key)}">${icon('download')} Descargar ahora</button>` : ''}
+            <button class="btn ${!od.downloaded && data.releases.length ? 'btn-ghost' : 'btn-primary'}" data-action="sync-title" data-id="${item.id}">${icon('search')} Buscar fuentes</button>
+            <button class="btn btn-ghost" data-action="manual-search" data-id="${item.id}" data-title="${esc(item.title || '')}">${icon('list')} Elegir versión</button>
             ${item.tmdb ? `<a class="btn btn-ghost" href="${esc(data.tmdb_url || '#')}" target="_blank" rel="noreferrer">${icon('external')} TMDB</a>` : ''}
-            ${od.published ? `<button class="btn btn-sm btn-ghost danger-action" data-action="unpublish-title" data-id="${item.id}">Quitar de biblioteca</button>` : ''}
+            ${od.published ? `<button class="btn btn-sm btn-ghost danger-action" data-action="unpublish-title" data-id="${item.id}">Quitar</button>` : ''}
           </div>
         </div>
       </div>
@@ -325,12 +343,10 @@ export async function renderTitle({ params, query, signal }) {
       <div class="title-main">
         <div class="tabs" role="tablist">
           <button class="${tab === 'resumen' ? 'active' : ''}" data-action="detail-tab" data-tab="resumen" role="tab" aria-selected="${tab === 'resumen'}">Resumen</button>
-          <button class="${tab === 'fuentes' ? 'active' : ''}" data-action="detail-tab" data-tab="fuentes" role="tab" aria-selected="${tab === 'fuentes'}">Releases <b>${data.releases.length}</b></button>
-          <button class="${tab === 'ficheros' ? 'active' : ''}" data-action="detail-tab" data-tab="ficheros" role="tab" aria-selected="${tab === 'ficheros'}">Ficheros <b>${fileCount}</b></button>
-          <button class="${tab === 'historial' ? 'active' : ''}" data-action="detail-tab" data-tab="historial" role="tab" aria-selected="${tab === 'historial'}">Historial <b>${data.events.length}</b></button>
+          <button class="${tab === 'avanzado' ? 'active' : ''}" data-action="detail-tab" data-tab="avanzado" role="tab" aria-selected="${tab === 'avanzado'}">Avanzado <b>${data.releases.length + fileCount}</b></button>
         </div>
 
-        ${tab === 'fuentes' ? releases : tab === 'ficheros' ? files : tab === 'historial' ? history : overview}
+        ${tab === 'avanzado' ? advPanel : overview}
       </div>
       ${showAside ? `<aside class="title-aside" aria-label="Detalles del título">${aside}</aside>` : ''}
     </div>

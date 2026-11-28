@@ -2,7 +2,7 @@ import { api } from '../api.js';
 import { esc, fmtInt, fmtShortDate, pct } from '../format.js';
 import { updateQuery } from '../router.js';
 import { state } from '../store.js';
-import { $, badge, bar, empty, icon, poster, setHeader, status } from '../ui.js';
+import { $, backdropUrl, badge, bar, empty, icon, poster, setActiveNav, setHeader, status } from '../ui.js';
 
 function episodeStatus(ep) {
   if (ep.available === false) return status('Sin estrenar', 'muted');
@@ -99,8 +99,10 @@ export async function renderSeries({ params, query, signal }) {
   const seasonAction = seasonData?.library || seasonData?.monitored
     ? 'Añadir episodios faltantes'
     : 'Añadir temporada';
+  setActiveNav('shows');
   setHeader(series.title || 'Serie');
   document.title = `${series.title || 'Serie'}, TOD`;
+  const bgUrl = backdropUrl(series.backdrop_path || series.poster_path, 'w1280');
 
   const episodes = seasonData?.episodes || [];
   const showSources = episodes.some((ep) => Number(ep.releases) > 0);
@@ -157,42 +159,48 @@ export async function renderSeries({ params, query, signal }) {
   const rfOpts = (data.root_folders || []).map((r) => `<option value="${r.id}" ${Number(ss.root_folder_id) === Number(r.id) ? 'selected' : ''}>${esc(r.name)}</option>`).join('');
   const curTagId = ss.tags?.[0]?.id || '';
   const tagOpts = (data.tags || []).map((t) => `<option value="${t.id}" ${Number(curTagId) === Number(t.id) ? 'selected' : ''}>${esc(t.name)}</option>`).join('');
-  const settingsBar = `<div class="series-settings-bar">
-    <label class="field"><span>Perfil</span>
-      <select class="input input-sm" data-ss="quality_profile_id"><option value="">Por defecto</option>${profOpts}</select>
-    </label>
-    <label class="field"><span>Carpeta</span>
-      <select class="input input-sm" data-ss="root_folder_id"><option value="">Por defecto</option>${rfOpts}</select>
-    </label>
-    <label class="field"><span>Tipo serie</span>
-      <select class="input input-sm" data-ss="series_type">
-        <option value="standard" ${ss.series_type === 'standard' ? 'selected' : ''}>Estándar</option>
-        <option value="daily" ${ss.series_type === 'daily' ? 'selected' : ''}>Diaria (Daily)</option>
-        <option value="anime" ${ss.series_type === 'anime' ? 'selected' : ''}>Anime</option>
-      </select>
-    </label>
-    <label class="field"><span>Etiqueta</span>
-      <select class="input input-sm" data-ss="tag_id"><option value="">Ninguna</option>${tagOpts}</select>
-    </label>
-    <button class="btn btn-sm btn-primary" data-action="series-settings-save" data-tmdb="${tmdb}" style="align-self:end">Guardar ajustes</button>
-    <label class="field" style="margin-left:auto"><span>Preset de monitorización</span>
-      <select class="input input-sm" data-change="series-preset" data-tmdb="${tmdb}">
-        <option value="">— Aplicar preset —</option>
-        <option value="all">Todos los episodios</option>
-        <option value="future">Solo futuros</option>
-        <option value="missing">Solo faltantes</option>
-        <option value="first_season">Primera temporada</option>
-        <option value="latest_season">Última temporada</option>
-        <option value="pilot">Solo piloto (S01E01)</option>
-        <option value="none">Ninguno</option>
-      </select>
-    </label>
-  </div>`;
+  const settingsBar = `<details class="adv-box section">
+    <summary>${icon('sliders', 'sm')} Ajustes de serie y modo avanzado <span class="tiny faint" style="margin-left:auto">Perfil, carpeta, tipo y presets</span></summary>
+    <div class="adv-box-body">
+      <div class="series-settings-bar" style="margin-top:0;border:0;padding:0;background:transparent">
+        <label class="field"><span>Perfil</span>
+          <select class="input input-sm" data-ss="quality_profile_id"><option value="">Por defecto</option>${profOpts}</select>
+        </label>
+        <label class="field"><span>Carpeta</span>
+          <select class="input input-sm" data-ss="root_folder_id"><option value="">Por defecto</option>${rfOpts}</select>
+        </label>
+        <label class="field"><span>Tipo serie</span>
+          <select class="input input-sm" data-ss="series_type">
+            <option value="standard" ${ss.series_type === 'standard' ? 'selected' : ''}>Estándar</option>
+            <option value="daily" ${ss.series_type === 'daily' ? 'selected' : ''}>Diaria (Daily)</option>
+            <option value="anime" ${ss.series_type === 'anime' ? 'selected' : ''}>Anime</option>
+          </select>
+        </label>
+        <label class="field"><span>Etiqueta</span>
+          <select class="input input-sm" data-ss="tag_id"><option value="">Ninguna</option>${tagOpts}</select>
+        </label>
+        <button class="btn btn-sm btn-primary" data-action="series-settings-save" data-tmdb="${tmdb}" style="align-self:end">Guardar ajustes</button>
+        <label class="field" style="margin-left:auto"><span>Preset de monitorización</span>
+          <select class="input input-sm" data-change="series-preset" data-tmdb="${tmdb}">
+            <option value="">— Aplicar preset —</option>
+            <option value="all">Todos los episodios</option>
+            <option value="future">Solo futuros</option>
+            <option value="missing">Solo faltantes</option>
+            <option value="first_season">Primera temporada</option>
+            <option value="latest_season">Última temporada</option>
+            <option value="pilot">Solo piloto (S01E01)</option>
+            <option value="none">Ninguno</option>
+          </select>
+        </label>
+      </div>
+    </div>
+  </details>`;
 
   $('#view').innerHTML = `
-    <div class="breadcrumb"><a href="#/catalog">Biblioteca</a>${icon('chevron')}<span>${esc(series.title || 'Serie')}</span></div>
+    <div class="breadcrumb"><a href="#/shows">Series</a>${icon('chevron')}<span>${esc(series.title || 'Serie')}</span></div>
 
-    <div class="panel pad detail-card">
+    <div class="detail-hero-wrap detail-card">
+      ${bgUrl ? `<div class="detail-backdrop" style="background-image:url('${esc(bgUrl)}')"></div><div class="detail-backdrop-scrim"></div>` : ''}
       <div class="detail-hero">
         <div class="poster">${poster(series.poster_path, series.title)}</div>
         <div class="info">
@@ -207,11 +215,11 @@ export async function renderSeries({ params, query, signal }) {
           ${ss.series_status ? `<div class="tiny faint" style="margin-top:4px">Estado: ${esc(ss.series_status)}${ss.genres ? ` · ${esc(ss.genres)}` : ''}</div>` : ''}
           <div class="detail-actions">
             ${allAdded ? '' : `<button class="btn btn-primary" data-action="library-series" data-tmdb="${tmdb}" data-title="${esc(series.title || '')}" data-mode="${seriesMode}">${icon('plus')} ${seriesAction}</button>`}
-            <button class="btn" data-action="sync-series" data-tmdb="${tmdb}">${icon('search')} Búsqueda automática</button>
+            <button class="btn ${allAdded ? 'btn-primary' : ''}" data-action="sync-series" data-tmdb="${tmdb}">${icon('search')} Buscar fuentes</button>
             ${seriesTrackable && seriesFollowed < seriesTrackable ? `<button class="btn btn-ghost" data-action="monitor-series" data-tmdb="${tmdb}">${icon('plus')} Monitorizar serie</button>` : ''}
             ${seriesFollowed > 0 ? `<button class="btn btn-ghost danger-action" data-action="unmonitor-series" data-tmdb="${tmdb}">Dejar de monitorizar</button>` : ''}
             <a class="btn btn-ghost" href="${esc(data.tmdb_url || '#')}" target="_blank" rel="noreferrer">${icon('external')} TMDB</a>
-            ${totals.library ? `<button class="btn btn-sm btn-ghost danger-action" data-action="unpublish-series" data-tmdb="${tmdb}">Quitar de biblioteca</button>` : ''}
+            ${totals.library ? `<button class="btn btn-sm btn-ghost danger-action" data-action="unpublish-series" data-tmdb="${tmdb}">Quitar</button>` : ''}
           </div>
         </div>
       </div>

@@ -67,12 +67,17 @@ export function barPercent(value, tone = '') {
   return `<div class="bar ${tone}"><i style="width:${width}%"></i></div>`;
 }
 
-function tmdbImage(path, size) {
+export function tmdbImage(path, size) {
+  if (!path) return '';
   if (/^https?:\/\/image\.tmdb\.org\/t\/p\//i.test(path)) {
     return path.replace(/(\/t\/p\/)[^/]+(\/)/, `$1${size}$2`);
   }
   if (/^https?:\/\//i.test(path)) return path;
   return `https://image.tmdb.org/t/p/${size}${path}`;
+}
+
+export function backdropUrl(path, size = 'w1280') {
+  return path ? tmdbImage(path, size) : '';
 }
 
 export function poster(path, title, { size = 'w342', cls = '', priority = false } = {}) {
@@ -231,56 +236,58 @@ export function showResult(title, data, isError = false) {
 const PRIMARY_ROUTE = {
   setup: null,
   dashboard: 'dashboard',
+  movies: 'movies',
+  shows: 'shows',
   add: 'add',
   intake: 'add',
-  catalog: 'catalog',
-  title: 'catalog',
-  series: 'catalog',
-  collection: 'catalog',
-  monitor: 'catalog',
-  calendar: 'catalog',
+  catalog: 'movies',
+  title: 'movies',
+  series: 'shows',
+  collection: 'movies',
+  monitor: 'downloads',
+  calendar: 'downloads',
   downloads: 'downloads',
-  jobs: 'downloads',
-  history: 'downloads',
+  jobs: 'jobs',
+  events: 'events',
+  logs: 'events',
+  history: 'events',
   seeds: 'downloads',
   blocklist: 'downloads',
-  system: 'system',
-  settings: 'system',
-  technical: 'system',
+  system: 'settings',
+  settings: 'settings',
+  technical: 'settings',
 };
 
 const SECTION_FOR_VIEW = {
-  catalog: 'catalog',
-  title: 'catalog',
-  series: 'catalog',
-  collection: 'catalog',
-  monitor: 'catalog',
-  calendar: 'catalog',
-  downloads: 'activity',
-  jobs: 'activity',
-  history: 'activity',
-  seeds: 'activity',
-  blocklist: 'activity',
-  system: 'system',
-  settings: 'system',
-  technical: 'system',
+  monitor: 'downloads',
+  calendar: 'downloads',
+  downloads: 'downloads',
+  seeds: 'downloads',
+  blocklist: 'downloads',
+  events: 'events',
+  logs: 'events',
+  history: 'events',
+  system: 'settings',
+  settings: 'settings',
+  technical: 'settings',
 };
 
 const SECTION_TABS = {
-  catalog: [
-    { label: 'Biblioteca', href: '#/catalog', views: ['catalog', 'title', 'series', 'collection'] },
-    { label: 'Buscados', href: '#/monitor', views: ['monitor'], count: 'pending' },
-    { label: 'Calendario', href: '#/calendar', views: ['calendar'] },
-  ],
-  activity: [
+  downloads: [
     { label: 'Cola', href: '#/downloads', views: ['downloads'] },
-    { label: 'Tareas', href: '#/jobs', views: ['jobs', 'history'], count: 'jobs' },
+    { label: 'Faltantes', href: '#/monitor', views: ['monitor'], count: 'pending' },
+    { label: 'Calendario', href: '#/calendar', views: ['calendar'] },
     { label: 'Siembra', href: '#/seeds', views: ['seeds'] },
     { label: 'Blocklist', href: '#/blocklist', views: ['blocklist'] },
   ],
-  system: [
-    { label: 'Estado', href: '#/system', views: ['system', 'technical'] },
+  events: [
+    { label: 'Eventos', href: '#/events', views: ['events'] },
+    { label: 'Registros', href: '#/logs', views: ['logs'] },
+    { label: 'Auditoría', href: '#/history', views: ['history'] },
+  ],
+  settings: [
     { label: 'Configuración', href: '#/settings', views: ['settings'] },
+    { label: 'Estado del sistema', href: '#/system', views: ['system', 'technical'] },
   ],
 };
 

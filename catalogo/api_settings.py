@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from . import admin, api_status, app_settings, attention, integrations, jellyfin, settings
+from . import admin, api_status, app_settings, attention, integrations, jellyfin, log, settings
 from .errors import WebError
 from .jobs import JobConflict
 from .scheduler import list_tasks, save_task
@@ -224,6 +224,15 @@ def handle(
                 play_error=app.play_error,
                 token=app.token,
             )
+
+    if parts == ["system", "logs"] and not mutate:
+        return 200, {
+            "items": log.recent_logs(
+                limit=_int(params.get("limit"), 200),
+                level=params.get("level") or "",
+                q=params.get("q") or "",
+            )
+        }
 
     if parts == ["system", "qbit-limits"]:
         if not mutate:

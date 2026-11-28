@@ -93,6 +93,7 @@ def handle(
                 item["kind"],
                 int(item["tmdb"]),
             )
+        detail["backdrop_path"] = item.get("backdrop_path")
         detail["ondemand"] = ondemand.item_state(
             db, app.config, detail["item"], qbit=qbit, arr=app.arr
         )

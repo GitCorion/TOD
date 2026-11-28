@@ -20,7 +20,7 @@ const PUBLICATION = {
  */
 export const WATCH = {
   ready: { label: 'Disponible', tone: 'ok' },
-  pending: { label: 'Pendiente de .strm', tone: 'info' },
+  pending: { label: 'Pendiente', tone: 'info' },
   monitoring: { label: 'Monitorizado', tone: 'info' },
   unavailable: { label: 'Sin fuente', tone: 'muted' },
 };

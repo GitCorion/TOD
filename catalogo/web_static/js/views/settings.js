@@ -346,28 +346,27 @@ export async function renderSettings({ signal, query } = {}) {
     general: 'general',
     directorios: 'general',
     reproduccion: 'general',
-    seguridad: 'general',
     idioma: 'general',
-    integraciones: 'integraciones',
-    indexers: 'integraciones',
+    conexiones: 'conexiones',
+    integraciones: 'conexiones',
+    indexers: 'conexiones',
     perfiles: 'perfiles',
     formatos: 'perfiles',
-    medios: 'medios',
-    listas: 'listas',
-    siembra: 'siembra',
-    tareas: 'tareas',
+    avanzado: 'avanzado',
+    seguridad: 'avanzado',
+    medios: 'avanzado',
+    listas: 'avanzado',
+    siembra: 'avanzado',
+    tareas: 'avanzado',
   };
   const activeTab = sectionMap[rawSection] || 'general';
   const tabs = [
-    ['general', 'General y Rutas'],
-    ['integraciones', 'Integraciones e Indexers'],
-    ['perfiles', 'Perfiles y Custom Formats'],
-    ['medios', 'Gestión de medios (.strm)'],
-    ['listas', 'Etiquetas y Listas'],
-    ['siembra', 'Trackers y Siembra'],
-    ['tareas', 'Tareas programadas'],
+    ['general', 'General'],
+    ['conexiones', 'Conexiones'],
+    ['perfiles', 'Perfiles'],
+    ['avanzado', 'Avanzado y Sistema'],
   ];
-  const showGlobalSave = activeTab === 'general' || activeTab === 'integraciones';
+  const showGlobalSave = activeTab === 'general' || activeTab === 'conexiones' || activeTab === 'avanzado';
 
   const setupHtml = setupDone < setup.length ? `<div class="panel section" id="settings-setup">
       <div class="panel-head">
@@ -410,12 +409,12 @@ export async function renderSettings({ signal, query } = {}) {
       </nav>
     </div>
     ${activeTab === 'general' ? setupHtml : ''}
-    ${activeTab === 'integraciones' ? `
+    ${activeTab === 'conexiones' ? `
 
 
 
     <div class="section" id="settings-integrations">
-      <div class="panel-head"><h2>${sectionDot(attention, 'integraciones')}Integraciones</h2><span class="right tiny faint settings-hint">Prowlarr, Jackett, qBittorrent, Jellyfin, Radarr/Sonarr</span></div>
+      <div class="panel-head"><h2>${sectionDot(attention, 'integraciones')}Conexiones</h2><span class="right tiny faint settings-hint">Prowlarr, Jackett, qBittorrent, Jellyfin, Radarr/Sonarr, Trailarr</span></div>
       <div class="settings-grid">
         ${INTEGRATIONS.map((meta) => integrationCard(
           items.filter((item) => item.key.startsWith(`${meta.prefix}_`)), meta, data.paths, attention, items,
@@ -435,22 +434,6 @@ export async function renderSettings({ signal, query } = {}) {
         ${(indexers.items || []).length
           ? indexers.items.map(indexerRow).join('')
           : empty('Sin indexers', 'Configura Prowlarr o Jackett para descubrir fuentes.')}
-      </div>
-    </div>
-
-    <div class="panel section" id="settings-search-fallback">
-      <div class="panel-head"><h2>Búsqueda en Radarr/Sonarr</h2></div>
-      <div class="panel-body">
-        <label class="inline check">
-          <input type="checkbox" data-search-field="arr_fallback" ${searchFallback?.arr_fallback ? 'checked' : ''}>
-          Buscar los títulos monitorizados sin fichero ni en cola
-        </label>
-        <p class="muted tiny" style="margin:8px 0">
-          Si Radarr o Sonarr pierde un fichero, TOD busca fuentes para ese
-          título y publica sus accesos. No mueve ni borra nada en el *arr.
-          Se ejecuta en cada espejo y en la pasada de respaldo.
-        </p>
-        <button class="btn btn-sm btn-primary" data-action="search-save">Guardar búsqueda</button>
       </div>
     </div>
 
@@ -478,11 +461,6 @@ export async function renderSettings({ signal, query } = {}) {
       <div class="panel-body">${playback.map(field).join('')}</div>
     </div>
 
-    <div class="panel section" id="settings-security">
-      <div class="panel-head"><h2>${sectionDot(attention, 'seguridad')}Seguridad</h2></div>
-      <div class="panel-body">${security.map(field).join('')}</div>
-    </div>
-
     <div class="panel section" id="settings-language">
       <div class="panel-head">
         <h2>Idioma de las fuentes</h2>
@@ -507,13 +485,38 @@ export async function renderSettings({ signal, query } = {}) {
           Latinoamérica. En el resto de títulos prefiere castellano de España,
           luego V.O./VOSE, y nunca un doblaje latino. «Solo castellano» solo
           acepta castellano de España. Esto no pausa indexers: para eso usa
-          Configuración → Indexers.
+          Configuración → Conexiones.
         </p>
       </div>
     </div>
 
 ` : ''}
-    ${activeTab === 'siembra' ? `
+    ${activeTab === 'perfiles' ? renderArrSection('perfiles', arrData) : ''}
+    ${activeTab === 'avanzado' ? `
+    <div class="panel section" id="settings-security">
+      <div class="panel-head"><h2>${sectionDot(attention, 'seguridad')}Seguridad y acceso</h2></div>
+      <div class="panel-body">${security.map(field).join('')}</div>
+    </div>
+
+    <div class="panel section" id="settings-search-fallback">
+      <div class="panel-head"><h2>Búsqueda de respaldo en Radarr/Sonarr</h2></div>
+      <div class="panel-body">
+        <label class="inline check">
+          <input type="checkbox" data-search-field="arr_fallback" ${searchFallback?.arr_fallback ? 'checked' : ''}>
+          Buscar los títulos monitorizados sin fichero ni en cola
+        </label>
+        <p class="muted tiny" style="margin:8px 0">
+          Si Radarr o Sonarr pierde un fichero, TOD busca fuentes para ese
+          título y publica sus accesos. No mueve ni borra nada en el *arr.
+          Se ejecuta en cada espejo y en la pasada de respaldo.
+        </p>
+        <button class="btn btn-sm btn-primary" data-action="search-save">Guardar búsqueda</button>
+      </div>
+    </div>
+
+    ${renderArrSection('medios', arrData)}
+    ${renderArrSection('listas', arrData)}
+
     <div class="panel section" id="settings-seed">
       <div class="panel-head">
         <h2>Trackers y siembra</h2>
@@ -560,16 +563,12 @@ export async function renderSettings({ signal, query } = {}) {
         </div>
         <p class="muted tiny" style="margin:8px 0 0">
           «Descargar» solo permite o bloquea descargas nuevas de TOD en ese
-          tracker; no pausa el indexer (para eso, usa Configuración → Indexers).
+          tracker; no pausa el indexer (para eso, usa Configuración → Conexiones).
           «Eliminar» borra sus versiones y, si lo eliges, sus
           <span class="mono">.strm</span>.
         </p>
       </div>
     </div>
-
-` : ''}
-    ${['perfiles', 'medios', 'listas'].includes(activeTab) ? renderArrSection(activeTab, arrData) : ''}
-    ${activeTab === 'tareas' ? `
 
     <div class="panel flush section" id="settings-scheduler">
       <div class="panel-head"><h2>${sectionDot(attention, 'tareas')}Tareas programadas</h2><span class="right tiny faint">${schedule.items?.length || 0} tareas</span></div>
