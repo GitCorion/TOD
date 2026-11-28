@@ -42,6 +42,10 @@ catalogo/
 
 ## Flujo de una reproducción
 
+Con `strm_direct_local` activo y fichero presente, el `.strm` contiene la ruta
+del fichero y Jellyfin lo abre sin pasar por TOD. El flujo siguiente aplica a
+los `.strm` con URL del proxy (fuentes frías o modo directo desactivado):
+
 1. Jellyfin lee un `.strm` y llama a `/play?key=...&download=0`.
 2. TOD resuelve la clave: fichero local, biblioteca o torrent.
 3. Si no hay fuente viva, `/play` busca en Prowlarr/Jackett y guarda los

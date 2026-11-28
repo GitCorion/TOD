@@ -10,10 +10,11 @@ from __future__ import annotations
 import os
 from pathlib import Path
 from typing import Any, Protocol
-from urllib.parse import parse_qs, urlencode, urlparse
+from urllib.parse import urlencode
 
 from .resolver import Resolver
 from .status import asset_status, local_ready_status
+from .strm import direct_path_map, strm_identity
 
 DEFAULT_STRM_ROOTS = ("/mnt/catalogo",)
 
@@ -74,17 +75,12 @@ def lookup_strm(
         text = resolved.read_text(encoding="utf-8").strip()
     except OSError:
         return {"is_catalog": False, "reason": "no_legible"}
-    parsed = urlparse(text)
-    params = parse_qs(parsed.query)
-    key = (params.get("key") or [""])[0].strip()
+    key, release_id = strm_identity(
+        db_path, resolved, path_map=direct_path_map(db_path)
+    )
+    key = (key or "").strip()
     if not key:
         return {"is_catalog": False, "reason": "sin_key"}
-    release_id: int | None = None
-    if params.get("release"):
-        try:
-            release_id = int(params["release"][0])
-        except (TypeError, ValueError):
-            release_id = None
     status = asset_status(
         db_path, key, release_id=release_id, qbit=qbit
     )

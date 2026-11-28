@@ -12,7 +12,8 @@ import urllib.parse
 from pathlib import Path
 from typing import Any
 
-from .strm import strm_path
+from .config import Config
+from .strm import direct_path_map, strm_identity, strm_path
 
 DEFAULT_TTL = 300.0
 _lock = threading.Lock()
@@ -33,12 +34,16 @@ def _strm_query(path: Path) -> dict[str, list[str]]:
         return {}
 
 
-def _key_from_strm(path: Path) -> str | None:
+def _key_from_strm(path: Path, db_path: Path | str) -> str | None:
     value = _strm_query(path).get("key")
-    return value[0] if value else None
+    if value:
+        return value[0]
+    return strm_identity(db_path, path)[0]
 
 
-def _scan(root: Path) -> dict[str, Any]:
+def _scan(root: Path, db_path: Path | str) -> dict[str, Any]:
+    # El mapa de rutas solo se necesita si aparece un .strm directo.
+    path_map: dict[str, tuple[str, int | None]] | None = None
     paths: set[str] = set()
     keys: set[str] = set()
     movies = 0
@@ -52,12 +57,25 @@ def _scan(root: Path) -> dict[str, Any]:
             continue
         for path in directory.rglob("*.strm"):
             query = _strm_query(path)
-            # Las versiones llevan &release=<id>; el .strm principal no.
-            if query.get("release"):
+            if not query and path_map is None:
+                path_map = direct_path_map(db_path)
+            key, _ = strm_identity(db_path, path, path_map=path_map)
+            # Las versiones llevan &release=<id>; en modo directo el contenido
+            # es una ruta, así que se reconoce por el sufijo del nombre. El
+            # principal también puede mapear a un release, por eso no basta
+            # con mirar `release_id`.
+            direct_version = (
+                not query
+                and " - " in path.stem
+                and any(
+                    sibling.stem == path.stem.split(" - ", 1)[0]
+                    for sibling in path.parent.glob("*.strm")
+                )
+            )
+            if query.get("release") or direct_version:
                 versions += 1
                 continue
             paths.add(str(path))
-            key = (query.get("key") or [None])[0]
             if key:
                 keys.add(key)
             if kind == "movie":
@@ -79,7 +97,12 @@ def _scan(root: Path) -> dict[str, Any]:
     }
 
 
-def inventory(root: str | Path, *, ttl: float = DEFAULT_TTL) -> dict[str, Any]:
+def inventory(
+    root: str | Path,
+    *,
+    ttl: float = DEFAULT_TTL,
+    db_path: Path | str | None = None,
+) -> dict[str, Any]:
     root = Path(root)
     key = str(root)
     now = time.monotonic()
@@ -87,7 +110,9 @@ def inventory(root: str | Path, *, ttl: float = DEFAULT_TTL) -> dict[str, Any]:
         cached = _cache.get(key)
         if cached is not None and now - cached["monotonic"] < ttl:
             return cached
-        data = _scan(root)
+        if db_path is None:
+            db_path = Config.from_env().db_path
+        data = _scan(root, db_path)
         data["monotonic"] = now
         _cache[key] = data
         return data
@@ -114,8 +139,10 @@ def is_key_published(item: dict[str, Any], keys: set[str]) -> bool:
     return bool(item.get("key")) and item["key"] in keys
 
 
-def summary(root: str | Path) -> dict[str, Any]:
-    data = inventory(root)
+def summary(
+    root: str | Path, *, db_path: Path | str | None = None
+) -> dict[str, Any]:
+    data = inventory(root, db_path=db_path)
     return {
         "root": data["root"],
         "movies": data["movies"],

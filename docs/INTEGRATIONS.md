@@ -52,6 +52,29 @@ ni detección de sesión, pero el play sigue funcionando porque un `GET` con
 `Range` autoriza el prepare. Durante la reproducción, cada petición a `/play`
 renueva el lease.
 
+### Reproducción directa con fichero local
+
+En **Configuración → Reproducción → Reproducción directa con fichero local**
+(`strm_direct_local`, env `CATALOGO_STRM_DIRECT_LOCAL`) los `.strm` nuevos
+contienen la **ruta absoluta del fichero** cuando ya existe en disco (o en el
+mount de 1Fichier) y es legible, en vez de `http://127.0.0.1:8773/play?...`.
+Así Jellyfin abre el vídeo directamente y TOD quita el proxy del medio.
+
+- Las fuentes frías siguen escribiendo `/play?key=...&download=0`: la ruta
+  directa solo se usa si el fichero está presente, también en las versiones
+  (`&release=<id>`) que tengan su propio fichero.
+- Si el fichero desaparece o el mount no está accesible al regenerar, el
+  `.strm` vuelve a apuntar al proxy.
+- `qbit-sync` reescribe los `.strm` de los títulos cuya ruta cambió, y
+  `restore-strm` (04:30) reconcilia el resto. Hay que regenerar los `.strm`
+  tras activar el ajuste.
+- El inventario, los leases, `/catalog/lookup` y la limpieza reconstruyen la
+  clave desde la ruta del fichero, así que siguen funcionando con `.strm`
+  directos. Los leases se renuevan igual: evitan mover un pack mientras se
+  está viendo.
+- Tras cambiar la fuente preferida de un título con fichero local, hay que
+  regenerar su `.strm` para que apunte al nuevo fichero.
+
 ### Arranque rápido de `.strm` (plugin Medusa)
 
 Jellyfin sondea el `.strm` en cada reproducción. Con un torrent frío, el

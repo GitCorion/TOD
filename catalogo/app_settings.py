@@ -212,6 +212,16 @@ SETTINGS: tuple[Setting, ...] = (
         help="Base que se escribe en los .strm nuevos.",
         restart_required=True,
     ),
+    Setting(
+        "strm_direct_local", "strm_direct_local", "reproduccion",
+        "Reproducción directa con fichero local", kind="bool",
+        env="CATALOGO_STRM_DIRECT_LOCAL", default=False,
+        help=(
+            "Escribe la ruta del fichero en el .strm cuando ya existe en "
+            "local, para que Jellyfin reproduzca sin pasar por TOD. Sin "
+            "fichero, el .strm sigue apuntando al proxy."
+        ),
+    ),
     # Seguridad
     Setting(
         "web_allowed_hosts", "web_allowed_hosts", "seguridad",

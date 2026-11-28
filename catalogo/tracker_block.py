@@ -20,6 +20,7 @@ from contextlib import closing
 from datetime import datetime, timezone
 
 from .db import connect
+from .strm import direct_path_map, strm_identity, strm_path
 
 
 def _now() -> datetime:
@@ -143,7 +144,6 @@ def delete_tracker_strm(
       fuente: otro release vivo, un fichero local/archivado o un fichero de
       Radarr/Sonarr. Si queda algo reproducible, el principal se conserva.
     """
-    import urllib.parse
     from pathlib import Path
 
     root = Path(out_dir)
@@ -170,9 +170,7 @@ def delete_tracker_strm(
             return report
         assets = {
             row["key"]: dict(row)
-            for row in conn.execute(
-                "SELECT id, key, kind, tmdb, season, episode FROM media_items"
-            ).fetchall()
+            for row in conn.execute("SELECT * FROM media_items").fetchall()
         }
 
         def has_other_source(asset: dict) -> bool:
@@ -222,38 +220,29 @@ def delete_tracker_strm(
             )
 
         deleted_dirs: set[Path] = set()
+        path_map = direct_path_map(db_path)
         for base in ("movies", "series"):
             directory = root / base
             if not directory.is_dir():
                 continue
             for path in sorted(directory.rglob("*.strm")):
+                key, release = strm_identity(db_path, path, path_map=path_map)
+                asset = assets.get(key) if key else None
                 try:
-                    content = path.read_text(encoding="utf-8", errors="ignore").strip()
-                except OSError:
-                    continue
-                try:
-                    query = urllib.parse.parse_qs(
-                        urllib.parse.urlparse(content).query
-                    )
+                    main_path = strm_path(root, asset) if asset else None
                 except Exception:
-                    continue
-                release = (query.get("release") or [None])[0]
-                if release is not None:
-                    try:
-                        if int(release) in release_ids:
-                            report["variants"] += 1
-                            if not dry_run:
-                                try:
-                                    path.unlink()
-                                    deleted_dirs.add(path.parent)
-                                except OSError:
-                                    report["errors"] += 1
-                    except (TypeError, ValueError):
-                        pass
+                    main_path = None
+                is_main = main_path is not None and path == main_path
+                if not is_main and release is not None and release in release_ids:
+                    report["variants"] += 1
+                    if not dry_run:
+                        try:
+                            path.unlink()
+                            deleted_dirs.add(path.parent)
+                        except OSError:
+                            report["errors"] += 1
                     continue
 
-                key = (query.get("key") or [None])[0]
-                asset = assets.get(key) if key else None
                 if not asset:
                     continue
                 if has_other_source(asset):

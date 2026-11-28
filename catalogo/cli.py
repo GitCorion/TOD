@@ -59,7 +59,7 @@ from .retention import evictable, finish_intent, status as seed_status
 from .rss_sync import publish_keys, sync_rss
 from .runtime_sync import sync_runtimes
 from .seeding import normalize_completed
-from .strm import export_strm
+from .strm import export_strm, refresh_direct_strm
 from .stream_leases import cleanup as cleanup_leases
 from .title_sync import upsert_episodes, upsert_movies
 from .tmdb import TmdbClient, TmdbError, episode_items, movie_item, tv_item
@@ -600,7 +600,16 @@ def cmd_qbit_sync(args, config: Config) -> int:
         dry_run=args.dry_run,
         check_exists=not args.no_check_paths,
     )
-    _print(report.public())
+    result = report.public()
+    changed = result.pop("changed_keys", [])
+    if changed and not args.dry_run:
+        result["direct_strm"] = refresh_direct_strm(
+            config.db_path,
+            config.catalog_library,
+            changed,
+            base_url=config.playback_base_url,
+        )
+    _print(result)
     return 0 if not report.errors else 1
 
 

@@ -17,30 +17,30 @@ import urllib.request
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
-from urllib.parse import parse_qs, urlparse
 
 from . import stream_leases
+from .config import Config
+from .strm import direct_path_map, strm_identity
 
 
 def _now() -> datetime:
     return datetime.now(timezone.utc)
 
 
-def key_from_strm(path: str | None) -> str | None:
+def key_from_strm(
+    path: str | None,
+    *,
+    db_path: Path | str | None = None,
+    path_map: dict[str, tuple[str, int | None]] | None = None,
+) -> str | None:
     if not path:
         return None
     candidate = Path(path)
     if candidate.suffix.lower() != ".strm":
         return None
-    try:
-        text = candidate.read_text(encoding="utf-8").strip()
-    except OSError:
-        return None
-    parsed = urlparse(text)
-    if parsed.path.rstrip("/") != "/play":
-        return None
-    params = parse_qs(parsed.query)
-    key = (params.get("key") or [""])[0].strip()
+    if db_path is None:
+        db_path = Config.from_env().db_path
+    key, _ = strm_identity(db_path, candidate, path_map=path_map)
     return key or None
 
 
@@ -81,9 +81,10 @@ def touch_active_leases(
         sessions = _get_sessions(base_url, api_key, timeout=timeout)
     touched: list[dict[str, Any]] = []
     skipped: int = 0
+    path_map = direct_path_map(db_path)
     for session in sessions:
         item = session.get("NowPlayingItem") or {}
-        key = key_from_strm(item.get("Path"))
+        key = key_from_strm(item.get("Path"), db_path=db_path, path_map=path_map)
         if not key:
             skipped += 1
             continue

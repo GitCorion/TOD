@@ -135,6 +135,9 @@ class Config:
     ondemand_save_path: Path = Path("/mnt/descargas/ondemand")
     strm_roots: tuple[str, ...] = ("/mnt/catalogo",)
     playback_base_url: str = "http://127.0.0.1:8773"
+    # Cuando hay fichero local, el .strm apunta a la ruta directa y Jellyfin
+    # reproduce sin pasar por /play. Las fuentes frías siguen usando el proxy.
+    strm_direct_local: bool = False
     # Radarr y Sonarr suelen usar roots distintos. Si se configuran, mandan
     # sobre `library_root`; si no, se mantiene la raíz común histórica.
     library_root_movies: Path | None = None
@@ -227,6 +230,9 @@ class Config:
             playback_base_url=_env_value(
                 "CATALOGO_PLAYBACK_BASE_URL", "http://127.0.0.1:8773"
             ) or "http://127.0.0.1:8773",
+            strm_direct_local=str(
+                _env_value("CATALOGO_STRM_DIRECT_LOCAL", "0") or "0"
+            ).strip().lower() in ("1", "true", "yes", "on", "si", "sí"),
         )
 
     @classmethod

@@ -48,6 +48,8 @@ class SyncReport:
     arr_done_keys: set[str] = field(default_factory=set)
     # Títulos que perdieron copia local/torrent; se poda su .strm si no quedan fuentes.
     lost_keys: set[str] = field(default_factory=set)
+    # Títulos cuyo fichero cambió de ruta/estado: hay que reescribir su .strm directo.
+    changed_keys: set[str] = field(default_factory=set)
     dry_run: bool = False
 
     def public(self) -> dict[str, Any]:
@@ -65,6 +67,7 @@ class SyncReport:
             "arr_keys": sorted(self.arr_keys)[:200],
             "arr_done_keys": sorted(self.arr_done_keys)[:200],
             "lost_keys": sorted(self.lost_keys)[:200],
+            "changed_keys": sorted(self.changed_keys)[:200],
             "errors": self.errors[:20],
             "dry_run": self.dry_run,
         }
@@ -656,9 +659,24 @@ def _upsert_file(
         else:
             state = "unknown"
     row = conn.execute(
-        "SELECT id FROM torrent_files WHERE torrent_id = ? AND file_index = ?",
+        "SELECT id, local_path, library_path, state FROM torrent_files "
+        "WHERE torrent_id = ? AND file_index = ?",
         (torrent_id, file_index),
     ).fetchone()
+    if (
+        row is not None
+        and asset_id is not None
+        and (
+            row["local_path"] != local_path
+            or row["library_path"] != library_path
+            or row["state"] != state
+        )
+    ):
+        key_row = conn.execute(
+            "SELECT key FROM media_items WHERE id = ?", (asset_id,)
+        ).fetchone()
+        if key_row is not None:
+            report.changed_keys.add(str(key_row["key"]))
     values = (
         asset_id,
         rel_path,

@@ -110,7 +110,7 @@ def playing_keys(
         path = item.get("Path")
         if not path:
             continue
-        key = key_from_strm(path)
+        key = key_from_strm(path, db_path=config.db_path)
         if key:
             keys.add(key)
     if sessions is not None:

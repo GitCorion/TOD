@@ -10,6 +10,7 @@ No escribe en Jellyfin. Solo en la carpeta de salida indicada.
 
 from __future__ import annotations
 
+import os
 import re
 import urllib.parse
 from contextlib import closing
@@ -19,10 +20,13 @@ from xml.sax.saxutils import escape as xml_escape
 
 from . import language_settings
 from . import naming as naming_mod
+from .app_settings import _as_bool, _read_overrides
+from .config import Config
 from .db import connect
 from .health import publishable
 from .identity import play_url
 from .library_index import build_library_index, in_library
+from .resolver import Resolver
 
 INVALID = re.compile(r'[\\/:*?"<>|\x00-\x1f]')
 
@@ -135,6 +139,125 @@ def _safe_write_strm(path: Path, content: str, *, root: Path) -> bool:
         return True
     except OSError:
         return False
+
+
+def direct_local_enabled(db_path: Path | str) -> bool:
+    """¿Los .strm nuevos pueden apuntar al fichero local directamente?"""
+    overrides = _read_overrides(db_path)
+    if "strm_direct_local" in overrides:
+        return _as_bool(overrides["strm_direct_local"])
+    return Config.from_env().strm_direct_local
+
+
+def _direct_path(
+    resolver: Resolver, asset: dict, release_id: int | None = None
+) -> str | None:
+    """Ruta real y legible del fichero local, o None si hay que usar proxy."""
+    try:
+        resolution = (
+            resolver.resolve_release(str(asset["key"]), int(release_id))
+            if release_id is not None
+            else resolver.resolve(str(asset["key"]))
+        )
+    except Exception:
+        return None
+    if resolution.source not in ("library", "local_seed") or not resolution.path:
+        return None
+    path = Path(resolution.path).expanduser()
+    if not path.is_absolute() or not path.is_file():
+        return None
+    try:
+        stat = path.stat()
+    except OSError:
+        return None
+    if stat.st_size <= 0 or not os.access(str(path), os.R_OK):
+        return None
+    return str(path)
+
+
+def strm_content(
+    key: str,
+    base_url: str,
+    direct_path: str | None = None,
+    *,
+    download: bool = False,
+) -> str:
+    """Contenido de un .strm: ruta directa si hay fichero, si no proxy."""
+    if direct_path:
+        return f"{direct_path}\n"
+    url = play_url(key, base_url)
+    if download:
+        url += "&download=1"
+    return f"{url}\n"
+
+
+def direct_path_map(
+    db_path: Path | str,
+) -> dict[str, tuple[str, int | None]]:
+    """Ruta de fichero -> (key, release_id) para los .strm directos."""
+    result: dict[str, tuple[str, int | None]] = {}
+    try:
+        with closing(connect(db_path)) as conn:
+            rows = conn.execute(
+                "SELECT m.key, f.release_id, f.local_path, f.library_path "
+                "FROM torrent_files f "
+                "JOIN media_items m ON m.id = f.asset_id "
+                "ORDER BY f.id DESC"
+            ).fetchall()
+    except Exception:
+        return result
+    for row in rows:
+        value = row["release_id"]
+        identity = (row["key"], int(value) if value is not None else None)
+        for column in ("local_path", "library_path"):
+            raw = row[column]
+            if not raw:
+                continue
+            result[str(raw)] = identity
+            try:
+                result[str(Path(raw).resolve(strict=False))] = identity
+            except (OSError, RuntimeError):
+                pass
+    return result
+
+
+def strm_identity(
+    db_path: Path | str,
+    path: Path | str,
+    *,
+    path_map: dict[str, tuple[str, int | None]] | None = None,
+) -> tuple[str | None, int | None]:
+    """Extrae (key, release_id) de un .strm, sea URL del proxy o ruta directa.
+
+    Los consumidores del catálogo (inventario, leases, limpieza) asumían que
+    todo .strm contenía `/play?key=...`. Con reproducción directa el contenido
+    es la ruta del fichero: se mapea de vuelta a través de `torrent_files`.
+    """
+    try:
+        text = Path(path).read_text(encoding="utf-8", errors="ignore").strip()
+    except OSError:
+        return None, None
+    if not text:
+        return None, None
+    if text.startswith(("http://", "https://", "/play?", "/resolve?")):
+        params = urllib.parse.parse_qs(urllib.parse.urlparse(text).query)
+        key = (params.get("key") or [None])[0]
+        value = (params.get("release") or [None])[0]
+        try:
+            release_id = int(value) if value else None
+        except (TypeError, ValueError):
+            release_id = None
+        return key, release_id
+    if path_map is None:
+        path_map = direct_path_map(db_path)
+    raw = Path(text).expanduser()
+    identity = path_map.get(str(raw))
+    if identity is None:
+        try:
+            identity = path_map.get(str(raw.resolve(strict=False)))
+        except (OSError, RuntimeError):
+            identity = None
+    return identity or (None, None)
 
 
 def _nfo_path_for(
@@ -374,12 +497,15 @@ def export_strm(
     skip_library: bool = False,
     radarr=None,
     sonarr=None,
+    direct_local: bool | None = None,
 ) -> dict:
     if versions_filter not in ("available", "alive", "all"):
         raise ValueError(f"versions_filter no válido: {versions_filter}")
     if prune and (key or limit):
         raise ValueError("--prune solo se permite en una exportación completa")
     out = Path(out_dir)
+    direct = direct_local_enabled(db_path) if direct_local is None else direct_local
+    resolver = Resolver(db_path) if direct else None
     preference = language_settings.load(db_path)
     # --- Fase 3: naming config ---
     try:
@@ -638,7 +764,8 @@ def export_strm(
             # el resolver la sirve directamente.
             default = _strm(asset)
             expected.add(default)
-            content = play_url(asset["key"], base_url) + "\n"
+            path_directa = _direct_path(resolver, asset) if direct else None
+            content = strm_content(asset["key"], base_url, path_directa)
             if not default.exists() or default.read_text(encoding="utf-8") != content:
                 _safe_write_strm(default, content, root=out)
                 written += 1
@@ -659,7 +786,8 @@ def export_strm(
 
         default = _strm(asset)
         expected.add(default)
-        content = play_url(asset["key"], base_url) + "\n"
+        path_directa = _direct_path(resolver, asset) if direct else None
+        content = strm_content(asset["key"], base_url, path_directa)
         if not default.exists() or default.read_text(encoding="utf-8") != content:
             _safe_write_strm(default, content, root=out)
             written += 1
@@ -672,9 +800,15 @@ def export_strm(
             for release, label in versions:
                 path = version_path(out, asset, label, naming_cfg=_naming_cfg, root_folders_by_id=_root_folders, series_settings_map=_ss_map)
                 expected.add(path)
+                release_id = int(release["id"])
+                path_directa = (
+                    _direct_path(resolver, asset, release_id) if direct else None
+                )
                 content = (
-                    play_url(asset["key"], base_url)
-                    + f"&release={int(release['id'])}\n"
+                    strm_content(asset["key"], base_url, path_directa)
+                    if path_directa
+                    else play_url(asset["key"], base_url)
+                    + f"&release={release_id}\n"
                 )
                 if not path.exists() or path.read_text(encoding="utf-8") != content:
                     write_strm(path, content, root=out)
@@ -700,6 +834,7 @@ def export_strm(
         "skipped_reasons": skipped_reasons,
         "pruned": pruned,
         "base_url": base_url,
+        "direct_local": direct,
         "require_health": require_health,
         "min_seeders": min_seeders,
         "versions_filter": versions_filter,
@@ -708,6 +843,38 @@ def export_strm(
         "kind": kind,
         "skip_library": skip_library,
     }
+
+
+def refresh_direct_strm(
+    db_path: Path | str,
+    out_dir: Path | str,
+    keys,
+    *,
+    base_url: str | None = None,
+    direct_local: bool | None = None,
+) -> dict:
+    """Reescribe los .strm de títulos cuyo fichero local cambió de ruta."""
+    enabled = (
+        direct_local_enabled(db_path) if direct_local is None else direct_local
+    )
+    if not enabled:
+        return {"enabled": False, "refreshed": []}
+    from . import strm_inventory
+
+    refreshes: list[str] = []
+    errors: list[str] = []
+    url = base_url or Config.from_env().playback_base_url
+    for key in dict.fromkeys(str(item) for item in keys if item):
+        try:
+            export_strm(
+                db_path, out_dir, key=key, base_url=url, direct_local=enabled
+            )
+            refreshes.append(key)
+        except Exception as exc:
+            errors.append(f"{key}: {str(exc)[:160]}")
+    if refreshes:
+        strm_inventory.invalidate(out_dir)
+    return {"enabled": True, "refreshed": refreshes, "errors": errors}
 
 
 def prune_key(
@@ -730,14 +897,8 @@ def prune_key(
     candidates: set[Path] = {default}
     if default.parent.is_dir():
         for path in default.parent.glob("*.strm"):
-            try:
-                content = path.read_text(encoding="utf-8", errors="ignore")
-                query = urllib.parse.parse_qs(
-                    urllib.parse.urlparse(content.strip()).query
-                )
-            except OSError:
-                continue
-            if (query.get("key") or [None])[0] == key:
+            found_key, _ = strm_identity(db_path, path)
+            if found_key == key or path == default:
                 candidates.add(path)
     removed: list[str] = []
     for path in candidates:

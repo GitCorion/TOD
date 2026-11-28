@@ -12,10 +12,8 @@ from contextlib import closing
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Protocol
-from urllib.parse import parse_qs, urlparse
-
 from .db import connect
-from .strm import strm_path
+from .strm import direct_path_map, strm_identity, strm_path
 
 BROKEN_MESSAGES = (
     "not registered",
@@ -51,17 +49,10 @@ def _is_broken(trackers: list[dict] | None) -> bool:
     return False
 
 
-def _release_id_from_strm(path: Path) -> int | None:
-    try:
-        text = path.read_text(encoding="utf-8").strip()
-    except OSError:
-        return None
-    params = parse_qs(urlparse(text).query)
-    value = (params.get("release") or [""])[0]
-    try:
-        return int(value)
-    except (TypeError, ValueError):
-        return None
+def _release_id_from_strm(
+    path: Path, db_path, path_map: dict | None = None
+) -> int | None:
+    return strm_identity(db_path, path, path_map=path_map)[1]
 
 
 def _live_release(conn, asset_id: int) -> bool:
@@ -215,6 +206,7 @@ def clean_broken(
         if not dry_run:
             conn.commit()
     if not dry_run:
+        path_map = direct_path_map(db_path)
         with closing(connect(db_path)) as conn:
             for asset_id, dead_ids in actions.items():
                 asset = conn.execute(
@@ -228,7 +220,7 @@ def clean_broken(
                     default.parent.glob(f"{default.stem} - *.strm")
                 )
                 for path in versions:
-                    release_id = _release_id_from_strm(path)
+                    release_id = _release_id_from_strm(path, db_path, path_map)
                     if release_id is not None and release_id in dead_ids:
                         try:
                             path.unlink()

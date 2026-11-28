@@ -49,7 +49,7 @@ from .repair import repair_torrents
 from .reseed import reseed_pending
 from .rss_sync import publish_keys as publish_rss_keys, sync_rss
 from .seeding import normalize_completed
-from .strm import export_strm
+from .strm import export_strm, refresh_direct_strm
 from .title_sync import monitor_if_not_in_arr, upsert_episodes, upsert_movies
 from .tmdb import TmdbClient, TmdbError, episode_items, movie_item, tv_item, year_of_date
 from .tracker_block import (
@@ -1771,7 +1771,15 @@ def job_qbit_sync(ctx: JobContext) -> dict[str, Any]:
     keys = summary.pop("arr_keys", [])
     done = summary.pop("arr_done_keys", [])
     lost = summary.pop("lost_keys", [])
+    changed = summary.pop("changed_keys", [])
     if not summary.get("dry_run"):
+        if changed:
+            summary["direct_strm"] = refresh_direct_strm(
+                ctx.config.db_path,
+                ctx.config.catalog_library,
+                changed,
+                base_url=ctx.config.playback_base_url,
+            )
         if keys:
             summary["strm"] = _publish_arr_strm(ctx.config, keys)
         if done:
