@@ -243,6 +243,41 @@ def test_buffer_state_counts_contiguous_from_start():
     assert tail_ready is True
 
 
+def test_stream_ready_with_initial_buffer_does_not_wait_for_tail(tmp_path):
+    from catalogo.status import asset_status
+
+    db, _asset_id, _release_id = seed(tmp_path)
+    MB = 1024**2
+    size = 100 * MB
+    conn = sqlite3.connect(db)
+    conn.execute("UPDATE releases SET size_bytes=?", (size,))
+    conn.execute("UPDATE torrent_files SET size_bytes=?", (size,))
+    conn.commit()
+    conn.close()
+
+    class TailPendingQbit(FakeStatusQbit):
+        def files(self, info_hash):
+            return [{"index": 0, "size": size, "progress": 0.6}]
+
+        def properties(self, info_hash):
+            return {"piece_size": MB}
+
+        def piece_states(self, info_hash):
+            # 60 MB contiguos al inicio (>> 8 MB) pero última pieza todavía a 0.
+            return [2] * 60 + [0] * 40
+
+    qbit = TailPendingQbit([{
+        "hash": "hash1", "state": "downloading", "progress": 0.6,
+        "size": size, "downloaded": 60 * MB, "dlspeed": 50_000_000,
+        "num_seeds": 8, "num_leechs": 1, "num_complete": 10,
+        "num_incomplete": 2,
+    }])
+    status = asset_status(db, "movie:tmdb:1", qbit=qbit)
+    assert status["buffer_bytes"] == 60 * MB
+    assert status["tail_ready"] is False
+    assert status["stream_ready"] is True
+
+
 def test_waiting_reason_first_piece_while_downloading(tmp_path):
     from catalogo.status import asset_status
 

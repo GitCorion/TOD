@@ -651,7 +651,7 @@ class PlayService:
                 if int(item.get("index") or 0) == int(file_index):
                     file_size = int(item.get("size") or 0) or None
                     break
-            buffer_bytes, required, tail_ready = _buffer_state(
+            buffer_bytes, required, _tail_ready = _buffer_state(
                 self.qbit_read, info_hash, files, int(file_index), file_size,
                 runtime or None,
             )
@@ -659,7 +659,6 @@ class PlayService:
                 buffer_bytes is not None
                 and required > 0
                 and buffer_bytes >= required
-                and tail_ready
             ):
                 return True
             if time.monotonic() >= deadline:

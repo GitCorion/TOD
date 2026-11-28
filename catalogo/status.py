@@ -841,13 +841,13 @@ def asset_status(
 
     source = resolution.source if resolution is not None else "unavailable"
     if source == "torrent":
-        # Requiere el buffer contiguo inicial y que la cola esté lista si
-        # el fichero coincide con el final del torrent (priorizado por first_last).
+        # Basta con el buffer contiguo inicial para arrancar: si la última
+        # pieza del torrent aún no ha llegado (p. ej. tras un nudge o por
+        # orden del swarm), exigirla bloquearía la reproducción hasta el 100%.
         buffered = (
             buffer_bytes is not None
             and buffer_required > 0
             and buffer_bytes >= buffer_required
-            and tail_ready
         )
         stream_ready = bool(
             buffered or (progress >= 1 and live is not None)
